@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="360dp"
+    android:height="240dp"
+    android:viewportWidth="360"
+    android:viewportHeight="240">
+
+    <!-- Sky Background Layer 1: Deep Indigo -->
+    <path
+        android:fillColor="#1A0B2E"
+        android:pathData="M0,0H360V240H0Z" />
+
+    <!-- Sky Gradient Layer 2: Sunset Purple -->
+    <path
+        android:fillColor="#38184C"
+        android:pathData="M0,50H360V240H0Z" />
+
+    <!-- Sky Gradient Layer 3: Crimson Rose -->
+    <path
+        android:fillColor="#6C1E4E"
+        android:pathData="M0,90H360V240H0Z" />
+
+    <!-- Sky Gradient Layer 4: Warm Tangerine -->
+    <path
+        android:fillColor="#B84A39"
+        android:pathData="M0,120H360V240H0Z" />
+
+    <!-- Sky Gradient Layer 5: Golden Amber Horizon -->
+    <path
+        android:fillColor="#E07A5F"
+        android:pathData="M0,145H360V240H0Z" />
+
+    <!-- Sky Gradient Layer 6: Bright Sunset Gold -->
+    <path
+        android:fillColor="#F4A261"
+        android:pathData="M0,165H360V240H0Z" />
+
+    <!-- Radiant Glowing Sun -->
+    <path
+        android:fillColor="#FFE8A3"
+        android:pathData="M180,105m-30,0a30,30 0 1,1 60,0a30,30 0 1,1 -60,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M180,105m-20,0a20,20 0 1,1 40,0a20,20 0 1,1 -40,0" />
+
+    <!-- Distant Mountain Range Layer 1 -->
+    <path
+        android:fillColor="#4F1A42"
+        android:pathData="M-20,175L45,120L110,165L180,110L255,160L320,125L380,175L380,240L-20,240Z" />
+
+    <!-- Midground Mountain Range Layer 2 -->
+    <path
+        android:fillColor="#2D0F2E"
+        android:pathData="M-10,188L65,142L140,182L215,130L285,176L350,148L370,188L370,240L-10,240Z" />
+
+    <!-- Calm Lake Surface -->
+    <path
+        android:fillColor="#1C0924"
+        android:pathData="M0,180H360V240H0Z" />
+
+    <!-- Sun Reflections on Water -->
+    <path
+        android:fillColor="#55F4A261"
+        android:pathData="M150,184H210V188H150ZM158,192H202V195H158ZM164,199H196V202H164ZM170,206H190V208H170Z" />
+
+    <!-- Shoreline Foreground -->
+    <path
+        android:fillColor="#0D0312"
+        android:pathData="M-10,210Q60,195 140,215T300,208T370,202L370,240L-10,240Z" />
+
+    <!-- Pine Trees on Left Silhouette -->
+    <path
+        android:fillColor="#08020B"
+        android:pathData="M25,170L30,185L20,185L32,198L17,198L35,215L15,215L35,230L25,230L25,238L28,238L28,230L45,230L25,215L43,215L28,198L40,198L28,185L38,185Z" />
+    <path
+        android:fillColor="#08020B"
+        android:pathData="M55,178L59,190L50,190L61,201L48,201L63,216L46,216L64,230L54,230L54,238L57,238L57,230L72,230L57,216L70,216L58,201L67,201L58,190L65,190Z" />
+
+    <!-- Pine Trees on Right Silhouette -->
+    <path
+        android:fillColor="#08020B"
+        android:pathData="M315,182L319,193L311,193L321,203L309,203L323,217L308,217L324,230L316,230L316,238L318,238L318,230L331,230L318,217L329,217L318,203L326,203L318,193L324,193Z" />
+
+    <!-- Flying Birds in Sunset Sky -->
+    <path
+        android:fillColor="#260C20"
+        android:pathData="M110,65Q115,58 120,65Q125,58 130,65Q125,62 120,67Q115,62 110,65Z" />
+    <path
+        android:fillColor="#260C20"
+        android:pathData="M135,76Q139,71 143,76Q147,71 151,76Q147,74 143,78Q139,74 135,76Z" />
+    <path
+        android:fillColor="#260C20"
+        android:pathData="M95,82Q98,78 101,82Q104,78 107,82Q104,80 101,84Q98,80 95,82Z" />
+
+</vector>

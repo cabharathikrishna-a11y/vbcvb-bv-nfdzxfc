@@ -1,0 +1,1100 @@
+package com.example.util
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.net.Uri
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
+
+/**
+ * Singleton manager for persistent WebViews (YouTube, Spotify, Instagram).
+ * Keeps background audio and video playing uninterrupted across tabs, screens,
+ * desktop multi-window mode, and floating Picture-in-Picture overlays.
+ */
+object PersistentWebMediaManager {
+
+    private val scope = CoroutineScope(Dispatchers.Main)
+
+    // Persistent WebView references
+    private var _youtubeWebView: WebView? = null
+    val youtubeWebView: WebView? get() = _youtubeWebView
+
+    private var _spotifyWebView: WebView? = null
+    val spotifyWebView: WebView? get() = _spotifyWebView
+
+    private var _instagramWebView: WebView? = null
+    val instagramWebView: WebView? get() = _instagramWebView
+
+    // YouTube State
+    private val _isYoutubePlaying = MutableStateFlow(false)
+    val isYoutubePlaying: StateFlow<Boolean> = _isYoutubePlaying.asStateFlow()
+
+    private val _isYoutubeVideoActive = MutableStateFlow(false)
+    val isYoutubeVideoActive: StateFlow<Boolean> = _isYoutubeVideoActive.asStateFlow()
+
+    private val _youtubeTitle = MutableStateFlow("YouTube Video")
+    val youtubeTitle: StateFlow<String> = _youtubeTitle.asStateFlow()
+
+    private val _youtubeDurationSeconds = MutableStateFlow(0L)
+    val youtubeDurationSeconds: StateFlow<Long> = _youtubeDurationSeconds.asStateFlow()
+
+    private val _youtubeCurrentTimeSeconds = MutableStateFlow(0L)
+    val youtubeCurrentTimeSeconds: StateFlow<Long> = _youtubeCurrentTimeSeconds.asStateFlow()
+
+    private val _youtubeCurrentVideoUrl = MutableStateFlow("")
+    val youtubeCurrentVideoUrl: StateFlow<String> = _youtubeCurrentVideoUrl.asStateFlow()
+
+    private val _isYoutubePipActive = MutableStateFlow(false)
+    val isYoutubePipActive: StateFlow<Boolean> = _isYoutubePipActive.asStateFlow()
+
+    private val _youtubePipSize = MutableStateFlow("medium") // "small", "medium", "large"
+    val youtubePipSize: StateFlow<String> = _youtubePipSize.asStateFlow()
+
+    private val _isYoutubeMuted = MutableStateFlow(false)
+    val isYoutubeMuted: StateFlow<Boolean> = _isYoutubeMuted.asStateFlow()
+
+    // Spotify State
+    private val _isSpotifyPlaying = MutableStateFlow(false)
+    val isSpotifyPlaying: StateFlow<Boolean> = _isSpotifyPlaying.asStateFlow()
+
+    private val _spotifyTrackTitle = MutableStateFlow("No track playing")
+    val spotifyTrackTitle: StateFlow<String> = _spotifyTrackTitle.asStateFlow()
+
+    private val _spotifyArtist = MutableStateFlow("Spotify Web")
+    val spotifyArtist: StateFlow<String> = _spotifyArtist.asStateFlow()
+
+    private val _spotifyCoverUrl = MutableStateFlow("")
+    val spotifyCoverUrl: StateFlow<String> = _spotifyCoverUrl.asStateFlow()
+
+    private val _isSpotifyFloatingBarVisible = MutableStateFlow(false)
+    val isSpotifyFloatingBarVisible: StateFlow<Boolean> = _isSpotifyFloatingBarVisible.asStateFlow()
+
+    /**
+     * Safely detaches a view from its parent ViewGroup to prevent "child already has a parent" errors.
+     */
+    fun detachFromParent(view: View?) {
+        try {
+            (view?.parent as? ViewGroup)?.removeView(view)
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Retrieves or creates the single shared YouTube WebView.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    fun getOrCreateYouTubeWebView(
+        context: Context,
+        shortsBlocked: Boolean = false,
+        allowSubscribedShorts: Boolean = false,
+        blockHomeFeed: Boolean = false,
+        searchBlocked: Boolean = false,
+        commentsBlocked: Boolean = false,
+        isAdBlockEnabled: Boolean = true,
+        currentPlaybackSpeed: Float = 1.0f,
+        onPageStartedCallback: ((String?) -> Unit)? = null,
+        onPageFinishedCallback: ((String?) -> Unit)? = null
+    ): WebView {
+        val existing = _youtubeWebView
+        if (existing != null) {
+            detachFromParent(existing)
+            return existing
+        }
+
+        val startUrl = if (blockHomeFeed) "https://www.youtube.com/feed/subscriptions" else "https://www.youtube.com/"
+
+        val webView = WebView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            WebViewTurboHelper.applyTurboSettings(this, isDesktopMode = false)
+
+            // JavaScript bridge to receive live playback status, duration, and video metadata from YouTube DOM
+            addJavascriptInterface(
+                object {
+                    @JavascriptInterface
+                    fun updatePlaybackState(playing: Boolean, isVideoActive: Boolean, title: String, durationSec: Double, currentTimeSec: Double, videoUrl: String) {
+                        scope.launch {
+                            _isYoutubePlaying.value = playing
+                            val isWatchUrl = videoUrl.contains("/watch") || videoUrl.contains("/shorts/") || videoUrl.contains("youtu.be/")
+                            val isFeedOrHome = (videoUrl.endsWith("youtube.com/") || videoUrl.endsWith("youtube.com") || videoUrl.contains("/feed/") || videoUrl.contains("/results")) && !isWatchUrl
+                            _isYoutubeVideoActive.value = (isVideoActive || playing || isWatchUrl) && !isFeedOrHome
+                            if (title.isNotBlank()) {
+                                _youtubeTitle.value = title.replace("- YouTube", "").trim()
+                            }
+                            if (durationSec > 0) {
+                                _youtubeDurationSeconds.value = durationSec.toLong()
+                            }
+                            if (currentTimeSec >= 0) {
+                                _youtubeCurrentTimeSeconds.value = currentTimeSec.toLong()
+                            }
+                            if (videoUrl.isNotBlank()) {
+                                _youtubeCurrentVideoUrl.value = videoUrl
+                            }
+                        }
+                    }
+
+                    @JavascriptInterface
+                    fun updateVideoDuration(sec: Double) {
+                        if (sec > 0) {
+                            scope.launch {
+                                _youtubeDurationSeconds.value = sec.toLong()
+                            }
+                        }
+                    }
+                },
+                "LifeOsYouTubeBridge"
+            )
+
+            val antiTubeJs = buildAntiTubeScript(
+                shortsBlocked = shortsBlocked,
+                allowSubscribedShorts = allowSubscribedShorts,
+                blockHomeFeed = blockHomeFeed,
+                searchBlocked = searchBlocked,
+                commentsBlocked = commentsBlocked,
+                isAdBlockEnabled = isAdBlockEnabled,
+                currentPlaybackSpeed = currentPlaybackSpeed
+            )
+
+            webViewClient = object : WebViewClient() {
+                private fun isAuthUrl(url: String?): Boolean {
+                    if (url == null) return false
+                    val lower = url.lowercase()
+                    return lower.contains("accounts.google") || lower.contains("accounts.youtube") || lower.contains("servicelogin") || lower.contains("signin") || lower.contains("myaccount.google")
+                }
+
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    val currentUrl = url ?: ""
+                    val isWatchUrl = currentUrl.contains("/watch") || currentUrl.contains("/shorts/") || currentUrl.contains("youtu.be/")
+                    val isFeedOrHome = (currentUrl.endsWith("youtube.com/") || currentUrl.endsWith("youtube.com") || currentUrl.contains("/feed/") || currentUrl.contains("/results")) && !isWatchUrl
+                    if (isWatchUrl) {
+                        _youtubeCurrentVideoUrl.value = currentUrl
+                        _isYoutubeVideoActive.value = true
+                    } else if (isFeedOrHome) {
+                        _isYoutubeVideoActive.value = false
+                    }
+                    onPageStartedCallback?.invoke(url)
+                    WebViewTurboHelper.injectSpeedOptimizations(view)
+                    if (!isAuthUrl(url)) {
+                        view?.evaluateJavascript(antiTubeJs, null)
+                    }
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    val currentUrl = url ?: ""
+                    val isWatchUrl = currentUrl.contains("/watch") || currentUrl.contains("/shorts/") || currentUrl.contains("youtu.be/")
+                    val isFeedOrHome = (currentUrl.endsWith("youtube.com/") || currentUrl.endsWith("youtube.com") || currentUrl.contains("/feed/") || currentUrl.contains("/results")) && !isWatchUrl
+                    if (isWatchUrl) {
+                        _youtubeCurrentVideoUrl.value = currentUrl
+                        _isYoutubeVideoActive.value = true
+                    } else if (isFeedOrHome) {
+                        _isYoutubeVideoActive.value = false
+                    }
+                    onPageFinishedCallback?.invoke(url)
+                    WebViewTurboHelper.injectSpeedOptimizations(view)
+                    if (!isAuthUrl(url)) {
+                        view?.evaluateJavascript(antiTubeJs, null)
+                    }
+                }
+
+                override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                    super.doUpdateVisitedHistory(view, url, isReload)
+                    val currentUrl = url ?: ""
+                    val isWatchUrl = currentUrl.contains("/watch") || currentUrl.contains("/shorts/") || currentUrl.contains("youtu.be/")
+                    val isFeedOrHome = (currentUrl.endsWith("youtube.com/") || currentUrl.endsWith("youtube.com") || currentUrl.contains("/feed/") || currentUrl.contains("/results")) && !isWatchUrl
+                    if (isWatchUrl) {
+                        _youtubeCurrentVideoUrl.value = currentUrl
+                        _isYoutubeVideoActive.value = true
+                    } else if (isFeedOrHome) {
+                        _isYoutubeVideoActive.value = false
+                    }
+                }
+
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                    val reqUrl = request?.url?.toString() ?: ""
+                    if (isAuthUrl(reqUrl) || reqUrl.contains("gstatic.com") || reqUrl.contains("google.com/recaptcha")) {
+                        return super.shouldInterceptRequest(view, request)
+                    }
+                    if (isAdBlockEnabled) {
+                        val blocked = WebViewTurboHelper.shouldBlockAdRequest(request)
+                        if (blocked != null) return blocked
+                    }
+                    return super.shouldInterceptRequest(view, request)
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val targetUrl = request?.url?.toString() ?: ""
+                    if (isAuthUrl(targetUrl)) {
+                        return false
+                    }
+                    if (blockHomeFeed && (targetUrl == "https://m.youtube.com/" || targetUrl == "https://www.youtube.com/")) {
+                        view?.loadUrl(startUrl)
+                        return true
+                    }
+                    if (shortsBlocked && !allowSubscribedShorts && targetUrl.contains("/shorts")) {
+                        view?.loadUrl(startUrl)
+                        return true
+                    }
+                    return false
+                }
+            }
+
+            loadUrl(startUrl)
+        }
+
+        _youtubeWebView = webView
+        return webView
+    }
+
+    /**
+     * Builds custom JavaScript injected into YouTube for background audio/video playback,
+     * visibility spoofing, duration & playback tracking, and ad-skipping.
+     */
+    fun buildAntiTubeScript(
+        shortsBlocked: Boolean,
+        allowSubscribedShorts: Boolean,
+        blockHomeFeed: Boolean,
+        searchBlocked: Boolean,
+        commentsBlocked: Boolean,
+        isAdBlockEnabled: Boolean,
+        currentPlaybackSpeed: Float
+    ): String {
+        return """
+        (function() {
+            try {
+                var h = (window.location && window.location.hostname) ? window.location.hostname : '';
+                var u = (window.location && window.location.href) ? window.location.href : '';
+                if (h.indexOf('accounts.google') !== -1 || h.indexOf('accounts.youtube') !== -1 || h.indexOf('myaccount.google') !== -1 || h.indexOf('ssl.gstatic') !== -1 || u.indexOf('ServiceLogin') !== -1 || u.indexOf('signin') !== -1) {
+                    return;
+                }
+            } catch(e) {}
+
+            window.__targetPlaybackSpeed = ${currentPlaybackSpeed};
+            window.__adBlockEnabled = ${isAdBlockEnabled};
+            window.__allowBgPlay = true;
+
+            try {
+                Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+            } catch(e) {}
+
+            ['visibilitychange', 'webkitvisibilitychange', 'blur', 'pagehide'].forEach(function(evt) {
+                window.addEventListener(evt, function(e) { e.stopImmediatePropagation(); }, true);
+                document.addEventListener(evt, function(e) { e.stopImmediatePropagation(); }, true);
+            });
+
+            // Monitor active video playback state and duration, report to Android bridge
+            if (!window.__lifeOsStateMonitor) {
+                window.__lifeOsStateMonitor = setInterval(function() {
+                    var v = document.querySelector('video');
+                    var title = document.title || '';
+                    var href = window.location.href || '';
+                    var isWatchOrShorts = href.indexOf('/watch') !== -1 || href.indexOf('/shorts/') !== -1 || href.indexOf('youtu.be/') !== -1;
+                    var isFeedOrHome = (href === 'https://www.youtube.com/' || href === 'https://m.youtube.com/' || href.indexOf('/feed/') !== -1 || href.indexOf('/results') !== -1) && !isWatchOrShorts;
+                    var duration = 0;
+                    var currentTime = 0;
+                    var isPlaying = false;
+                    var isVideoActive = false;
+
+                    if (v) {
+                        isPlaying = !v.paused && !v.ended && v.readyState > 2;
+                        var isPaused = v.paused && !v.ended;
+                        if (!isNaN(v.duration) && v.duration > 0 && isFinite(v.duration)) {
+                            duration = v.duration;
+                        }
+                        if (!isNaN(v.currentTime) && v.currentTime >= 0) {
+                            currentTime = v.currentTime;
+                        }
+                        if (isWatchOrShorts) {
+                            isVideoActive = true;
+                        } else if (!isFeedOrHome && (isPlaying || (isPaused && currentTime > 0))) {
+                            isVideoActive = true;
+                        } else {
+                            isVideoActive = false;
+                        }
+                    } else {
+                        isVideoActive = isWatchOrShorts;
+                    }
+
+                    if (duration === 0) {
+                        var durElem = document.querySelector('.ytp-time-duration, span.ytp-time-duration, .ytp-clip-duration');
+                        if (durElem && durElem.innerText) {
+                            var parts = durElem.innerText.trim().split(':').map(Number);
+                            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                                duration = parts[0] * 60 + parts[1];
+                            } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+                                duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+                            }
+                        }
+                    }
+                    if (window.LifeOsYouTubeBridge && window.LifeOsYouTubeBridge.updatePlaybackState) {
+                        window.LifeOsYouTubeBridge.updatePlaybackState(isPlaying, isVideoActive, title, duration, currentTime, href);
+                    }
+                }, 1000);
+            }
+
+            // Ad blocking styling & injection
+            var oldStyle = document.getElementById('antitube-styles');
+            if (oldStyle) oldStyle.remove();
+
+            var style = document.createElement('style');
+            style.id = 'antitube-styles';
+            var css = `
+                video {
+                    max-height: 100vh !important;
+                    object-fit: contain !important;
+                }
+            `;
+
+            ${if (isAdBlockEnabled) """
+                css += `
+                    .video-ads,
+                    .ytp-ad-module,
+                    .ytp-ad-overlay-container,
+                    .ytp-ad-image-overlay,
+                    .ytp-ad-text-overlay,
+                    .ytp-ad-skip-button-slot,
+                    .ad-container,
+                    .ad-div,
+                    #player-ads,
+                    ytd-promoted-sparkles-web-renderer,
+                    ytm-promoted-sparkles-web-renderer,
+                    ytd-display-ad-renderer,
+                    ytm-companion-ad-renderer,
+                    ytm-promoted-video-renderer,
+                    ytd-banner-promo-renderer,
+                    ytd-statement-banner-renderer,
+                    ytd-in-feed-ad-layout-renderer,
+                    ytm-in-feed-ad-layout-renderer,
+                    .sparkles-light-cta,
+                    #masthead-ad,
+                    ytd-ad-slot-renderer,
+                    ytm-ad-slot-renderer,
+                    .ad-showing,
+                    .ad-interrupting,
+                    ytm-promoted-item-renderer,
+                    .ytp-ad-overlay-open {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            ${if (shortsBlocked) """
+                css += `
+                    a[href*="/shorts/"],
+                    ytm-reel-shelf-renderer,
+                    ytd-reel-shelf-renderer,
+                    ytm-shorts-lockup-view-model,
+                    .pivot-shorts,
+                    [aria-label*="Shorts"] {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            ${if (blockHomeFeed) """
+                css += `
+                    ytd-browse[page-subtype="home"],
+                    ytm-browse[page-subtype="home"],
+                    a[aria-label*="Home"] {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            ${if (searchBlocked) """
+                css += `
+                    a[href*="/results"],
+                    .header-bar-search,
+                    ytd-searchbox,
+                    button[aria-label="Search"],
+                    button[aria-label="Search YouTube"],
+                    c3-icon[type="search"] {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            ${if (commentsBlocked) """
+                css += `
+                    #comments,
+                    ytm-comments-entry-point-header-renderer,
+                    ytd-comments {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            style.textContent = css;
+            (document.head || document.documentElement).appendChild(style);
+
+            // Auto click skip ad button
+            setInterval(function() {
+                var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-skip-ad-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button');
+                if (skipBtn) {
+                    try { skipBtn.click(); } catch(e) {}
+                }
+            }, 600);
+        })();
+        """.trimIndent()
+    }
+
+    /**
+     * Actively queries the WebView DOM for duration in seconds.
+     */
+    fun queryActiveVideoDuration(callback: (Long) -> Unit) {
+        val wv = _youtubeWebView
+        if (wv == null) {
+            callback(_youtubeDurationSeconds.value)
+            return
+        }
+        wv.evaluateJavascript(
+            """
+            (function() {
+                var v = document.querySelector('video');
+                if (v && !isNaN(v.duration) && v.duration > 0 && isFinite(v.duration)) {
+                    return Math.round(v.duration).toString();
+                }
+                var durElem = document.querySelector('.ytp-time-duration, span.ytp-time-duration');
+                if (durElem && durElem.innerText) {
+                    var parts = durElem.innerText.trim().split(':').map(Number);
+                    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                        return (parts[0] * 60 + parts[1]).toString();
+                    } else if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+                        return (parts[0] * 3600 + parts[1] * 60 + parts[2]).toString();
+                    }
+                }
+                return "0";
+            })()
+            """.trimIndent()
+        ) { result ->
+            val clean = result?.replace("\"", "")?.trim() ?: "0"
+            val sec = clean.toLongOrNull() ?: 0L
+            if (sec > 0) {
+                _youtubeDurationSeconds.value = sec
+            }
+            callback(if (sec > 0) sec else _youtubeDurationSeconds.value)
+        }
+    }
+
+    /**
+     * Retrieves or creates the single shared Spotify WebView.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    fun getOrCreateSpotifyWebView(
+        context: Context,
+        onPageStartedCallback: ((String?) -> Unit)? = null,
+        onPageFinishedCallback: ((String?) -> Unit)? = null
+    ): WebView {
+        val existing = _spotifyWebView
+        if (existing != null) {
+            detachFromParent(existing)
+            return existing
+        }
+
+        val webView = WebView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            WebViewTurboHelper.applyTurboSettings(
+                this,
+                isDesktopMode = true,
+                customUserAgent = WebViewTurboHelper.TURBO_SPOTIFY_WINDOWS_USER_AGENT
+            )
+
+            // Bridge to extract live Spotify track info
+            addJavascriptInterface(
+                object {
+                    @JavascriptInterface
+                    fun updateTrackInfo(title: String, artist: String, coverUrl: String, playing: Boolean, currentTime: Int, duration: Int) {
+                        scope.launch {
+                            _spotifyTrackTitle.value = title
+                            _spotifyArtist.value = artist
+                            _spotifyCoverUrl.value = coverUrl
+                            _isSpotifyPlaying.value = playing
+                            if (playing && title != "No track playing") {
+                                _isSpotifyFloatingBarVisible.value = true
+                            }
+                        }
+                    }
+                },
+                "SpotifyTrackBridge"
+            )
+
+            webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    onPageStartedCallback?.invoke(url)
+                    WebViewTurboHelper.injectSpeedOptimizations(view)
+                    injectSpotifyHelperJs(view)
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    onPageFinishedCallback?.invoke(url)
+                    WebViewTurboHelper.injectSpeedOptimizations(view)
+                    injectSpotifyHelperJs(view)
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val urlStr = request?.url?.toString()?.lowercase() ?: ""
+                    if (urlStr.contains("play.google.com") ||
+                        urlStr.contains("apps.apple.com") ||
+                        urlStr.contains("itunes.apple.com") ||
+                        urlStr.startsWith("market://")
+                    ) {
+                        return true
+                    }
+                    if (urlStr.startsWith("spotify:")) {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(urlStr)).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            context.startActivity(intent)
+                            return true
+                        } catch (_: Exception) {}
+                    }
+                    return super.shouldOverrideUrlLoading(view, request)
+                }
+
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                    val blocked = WebViewTurboHelper.shouldBlockAdRequest(request)
+                    if (blocked != null) return blocked
+                    return super.shouldInterceptRequest(view, request)
+                }
+            }
+
+            loadUrl("https://open.spotify.com")
+        }
+
+        _spotifyWebView = webView
+        return webView
+    }
+
+    private fun injectSpotifyHelperJs(view: WebView?) {
+        val js = """
+        (function() {
+            try {
+                Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+            } catch(e) {}
+
+            try {
+                var modernUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+                var modernAppVersion = '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+
+                Object.defineProperty(navigator, 'platform', { get: function() { return 'Win32'; }, configurable: true });
+                Object.defineProperty(navigator, 'vendor', { get: function() { return 'Google Inc.'; }, configurable: true });
+                Object.defineProperty(navigator, 'maxTouchPoints', { get: function() { return 0; }, configurable: true });
+                Object.defineProperty(navigator, 'userAgent', { get: function() { return modernUa; }, configurable: true });
+                Object.defineProperty(navigator, 'appVersion', { get: function() { return modernAppVersion; }, configurable: true });
+
+                var brandList = [
+                    { brand: 'Chromium', version: '134' },
+                    { brand: 'Google Chrome', version: '134' },
+                    { brand: 'Not:A-Brand', version: '24' }
+                ];
+
+                var fullVersionList = [
+                    { brand: 'Chromium', version: '134.0.6998.35' },
+                    { brand: 'Google Chrome', version: '134.0.6998.35' },
+                    { brand: 'Not:A-Brand', version: '24.0.0.0' }
+                ];
+
+                Object.defineProperty(navigator, 'userAgentData', {
+                    get: function() {
+                        return {
+                            brands: brandList,
+                            mobile: false,
+                            platform: 'Windows',
+                            getHighEntropyValues: function(hints) {
+                                return Promise.resolve({
+                                    architecture: 'x86',
+                                    bitness: '64',
+                                    brands: brandList,
+                                    fullVersionList: fullVersionList,
+                                    mobile: false,
+                                    model: '',
+                                    platform: 'Windows',
+                                    platformVersion: '15.0.0',
+                                    uaFullVersion: '134.0.6998.35'
+                                });
+                            }
+                        };
+                    },
+                    configurable: true
+                });
+
+                // Audio unlocker & unmuter for HTML5 audio elements in WebView
+                document.addEventListener('click', function() {
+                    try {
+                        if (window.AudioContext || window.webkitAudioContext) {
+                            var AudioCtx = window.AudioContext || window.webkitAudioContext;
+                            var ctx = new AudioCtx();
+                            if (ctx.state === 'suspended') ctx.resume();
+                        }
+                        var mediaElements = document.querySelectorAll('audio, video');
+                        mediaElements.forEach(function(el) {
+                            el.muted = false;
+                            el.volume = 1.0;
+                        });
+                    } catch(e) {}
+                }, { passive: true, capture: true });
+
+                if (navigator.mediaCapabilities) {
+                    navigator.mediaCapabilities.decodingInfo = function(config) {
+                        return Promise.resolve({
+                            supported: true,
+                            smooth: true,
+                            powerEfficient: true,
+                            keySystemAccess: null
+                        });
+                    };
+                }
+
+                if (window.MediaSource && MediaSource.isTypeSupported) {
+                    var origIsType = MediaSource.isTypeSupported;
+                    MediaSource.isTypeSupported = function(t) {
+                        if (t && (t.includes('audio') || t.includes('webm') || t.includes('mp4') || t.includes('aac') || t.includes('opus') || t.includes('ogg') || t.includes('mpeg'))) {
+                            return true;
+                        }
+                        return origIsType ? origIsType.call(MediaSource, t) : true;
+                    };
+                }
+
+                if (window.HTMLMediaElement && HTMLMediaElement.prototype.canPlayType) {
+                    var origCanPlay = HTMLMediaElement.prototype.canPlayType;
+                    HTMLMediaElement.prototype.canPlayType = function(t) {
+                        if (t && (t.includes('audio') || t.includes('mp4') || t.includes('webm') || t.includes('ogg') || t.includes('mpeg') || t.includes('aac') || t.includes('opus'))) {
+                            return 'probably';
+                        }
+                        return origCanPlay ? origCanPlay.call(this, t) : 'maybe';
+                    };
+                }
+            } catch(e) {}
+
+            // Anti-Outdated Browser / App Download / Warning banner injection
+            try {
+                if (!document.getElementById('anti-outdated-spotify-style')) {
+                    var st = document.createElement('style');
+                    st.id = 'anti-outdated-spotify-style';
+                    st.innerHTML = `
+                        a[href*="/download"],
+                        a[href*="spotify.com/download"],
+                        a[href*="open.spotify.com/download"],
+                        a[href*="play.google.com/store/apps/details?id=com.spotify"],
+                        a[href*="apps.apple.com"],
+                        a[href*="itunes.apple.com"],
+                        a[href*="spotify.link"],
+                        a[href*="download.spotify.com"],
+                        [data-testid="install-app-button"],
+                        [data-testid="download-app-button"],
+                        [data-testid="top-bar-install-button"],
+                        [data-testid="top-bar-download-button"],
+                        [data-testid="navigation-item-download"],
+                        [data-testid="navigation-item-install"],
+                        [data-testid="smart-banner"],
+                        [data-testid="app-banner"],
+                        [data-testid="download-banner"],
+                        [data-testid="mobile-app-banner"],
+                        [data-testid="open-in-app"],
+                        [data-testid="open-app-banner"],
+                        [data-testid="app-upsell-banner"],
+                        [data-testid="native-app-prompt"],
+                        .main-topBar-downloadApp,
+                        .main-topBar-InstallApp,
+                        .main-topBar-installApp,
+                        .smart-banner,
+                        .app-banner,
+                        .download-banner,
+                        [aria-label*="Install App" i],
+                        [aria-label*="Download App" i],
+                        [aria-label*="Install Spotify" i],
+                        [aria-label*="Download Spotify" i],
+                        [aria-label*="Get the app" i],
+                        [aria-label*="Get app" i],
+                        [aria-label*="Open App" i],
+                        [aria-label*="Open in app" i],
+                        [aria-label*="Install" i],
+                        [aria-label*="Download" i],
+                        div[class*="SmartBanner"],
+                        div[class*="smartBanner"],
+                        div[class*="DownloadBanner"],
+                        div[class*="downloadBanner"],
+                        div[class*="AppBanner"],
+                        div[class*="appBanner"],
+                        div[class*="InstallBanner"],
+                        div[class*="installBanner"],
+                        [data-testid="unsupported-browser-banner"],
+                        [data-testid="unsupported-browser-page"],
+                        [data-testid="browser-not-supported"],
+                        .browser-not-supported,
+                        #unsupported-browser,
+                        div[class*="UnsupportedBrowser"],
+                        div[class*="unsupportedBrowser"],
+                        div[class*="Unsupported"],
+                        div[class*="ProtectedContent"],
+                        div[class*="protectedContent"],
+                        div[class*="EmeError"] {
+                            display: none !important;
+                            visibility: hidden !important;
+                            height: 0 !important;
+                            width: 0 !important;
+                            opacity: 0 !important;
+                            pointer-events: none !important;
+                        }
+                    `;
+                    (document.head || document.documentElement).appendChild(st);
+                }
+            } catch(e) {}
+
+            ['visibilitychange', 'webkitvisibilitychange', 'blur', 'pagehide'].forEach(function(evt) {
+                window.addEventListener(evt, function(e) { e.stopImmediatePropagation(); }, true);
+                document.addEventListener(evt, function(e) { e.stopImmediatePropagation(); }, true);
+            });
+
+            if (!window.__spotifyObserverAttached) {
+                window.__spotifyObserverAttached = true;
+                setInterval(function() {
+                    try {
+                        var titleElem = document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"] a') ||
+                                        document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-title"]') ||
+                                        document.querySelector('a[data-testid="now-playing-track-link"]');
+                        var artistElem = document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"] a') ||
+                                         document.querySelector('[data-testid="now-playing-widget"] [data-testid="context-item-info-artist"]');
+                        var imgElem = document.querySelector('[data-testid="now-playing-widget"] img') ||
+                                      document.querySelector('[data-testid="cover-art-image"]');
+                        var playBtn = document.querySelector('[data-testid="control-button-playpause"]');
+
+                        var title = titleElem ? titleElem.innerText.trim() : "No track playing";
+                        var artist = artistElem ? artistElem.innerText.trim() : "Spotify Web";
+                        var coverUrl = imgElem ? imgElem.src : "";
+                        var isPlaying = playBtn ? (playBtn.getAttribute('aria-label') === 'Pause' || playBtn.getAttribute('data-testid') === 'control-button-pause') : false;
+
+                        if (window.SpotifyTrackBridge && window.SpotifyTrackBridge.updateTrackInfo) {
+                            window.SpotifyTrackBridge.updateTrackInfo(title, artist, coverUrl, isPlaying, 0, 0);
+                        }
+                    } catch(err) {}
+                }, 1500);
+            }
+        })();
+        """.trimIndent()
+        view?.evaluateJavascript(js, null)
+    }
+
+    // --- Control Actions ---
+
+    fun toggleYoutubePlayPause() {
+        _youtubeWebView?.evaluateJavascript(
+            "var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); }",
+            null
+        )
+    }
+
+    fun seekYoutube(secondsOffset: Int) {
+        _youtubeWebView?.evaluateJavascript(
+            "var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, Math.min(v.duration || 999999, v.currentTime + ($secondsOffset)));",
+            null
+        )
+    }
+
+    fun toggleYoutubeMute() {
+        val nextMuted = !_isYoutubeMuted.value
+        _isYoutubeMuted.value = nextMuted
+        _youtubeWebView?.evaluateJavascript(
+            "var v = document.querySelector('video'); if (v) v.muted = $nextMuted;",
+            null
+        )
+    }
+
+    fun setYoutubePlaybackSpeed(speed: Float) {
+        _youtubeWebView?.evaluateJavascript(
+            "var v = document.querySelector('video'); if (v) v.playbackRate = $speed;",
+            null
+        )
+    }
+
+    fun toggleSpotifyPlayPause() {
+        _spotifyWebView?.evaluateJavascript(
+            "var btn = document.querySelector('[data-testid=\"control-button-playpause\"]'); if (btn) btn.click();",
+            null
+        )
+    }
+
+    fun setYoutubePipActive(active: Boolean) {
+        _isYoutubePipActive.value = active
+    }
+
+    fun setYoutubePipSize(size: String) {
+        _youtubePipSize.value = size
+    }
+
+    fun setSpotifyFloatingBarVisible(visible: Boolean) {
+        _isSpotifyFloatingBarVisible.value = visible
+    }
+
+    /**
+     * Retrieves or creates the single shared Instagram WebView.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    fun getOrCreateInstagramWebView(
+        context: Context,
+        reelsBlocked: Boolean = false,
+        storiesBlocked: Boolean = false,
+        messagesBlocked: Boolean = false,
+        exploreBlocked: Boolean = false,
+        notificationsBlocked: Boolean = false,
+        allowSharedReels: Boolean = true,
+        onPageStartedCallback: ((String?) -> Unit)? = null,
+        onPageFinishedCallback: ((String?) -> Unit)? = null
+    ): WebView {
+        val existing = _instagramWebView
+        if (existing != null) {
+            detachFromParent(existing)
+            return existing
+        }
+
+        val homeOrDmUrl = if (reelsBlocked && storiesBlocked) "https://www.instagram.com/direct/inbox/" else "https://www.instagram.com/"
+
+        val webView = WebView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            WebViewTurboHelper.applyTurboSettings(this, isDesktopMode = false)
+
+            val antiGramJs = buildAntiGramScript(
+                reelsBlocked = reelsBlocked,
+                storiesBlocked = storiesBlocked,
+                messagesBlocked = messagesBlocked,
+                exploreBlocked = exploreBlocked,
+                notificationsBlocked = notificationsBlocked,
+                allowSharedReels = allowSharedReels,
+                homeOrDmUrl = homeOrDmUrl
+            )
+
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                    val blocked = WebViewTurboHelper.shouldBlockAdRequest(request)
+                    if (blocked != null) return blocked
+                    return super.shouldInterceptRequest(view, request)
+                }
+
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    onPageStartedCallback?.invoke(url)
+                    WebViewTurboHelper.injectSpeedOptimizations(view)
+                    view?.evaluateJavascript(antiGramJs, null)
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    onPageFinishedCallback?.invoke(url)
+                    WebViewTurboHelper.injectSpeedOptimizations(view)
+                    view?.evaluateJavascript(antiGramJs, null)
+                }
+
+                override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                    super.doUpdateVisitedHistory(view, url, isReload)
+                    view?.evaluateJavascript(antiGramJs, null)
+                }
+
+                override fun onPageCommitVisible(view: WebView?, url: String?) {
+                    super.onPageCommitVisible(view, url)
+                    view?.evaluateJavascript(antiGramJs, null)
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val targetUrl = request?.url?.toString() ?: ""
+                    if (reelsBlocked && storiesBlocked && (targetUrl == "https://www.instagram.com/" || targetUrl == "https://www.instagram.com")) {
+                        view?.loadUrl("https://www.instagram.com/direct/inbox/")
+                        return true
+                    }
+                    if (reelsBlocked && !allowSharedReels && targetUrl.contains("/reels")) {
+                        view?.loadUrl(homeOrDmUrl)
+                        return true
+                    }
+                    return false
+                }
+            }
+
+            loadUrl(homeOrDmUrl)
+        }
+        _instagramWebView = webView
+        return webView
+    }
+
+    /**
+     * Builds lightweight, high-performance CSS and JS injection for Instagram.
+     * Uses native CSS engine rules (0ms overhead) to eliminate DOM querying bottlenecks.
+     */
+    fun buildAntiGramScript(
+        reelsBlocked: Boolean,
+        storiesBlocked: Boolean,
+        messagesBlocked: Boolean,
+        exploreBlocked: Boolean,
+        notificationsBlocked: Boolean,
+        allowSharedReels: Boolean,
+        homeOrDmUrl: String
+    ): String {
+        return """
+        (function() {
+            var oldStyle = document.getElementById('antigram-styles');
+            if (oldStyle) oldStyle.remove();
+
+            var style = document.createElement('style');
+            style.id = 'antigram-styles';
+            var css = `
+                /* Base performance styling */
+                video { max-height: 100vh !important; }
+                a[href*="threads"], a[href*="meta_ai"], [aria-label*="Threads"], [aria-label*="Meta AI"], svg[aria-label*="Threads"], svg[aria-label*="Meta AI"] {
+                    display: none !important;
+                }
+            `;
+
+            ${if (reelsBlocked) """
+                css += `
+                    a[href*="/reels"],
+                    a[href*="/reel/"],
+                    [aria-label*="Reels"],
+                    [aria-label*="reels"],
+                    svg[aria-label*="Reels"],
+                    svg[aria-label*="reels"],
+                    div[role="tab"]:has(a[href*="/reels"]),
+                    div[role="tab"]:has(a[href*="/reel/"]),
+                    article:has(video),
+                    article:has(a[href*="/reel/"]),
+                    article:has(a[href*="/reels/"]) {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            ${if (storiesBlocked) """
+                css += `
+                    a[href*="/stories"],
+                    div[role="menu"]:has(a[href*="/stories"]),
+                    div:has(> a[href*="/stories"]),
+                    ul:has(a[href*="/stories"]) {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            ${if (messagesBlocked) """
+                css += `
+                    a[href*="/direct"],
+                    a[aria-label*="Direct"],
+                    a[aria-label*="Messenger"],
+                    svg[aria-label*="Direct"],
+                    svg[aria-label*="Messenger"],
+                    div[role="tab"]:has(a[href*="/direct"]) {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            ${if (exploreBlocked) """
+                css += `
+                    a[href*="/explore"],
+                    a[aria-label*="Explore"],
+                    a[aria-label*="Search"],
+                    svg[aria-label*="Explore"],
+                    svg[aria-label*="Search"],
+                    div[role="tab"]:has(a[href*="/explore"]) {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            ${if (notificationsBlocked) """
+                css += `
+                    a[href*="/accounts/activity"],
+                    a[href*="/activity"],
+                    a[aria-label*="Notifications"],
+                    a[aria-label*="Activity"],
+                    svg[aria-label*="Notifications"],
+                    svg[aria-label*="Activity Feed"],
+                    svg[aria-label*="Like"],
+                    div[role="tab"]:has(a[href*="/activity"]) {
+                        display: none !important;
+                    }
+                `;
+            """ else ""}
+
+            style.textContent = css;
+            (document.head || document.documentElement).appendChild(style);
+
+            // Fast route guard
+            function checkRoute() {
+                var path = window.location.pathname || '';
+                if (${reelsBlocked && storiesBlocked} && (path === '/' || path === '' || path === '/index.html')) {
+                    window.location.href = 'https://www.instagram.com/direct/inbox/';
+                    return;
+                }
+                if (${reelsBlocked} && !${allowSharedReels} && (path.startsWith('/reels') || path.startsWith('/reel'))) {
+                    window.location.href = '${homeOrDmUrl}';
+                    return;
+                }
+                if (${storiesBlocked} && path.startsWith('/stories')) {
+                    window.location.href = '${homeOrDmUrl}';
+                    return;
+                }
+                if (${exploreBlocked} && path.startsWith('/explore')) {
+                    window.location.href = '${homeOrDmUrl}';
+                    return;
+                }
+                if (${notificationsBlocked} && (path.startsWith('/accounts/activity') || path.startsWith('/activity'))) {
+                    window.location.href = '${homeOrDmUrl}';
+                    return;
+                }
+            }
+
+            checkRoute();
+
+            if (!window.__antigramPatched) {
+                window.__antigramPatched = true;
+                var origPushState = history.pushState;
+                history.pushState = function() {
+                    origPushState.apply(this, arguments);
+                    checkRoute();
+                };
+                var origReplaceState = history.replaceState;
+                history.replaceState = function() {
+                    origReplaceState.apply(this, arguments);
+                    checkRoute();
+                };
+                window.addEventListener('popstate', checkRoute);
+            }
+        })();
+        """.trimIndent()
+    }
+
+    fun closeYoutube() {
+        _isYoutubePipActive.value = false
+        _youtubeWebView?.evaluateJavascript("var v = document.querySelector('video'); if (v) v.pause();", null)
+    }
+
+    fun closeSpotify() {
+        _isSpotifyFloatingBarVisible.value = false
+        _spotifyWebView?.evaluateJavascript("var btn = document.querySelector('[data-testid=\"control-button-playpause\"][aria-label=\"Pause\"]'); if (btn) btn.click();", null)
+    }
+}
