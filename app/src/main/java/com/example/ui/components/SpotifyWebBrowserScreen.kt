@@ -1034,7 +1034,25 @@ fun SpotifyWebBrowserScreen(
                                         } else if (activeStreamingTrack != null) {
                                             playOnlineStreamTrack(activeStreamingTrack!!)
                                         } else {
-                                            streamDetectedWebTrack(displayTitle, displayArtist)
+                                            // Toggle Spotify Web Player Play/Pause button directly
+                                            webViewInstance?.evaluateJavascript(
+                                                """
+                                                (function() {
+                                                    var playBtn = document.querySelector('button[data-testid="control-button-playpause"]') ||
+                                                                  document.querySelector('[data-testid="control-button-playpause"]') ||
+                                                                  document.querySelector('button[aria-label="Play"], button[aria-label="Pause"]');
+                                                    if (playBtn) {
+                                                        playBtn.click();
+                                                    } else {
+                                                        var audio = document.querySelector('audio');
+                                                        if (audio) {
+                                                            if (audio.paused) audio.play(); else audio.pause();
+                                                        }
+                                                    }
+                                                })();
+                                                """.trimIndent(),
+                                                null
+                                            )
                                         }
                                     },
                                     modifier = Modifier
@@ -1043,7 +1061,7 @@ fun SpotifyWebBrowserScreen(
                                         .background(Color(0xFF1DB954))
                                 ) {
                                     Icon(
-                                        if (isOfflinePlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        if (isOfflinePlaying || isWebTrackPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                         contentDescription = "Play Audio",
                                         tint = Color.Black,
                                         modifier = Modifier.size(22.dp)
@@ -1233,12 +1251,12 @@ fun SpotifyWebBrowserScreen(
                                     @JavascriptInterface
                                     fun updateTrackInfo(title: String, artist: String, coverUrl: String, playing: Boolean, currentTime: Int, duration: Int) {
                                         scope.launch(Dispatchers.Main) {
-                                            if (title.isNotBlank()) currentTrackTitle = title
-                                            if (artist.isNotBlank()) currentArtistName = artist
-                                            if (coverUrl.isNotBlank()) currentCoverArtUrl = coverUrl
-                                            isWebTrackPlaying = playing
-                                            trackCurrentTimeSec = currentTime
-                                            if (duration > 0) trackDurationSec = duration
+                                            if (title.isNotBlank() && title != currentTrackTitle) currentTrackTitle = title
+                                            if (artist.isNotBlank() && artist != currentArtistName) currentArtistName = artist
+                                            if (coverUrl.isNotBlank() && coverUrl != currentCoverArtUrl) currentCoverArtUrl = coverUrl
+                                            if (isWebTrackPlaying != playing) isWebTrackPlaying = playing
+                                            if (kotlin.math.abs(trackCurrentTimeSec - currentTime) >= 1) trackCurrentTimeSec = currentTime
+                                            if (duration > 0 && trackDurationSec != duration) trackDurationSec = duration
                                         }
                                     }
                                 },
@@ -1249,7 +1267,7 @@ fun SpotifyWebBrowserScreen(
                                 private fun injectWindowsSpoofAndAntiPremium(view: WebView?) {
                                     val script = """
                                     (function() {
-                                        // 1. Windows Browser Device & Modern Chrome 134 Engine Spoofing
+                                        // 1. Authentic Windows 10/11 Desktop Chrome 134 Engine Spoofing
                                         try {
                                             var modernUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
                                             var modernAppVersion = '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
@@ -1259,17 +1277,25 @@ fun SpotifyWebBrowserScreen(
                                             Object.defineProperty(navigator, 'maxTouchPoints', { get: function() { return 0; }, configurable: true });
                                             Object.defineProperty(navigator, 'userAgent', { get: function() { return modernUa; }, configurable: true });
                                             Object.defineProperty(navigator, 'appVersion', { get: function() { return modernAppVersion; }, configurable: true });
+                                            Object.defineProperty(navigator, 'oscpu', { get: function() { return 'Windows NT 10.0; Win64; x64'; }, configurable: true });
+                                            Object.defineProperty(navigator, 'deviceMemory', { get: function() { return 8; }, configurable: true });
+                                            Object.defineProperty(navigator, 'hardwareConcurrency', { get: function() { return 8; }, configurable: true });
+                                            Object.defineProperty(navigator, 'webdriver', { get: function() { return false; }, configurable: true });
+                                            Object.defineProperty(navigator, 'cookieEnabled', { get: function() { return true; }, configurable: true });
+                                            Object.defineProperty(navigator, 'pdfViewerEnabled', { get: function() { return true; }, configurable: true });
+                                            Object.defineProperty(navigator, 'languages', { get: function() { return ['en-US', 'en']; }, configurable: true });
+                                            Object.defineProperty(navigator, 'language', { get: function() { return 'en-US'; }, configurable: true });
 
                                             var brandList = [
-                                                { brand: 'Chromium', version: '134' },
                                                 { brand: 'Google Chrome', version: '134' },
-                                                { brand: 'Not:A-Brand', version: '24' }
+                                                { brand: 'Chromium', version: '134' },
+                                                { brand: 'Not_A Brand', version: '24' }
                                             ];
 
                                             var fullVersionList = [
-                                                { brand: 'Chromium', version: '134.0.6998.35' },
                                                 { brand: 'Google Chrome', version: '134.0.6998.35' },
-                                                { brand: 'Not:A-Brand', version: '24.0.0.0' }
+                                                { brand: 'Chromium', version: '134.0.6998.35' },
+                                                { brand: 'Not_A Brand', version: '24.0.0.0' }
                                             ];
 
                                             Object.defineProperty(navigator, 'userAgentData', {
@@ -1290,97 +1316,81 @@ fun SpotifyWebBrowserScreen(
                                                                 platformVersion: '15.0.0',
                                                                 uaFullVersion: '134.0.6998.35'
                                                             });
+                                                        },
+                                                        toJSON: function() {
+                                                            return {
+                                                                brands: brandList,
+                                                                mobile: false,
+                                                                platform: 'Windows'
+                                                            };
                                                         }
                                                     };
                                                 },
                                                 configurable: true
                                             });
 
-                                            // Polyfill EME (Encrypted Media Extensions) to resolve Spotify DRM & "Unsupported Browser" checks
-                                            if (!navigator.requestMediaKeySystemAccess || !window.__spotifyEmeShimmed) {
-                                                window.__spotifyEmeShimmed = true;
-                                                var origReq = navigator.requestMediaKeySystemAccess;
-                                                navigator.requestMediaKeySystemAccess = function(keySystem, supportedConfigurations) {
-                                                    if (keySystem === 'com.widevine.alpha' || keySystem === 'org.w3.clearkey' || (keySystem && keySystem.indexOf('widevine') !== -1)) {
-                                                        return Promise.resolve({
-                                                            keySystem: keySystem,
-                                                            createMediaKeys: function() {
-                                                                return Promise.resolve({
-                                                                    createSession: function() {
-                                                                        return {
-                                                                            generateRequest: function() { return Promise.resolve(); },
-                                                                            load: function() { return Promise.resolve(true); },
-                                                                            update: function() { return Promise.resolve(); },
-                                                                            close: function() { return Promise.resolve(); },
-                                                                            remove: function() { return Promise.resolve(); },
-                                                                            closed: new Promise(function() {}),
-                                                                            keyStatuses: new Map(),
-                                                                            addEventListener: function() {},
-                                                                            removeEventListener: function() {},
-                                                                            dispatchEvent: function() { return true; }
-                                                                        };
-                                                                    },
-                                                                    setServerCertificate: function() { return Promise.resolve(true); }
-                                                                });
-                                                            },
-                                                            getConfiguration: function() {
-                                                                return (supportedConfigurations && supportedConfigurations[0]) || {
-                                                                    initDataTypes: ['cenc', 'keyids', 'webm'],
-                                                                    audioCapabilities: [
-                                                                        { contentType: 'audio/mp4; codecs="mp4a.40.2"' },
-                                                                        { contentType: 'audio/webm; codecs="opus"' }
-                                                                    ]
-                                                                };
-                                                            }
-                                                        });
+                                            // Chrome runtime object
+                                            if (!window.chrome) {
+                                                window.chrome = {
+                                                    app: { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' } },
+                                                    runtime: {
+                                                        OnInstalledReason: { CHROME_UPDATE: 'chrome_update', INSTALL: 'install', SHARED_MODULE_UPDATE: 'shared_module_update', UPDATE: 'update' },
+                                                        OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic' },
+                                                        PlatformArch: { ARM: 'arm', ARM64: 'arm64', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+                                                        PlatformNaclArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+                                                        PlatformOs: { ANDROID: 'android', CROS: 'cros', LINUX: 'linux', MAC: 'mac', OPENBSD: 'openbsd', WIN: 'win' },
+                                                        RequestUpdateCheckStatus: { NO_UPDATE: 'no_update', THROTTLED: 'throttled', UPDATE_AVAILABLE: 'update_available' }
                                                     }
-                                                    if (origReq) return origReq.apply(navigator, arguments);
-                                                    return Promise.reject(new Error('Unsupported keySystem'));
                                                 };
                                             }
 
-                                            // Media capabilities & codecs polyfills for audio playback
-                                            if (navigator.mediaCapabilities) {
-                                                navigator.mediaCapabilities.decodingInfo = function(config) {
-                                                    return Promise.resolve({
-                                                        supported: true,
-                                                        smooth: true,
-                                                        powerEfficient: true,
-                                                        keySystemAccess: {
-                                                            keySystem: 'com.widevine.alpha',
-                                                            createMediaKeys: function() { return Promise.resolve({}); }
-                                                        }
+                                            // Desktop Resolution Spoofing
+                                            try {
+                                                Object.defineProperty(screen, 'width', { get: function() { return 1920; }, configurable: true });
+                                                Object.defineProperty(screen, 'height', { get: function() { return 1080; }, configurable: true });
+                                                Object.defineProperty(screen, 'availWidth', { get: function() { return 1920; }, configurable: true });
+                                                Object.defineProperty(screen, 'availHeight', { get: function() { return 1040; }, configurable: true });
+                                                Object.defineProperty(screen, 'colorDepth', { get: function() { return 24; }, configurable: true });
+                                                Object.defineProperty(screen, 'pixelDepth', { get: function() { return 24; }, configurable: true });
+                                            } catch(e) {}
+
+                                            // Background execution persistence
+                                            Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                                            Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+
+                                            // Audio unlocker & unmuter for HTML5 audio
+                                            document.addEventListener('click', function() {
+                                                try {
+                                                    if (window.AudioContext || window.webkitAudioContext) {
+                                                        var AudioCtx = window.AudioContext || window.webkitAudioContext;
+                                                        var ctx = new AudioCtx();
+                                                        if (ctx.state === 'suspended') ctx.resume();
+                                                    }
+                                                    var mediaElements = document.querySelectorAll('audio, video');
+                                                    mediaElements.forEach(function(el) {
+                                                        el.muted = false;
+                                                        el.volume = 1.0;
                                                     });
-                                                };
-                                            }
+                                                } catch(e) {}
+                                            }, { passive: true, capture: true });
 
-                                            if (window.MediaSource && MediaSource.isTypeSupported) {
-                                                var origIsType = MediaSource.isTypeSupported;
-                                                MediaSource.isTypeSupported = function(t) {
-                                                    if (t && (t.includes('audio') || t.includes('webm') || t.includes('mp4') || t.includes('aac') || t.includes('opus') || t.includes('ogg') || t.includes('mpeg'))) {
-                                                        return true;
-                                                    }
-                                                    return origIsType ? origIsType.call(MediaSource, t) : true;
-                                                };
-                                            }
-
-                                            if (window.HTMLMediaElement && HTMLMediaElement.prototype.canPlayType) {
-                                                var origCanPlay = HTMLMediaElement.prototype.canPlayType;
-                                                HTMLMediaElement.prototype.canPlayType = function(t) {
-                                                    if (t && (t.includes('audio') || t.includes('mp4') || t.includes('webm') || t.includes('ogg') || t.includes('mpeg') || t.includes('aac') || t.includes('opus'))) {
-                                                        return 'probably';
-                                                    }
-                                                    return origCanPlay ? origCanPlay.call(this, t) : 'maybe';
-                                                };
-                                            }
                                         } catch(e) {}
 
-                                        // 2. High-Performance CSS injection for blocking Ads, App Download Modals & Unsupported Browser Banners
+                                        // 2. High-Performance CSS injection for buttery smooth scrolling & Ad/Upsell Blocking
                                         try {
                                             if (!document.getElementById('anti-premium-style')) {
                                                 var style = document.createElement('style');
                                                 style.id = 'anti-premium-style';
                                                 style.innerHTML = `
+                                                    html, body {
+                                                        -webkit-overflow-scrolling: touch !important;
+                                                        scroll-behavior: smooth !important;
+                                                        overscroll-behavior-y: contain !important;
+                                                    }
+                                                    * {
+                                                        -webkit-tap-highlight-color: transparent !important;
+                                                    }
+
                                                     /* App Download & Store links removal */
                                                     a[href*="/download"],
                                                     a[href*="spotify.com/download"],

@@ -1,6 +1,9 @@
 package com.example.util
 
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -16,7 +19,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
 import android.view.animation.AnimationSet
@@ -25,6 +27,9 @@ import android.view.animation.ScaleAnimation
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.app.NotificationCompat
+import com.example.R
+import com.example.receiver.TimerNotificationReceiver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,18 +48,23 @@ import java.util.Locale
  * Capabilities:
  * 1. Screen Status (Keep Screen On / Display Awake) during active focus sessions.
  * 2. Auto Ultra-Low Screen Brightness in Full Screen:
- *    - In Full Screen Timer mode (both Home Screen Idle zoom and Timer tab full screen), display automatically dims to lowest possible level (0.01f) keeping digits, clock time, and battery legible.
- *    - Touching or interacting with the screen immediately restores brightness back to normal!
+ *    - In Full Screen Timer mode (both Home Screen Idle zoom and Timer tab full screen), display automatically dims to a comfortable low level (0.08f) keeping digits, clock time, and battery legible while conserving power.
+ *    - Touching or interacting with the screen anywhere immediately restores brightness back to normal!
  * 3. 10-Second Home Screen Idle Detection:
  *    - Automatically monitors when the user is on the Home Screen (Launcher or App Home).
  *    - If 10 seconds elapse with NO touch/interaction during active focus, smoothly zooms into Full-Screen Timer display mode with centered digits, clock time, and battery level.
- *    - When the screen is touched or interacted with, smoothly shrinks back to normal home screen and OSD, restoring normal brightness and resetting the 10s idle counter.
+ *    - When the screen is touched or interacted with anywhere, immediately dismisses and returns back to the normal home screen.
  *    - Strictly checks that the device is on the Home Screen — if any other app is opened or active, full-screen mode is completely suppressed!
+ * 4. Dedicated Full-Screen Active Notification:
+ *    - Displays an ongoing status notification with a 1-tap "✕ Close Full Screen" button while full screen is active.
  */
 object FocusDisplayManager {
 
     private const val TAG = "FocusDisplayManager"
     const val PREFS_NAME = "app_prefs"
+
+    const val FULLSCREEN_NOTIF_CHANNEL_ID = "lifeos_fullscreen_overlay_channel"
+    const val FULLSCREEN_NOTIF_ID = 10005
 
     // Preference keys
     const val KEY_FOCUS_KEEP_SCREEN_ON = "focus_keep_screen_on"
@@ -103,12 +113,12 @@ object FocusDisplayManager {
     }
 
     /**
-     * Records a user interaction, resetting the idle countdown.
-     * If full-screen idle overlay is visible, dismisses it and returns to normal home screen with normal brightness.
+     * Records a user interaction anywhere, resetting the idle countdown.
+     * If full-screen idle overlay is visible, dismisses it immediately.
      */
     fun notifyUserInteracted(context: Context? = null) {
         lastInteractionTimestamp = System.currentTimeMillis()
-        if (isFullScreenIdleActive) {
+        if (isFullScreenIdleActive || fullScreenView != null) {
             dismissFullScreenIdleTimer(context ?: appContext)
         }
     }
@@ -161,7 +171,7 @@ object FocusDisplayManager {
         idleMonitorJob?.cancel()
         idleMonitorJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
-                delay(500) // check twice a second
+                delay(400)
                 try {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     val isFeatureEnabled = prefs.getSafeBoolean(KEY_AUTO_FULLSCREEN_ON_HOME_IDLE, true)
@@ -171,33 +181,34 @@ object FocusDisplayManager {
                     val isTimerActive = FocusTimerManager.isTimerRunning.value
                     val isStopwatchActive = FocusTimerManager.isStopwatchActive.value
                     val isPaused = FocusTimerManager.isPaused.value
-                    val hasActiveSession = isTimerActive || isStopwatchActive || isPaused
+                    // When a session is paused or not actively running, full-screen is paused/suppressed
+                    val isSessionRunning = (isTimerActive || isStopwatchActive) && !isPaused
 
-                    if (!isFeatureEnabled || !hasActiveSession) {
-                        if (isFullScreenIdleActive) {
+                    if (!isFeatureEnabled || !isSessionRunning) {
+                        if (isFullScreenIdleActive || fullScreenView != null) {
                             dismissFullScreenIdleTimer(context)
                         }
+                        lastInteractionTimestamp = System.currentTimeMillis()
                         continue
                     }
 
-                    // Check if current view is Home Screen (App Home or Device Launcher)
+                    // Check if current view is strictly Home Screen (App Home or Device Launcher)
                     val isHome = isDeviceHomeScreenOrAppHome(context)
                     if (!isHome) {
-                        // If user is inside another app (e.g. Chrome, WhatsApp, Notes), immediately suppress/dismiss full screen
-                        if (isFullScreenIdleActive) {
+                        // If user is inside another app (e.g. Chrome, WhatsApp, Notes, Instagram), immediately dismiss full screen
+                        if (isFullScreenIdleActive || fullScreenView != null) {
                             dismissFullScreenIdleTimer(context)
                         }
-                        lastInteractionTimestamp = System.currentTimeMillis() // reset idle countdown while in other apps
+                        lastInteractionTimestamp = System.currentTimeMillis()
                         continue
                     }
 
                     val elapsedSinceInteraction = System.currentTimeMillis() - lastInteractionTimestamp
 
                     if (elapsedSinceInteraction >= idleThresholdMs) {
-                        if (!isFullScreenIdleActive) {
+                        if (!isFullScreenIdleActive && fullScreenView == null) {
                             showFullScreenIdleTimer(context)
                         } else {
-                            // Update active text and numbers
                             updateDigitsText()
                         }
                     }
@@ -209,27 +220,27 @@ object FocusDisplayManager {
     }
 
     /**
-     * Checks if the device is currently showing the Home Screen (Launcher) or the LifeOS App Home Screen.
+     * Strictly checks if the device is currently showing the Home Screen (Launcher) or the LifeOS App Home Screen.
+     * If another app is open, returns false to prevent interrupting the user.
      */
     private fun isDeviceHomeScreenOrAppHome(context: Context): Boolean {
-        // If our app is in foreground and on Home/Timer view
+        // If our app is in foreground
         if (!FocusTimerManager.appIsBackgrounded) {
             return true
         }
 
-        // If app is backgrounded, inspect foreground package
+        // App is in background: verify the active top foreground package is strictly a launcher
         return try {
-            val launchers = getLauncherPackages(context)
             val topPackage = getTopForegroundPackage(context)
-
-            if (topPackage != null) {
-                launchers.contains(topPackage) || topPackage == context.packageName
+            if (topPackage == null) {
+                // If top package cannot be identified, suppress full screen to avoid appearing over other apps
+                false
             } else {
-                // If usage stats not accessible or null, permit when overlay is actively displayed on home
-                true
+                val launchers = getLauncherPackages(context)
+                launchers.contains(topPackage) || topPackage == context.packageName
             }
         } catch (e: Exception) {
-            true
+            false
         }
     }
 
@@ -250,24 +261,35 @@ object FocusDisplayManager {
             for (resolve in resolveList) {
                 resolve.activityInfo?.packageName?.let { packages.add(it) }
             }
+            val defaultHome = pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+            defaultHome?.activityInfo?.packageName?.let { packages.add(it) }
         } catch (e: Exception) {
             Log.w(TAG, "Error querying launcher packages: ${e.message}")
         }
 
-        // Common OEM launcher fallbacks
+        // Common OEM & Third-Party launcher packages
         packages.addAll(listOf(
             "com.google.android.apps.nexuslauncher",
+            "com.google.android.launcher",
             "com.android.launcher",
             "com.android.launcher3",
             "com.sec.android.app.launcher",      // Samsung One UI
-            "com.miui.home",                    // Xiaomi MIUI/HyperOS
+            "com.miui.home",                    // Xiaomi HyperOS/MIUI
             "com.oppo.launcher",                // Oppo ColorOS
             "com.oneplus.launcher",             // OnePlus OxygenOS
             "com.huawei.android.launcher",      // Huawei EMUI/HarmonyOS
             "com.transsion.hilauncher",         // Tecno/Infinix
             "com.motorola.launcher3",           // Motorola
             "com.vivo.launcher",                // Vivo OriginOS/Funtouch
-            "com.realme.launcher"               // Realme UI
+            "com.realme.launcher",              // Realme UI
+            "com.nothing.launcher",             // Nothing OS
+            "com.teslacoilsw.launcher",         // Nova Launcher
+            "com.microsoft.launcher",           // Microsoft Launcher
+            "com.actionlauncher.playstore",     // Action Launcher
+            "app.lawnchair",                    // Lawnchair
+            "app.lawnchair.lawnchair3",
+            "com.smartlauncher.smartlauncher",  // Smart Launcher
+            "com.niagara.launcher"              // Niagara Launcher
         ))
 
         cachedLauncherPackages = packages
@@ -283,7 +305,7 @@ object FocusDisplayManager {
             val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
                 ?: return null
             val endTime = System.currentTimeMillis()
-            val startTime = endTime - 12000 // 12 second window
+            val startTime = endTime - 10000 // 10 second window
 
             val usageEvents = usageStatsManager.queryEvents(startTime, endTime)
             var lastTopPackage: String? = null
@@ -291,7 +313,8 @@ object FocusDisplayManager {
                 val event = UsageEvents.Event()
                 while (usageEvents.hasNextEvent()) {
                     usageEvents.getNextEvent(event)
-                    if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+                    if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                        event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                         lastTopPackage = event.packageName
                     }
                 }
@@ -306,7 +329,7 @@ object FocusDisplayManager {
      * Displays the full-screen timer mode with a smooth zoom transition moving numbers to the center.
      */
     fun showFullScreenIdleTimer(context: Context) {
-        if (isFullScreenIdleActive) return
+        if (isFullScreenIdleActive || fullScreenView != null) return
         if (!OverlayPermissionHelper.hasOverlayPermission(context)) {
             Log.d(TAG, "Overlay permission not granted for full screen idle timer.")
             return
@@ -316,7 +339,7 @@ object FocusDisplayManager {
 
         try {
             val root = FrameLayout(context).apply {
-                setBackgroundColor(Color.parseColor("#E6000000")) // Deep 90% AMOLED Black with translucent backdrop
+                setBackgroundColor(Color.parseColor("#F5000000")) // AMOLED Black
                 isClickable = true
                 isFocusable = true
             }
@@ -421,22 +444,28 @@ object FocusDisplayManager {
             tvTaskTitle = taskTitleView
             contentContainer.addView(taskTitleView)
 
-            // Bottom Tap-to-Exit hint
-            val tapHint = TextView(context).apply {
-                text = "👆 Tap anywhere to restore full brightness & return to Home Screen"
-                setTextColor(Color.parseColor("#888888"))
+            // Interactive Exit Pill Button & Touch Hint
+            val exitButton = TextView(context).apply {
+                text = "✕  Tap anywhere to close Full Screen"
+                setTextColor(Color.parseColor("#DDDDDD"))
                 textSize = 12f
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(Color.parseColor("#28FFFFFF"))
+                    cornerRadius = dpToPx(context, 20f).toFloat()
+                    setStroke(dpToPx(context, 1f), Color.parseColor("#44FFFFFF"))
+                }
+                setPadding(dpToPx(context, 18f), dpToPx(context, 8f), dpToPx(context, 18f), dpToPx(context, 8f))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    topMargin = dpToPx(context, 36f)
+                    topMargin = dpToPx(context, 32f)
                 }
             }
-            tvTapHint = tapHint
-            contentContainer.addView(tapHint)
+            tvTapHint = exitButton
+            contentContainer.addView(exitButton)
 
             val frameParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -446,13 +475,18 @@ object FocusDisplayManager {
             }
             root.addView(contentContainer, frameParams)
 
-            // Touch Listener: Touching anywhere smoothly returns to normal home screen and normal brightness
+            // Direct Touch Listener: Any touch anywhere immediately dismisses the full screen overlay
             root.setOnTouchListener { _, event ->
-                if (event.action == MotionEvent.ACTION_DOWN || event.action == MotionEvent.ACTION_UP) {
-                    notifyUserInteracted(context)
-                    return@setOnTouchListener true
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        notifyUserInteracted(context)
+                        true
+                    }
+                    else -> true
                 }
-                true
+            }
+            root.setOnClickListener {
+                notifyUserInteracted(context)
             }
 
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -475,7 +509,7 @@ object FocusDisplayManager {
             ).apply {
                 gravity = Gravity.CENTER
                 if (isUltraLowBrightness) {
-                    screenBrightness = 0.01f // lowest possible brightness, keeps numbers, clock, and battery legible
+                    screenBrightness = 0.08f // Increased slightly to 8% for comfortable legibility
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -489,6 +523,9 @@ object FocusDisplayManager {
             isFullScreenIdleActive = true
             _isFullScreenIdleVisible.value = true
 
+            // Post the dedicated Full Screen active notification
+            postFullScreenActiveNotification(context)
+
             // Execute Zoom & Centering Entrance Animation
             val useZoomAnim = prefs.getBoolean(KEY_AUTO_FULLSCREEN_ZOOM_ANIM, true)
             if (useZoomAnim) {
@@ -498,12 +535,12 @@ object FocusDisplayManager {
                     Animation.RELATIVE_TO_SELF, 0.5f,
                     Animation.RELATIVE_TO_SELF, 0.5f
                 ).apply {
-                    duration = 380
+                    duration = 320
                     interpolator = DecelerateInterpolator(1.8f)
                 }
 
                 val alphaAnim = AlphaAnimation(0.0f, 1.0f).apply {
-                    duration = 300
+                    duration = 240
                 }
 
                 val animSet = AnimationSet(true).apply {
@@ -513,9 +550,55 @@ object FocusDisplayManager {
                 contentContainer.startAnimation(animSet)
             }
 
-            Log.d(TAG, "Full-screen idle timer overlay successfully displayed with zoom animation.")
+            Log.d(TAG, "Full-screen idle timer overlay successfully displayed.")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to display full-screen idle timer overlay: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Posts a high-visibility notification allowing the user to close full screen from the notification drawer.
+     */
+    private fun postFullScreenActiveNotification(context: Context) {
+        try {
+            val notifManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    FULLSCREEN_NOTIF_CHANNEL_ID,
+                    "Full-Screen Focus Mode",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Notification to exit Full-Screen Focus Display"
+                    setShowBadge(false)
+                    setSound(null, null)
+                }
+                notifManager.createNotificationChannel(channel)
+            }
+
+            val closeIntent = Intent(context, TimerNotificationReceiver::class.java).apply {
+                action = LiveTimerNotificationManager.ACTION_CLOSE_FULLSCREEN_OVERLAY
+            }
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+            val pClose = PendingIntent.getBroadcast(context, 8881, closeIntent, flags)
+
+            val notif = NotificationCompat.Builder(context, FULLSCREEN_NOTIF_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle("📺 Full-Screen Focus Mode Active")
+                .setContentText("Tap here to exit Full Screen & return to Home Screen")
+                .setContentIntent(pClose)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "✕ Close Full Screen", pClose)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+
+            notifManager.notify(FULLSCREEN_NOTIF_ID, notif)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to post full screen active notification: ${e.message}")
         }
     }
 
@@ -608,60 +691,62 @@ object FocusDisplayManager {
     }
 
     /**
-     * Dismisses the full screen overlay with a smooth exit animation, returning to the normal home screen.
+     * Dismisses the full screen overlay immediately and smoothly, returning to the normal home screen.
      */
     fun dismissFullScreenIdleTimer(context: Context? = null) {
         if (!isFullScreenIdleActive && fullScreenView == null) return
 
         val view = fullScreenView
-        val wm = windowManager ?: (context?.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
+        val ctx = context ?: appContext
+        val wm = windowManager ?: (ctx?.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
 
         isFullScreenIdleActive = false
         _isFullScreenIdleVisible.value = false
         lastInteractionTimestamp = System.currentTimeMillis()
 
+        // Cancel the Full Screen notification immediately
+        try {
+            val notifManager = ctx?.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notifManager?.cancel(FULLSCREEN_NOTIF_ID)
+        } catch (_: Exception) {}
+
         if (view != null && wm != null) {
             try {
-                val scaleAnim = ScaleAnimation(
-                    1.0f, 0.4f,
-                    1.0f, 0.4f,
-                    Animation.RELATIVE_TO_SELF, 0.5f,
-                    Animation.RELATIVE_TO_SELF, 0.5f
-                ).apply {
-                    duration = 200
-                    interpolator = AccelerateDecelerateInterpolator()
+                // Immediately disable touch handling on view so underlying apps and home screen receive touches instantly
+                view.isClickable = false
+                view.isFocusable = false
+                view.setOnTouchListener(null)
+                view.setOnClickListener(null)
+
+                val removeAction = Runnable {
+                    try {
+                        wm.removeView(view)
+                    } catch (_: Exception) {}
                 }
-                val alphaAnim = AlphaAnimation(1.0f, 0.0f).apply {
-                    duration = 180
-                }
-                val animSet = AnimationSet(true).apply {
-                    addAnimation(scaleAnim)
-                    addAnimation(alphaAnim)
-                    setAnimationListener(object : Animation.AnimationListener {
-                        override fun onAnimationStart(p0: Animation?) {}
-                        override fun onAnimationRepeat(p0: Animation?) {}
-                        override fun onAnimationEnd(p0: Animation?) {
-                            try {
-                                wm.removeView(view)
-                            } catch (e: Exception) {
-                                // Ignore
-                            }
-                        }
-                    })
-                }
-                view.startAnimation(animSet)
+
+                // Smooth fade and scale out animation
+                view.animate()
+                    .alpha(0f)
+                    .scaleX(0.75f)
+                    .scaleY(0.75f)
+                    .setDuration(120)
+                    .withEndAction(removeAction)
+                    .start()
+
+                // Fallback guarantee: ensures view is removed from WindowManager even if animator fails
+                view.postDelayed(removeAction, 160)
             } catch (e: Exception) {
                 try {
                     wm.removeView(view)
-                } catch (ex: Exception) {
-                    // Ignore
-                }
+                } catch (_: Exception) {}
             } finally {
                 fullScreenView = null
                 tvDigits = null
                 tvPhaseBadge = null
                 tvTaskTitle = null
                 tvTapHint = null
+                tvClockTime = null
+                tvBatteryLevel = null
             }
         }
         Log.d(TAG, "Full-screen idle timer overlay dismissed; returned to normal Home Screen.")
@@ -671,3 +756,4 @@ object FocusDisplayManager {
         return (dp * context.resources.displayMetrics.density + 0.5f).toInt()
     }
 }
+

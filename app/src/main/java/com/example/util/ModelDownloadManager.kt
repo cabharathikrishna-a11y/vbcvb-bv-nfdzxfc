@@ -125,9 +125,10 @@ object ModelDownloadManager {
 
     fun deleteModel(context: Context, model: LocalAiModel): Boolean {
         val file = File(getModelsDir(context), model.fileName)
-        return if (file.exists()) {
-            file.delete()
-        } else false
+        val tempFile = File(getModelsDir(context), "${model.fileName}.download")
+        val d1 = if (file.exists()) file.delete() else false
+        val d2 = if (tempFile.exists()) tempFile.delete() else false
+        return d1 || d2
     }
 
     fun cancelDownload(context: Context? = null) {
@@ -135,7 +136,7 @@ object ModelDownloadManager {
         activeJob = null
         _downloadState.value = DownloadProgressState(
             isDownloading = false,
-            statusText = "Download cancelled."
+            statusText = "Download paused."
         )
         if (context != null) {
             cancelNotification(context)
@@ -154,6 +155,24 @@ object ModelDownloadManager {
             return
         }
 
+        val destFile = File(getModelsDir(context), model.fileName)
+        val tempFile = File(getModelsDir(context), "${model.fileName}.download")
+
+        if (destFile.exists() && destFile.length() > 50 * 1024 * 1024) {
+            _downloadState.value = DownloadProgressState(
+                modelId = model.id,
+                progress = 1.0f,
+                speedMode = speedMode,
+                bytesDownloaded = destFile.length(),
+                totalBytes = destFile.length(),
+                statusText = "${model.name} is ready on device.",
+                isDownloading = false,
+                isCompleted = true
+            )
+            onComplete(true, null)
+            return
+        }
+
         // Storage Check
         val storageCheck = checkStorageSpace(context, minRequiredGb = model.minStorageGb)
         if (!storageCheck.hasEnoughSpace) {
@@ -168,77 +187,128 @@ object ModelDownloadManager {
             return
         }
 
-        val destFile = File(getModelsDir(context), model.fileName)
-        val tempFile = File(getModelsDir(context), "${model.fileName}.download")
+        val initialExistingBytes = if (tempFile.exists()) tempFile.length() else 0L
 
         _downloadState.value = DownloadProgressState(
             modelId = model.id,
-            progress = 0f,
+            progress = if (initialExistingBytes > 0) (initialExistingBytes.toFloat() / (model.sizeGb * 1024 * 1024 * 1024).toFloat()).coerceIn(0f, 0.99f) else 0f,
+            bytesDownloaded = initialExistingBytes,
+            totalBytes = (model.sizeGb * 1024 * 1024 * 1024).toLong(),
             speedMode = speedMode,
-            statusText = "Connecting to repository (${speedMode.label})...",
+            statusText = if (initialExistingBytes > 0) "Resuming download (${initialExistingBytes / (1024 * 1024)} MB already saved)..." else "Connecting to repository (${speedMode.label})...",
             isDownloading = true
         )
 
         createNotificationChannel(context)
-        updateNotification(context, model.name, 0, "Starting download (${speedMode.label})...")
+        updateNotification(context, model.name, 0, "Connecting...")
 
         activeJob = coroutineScope.launch(Dispatchers.IO) {
             var connection: HttpURLConnection? = null
             var inputStream: InputStream? = null
             var outputStream: FileOutputStream? = null
+            var totalExpectedBytes = (model.sizeGb * 1024 * 1024 * 1024).toLong()
 
             try {
                 var currentUrl = model.downloadUrl
                 var redirects = 0
-                while (redirects < 5) {
+                var existingBytes = if (tempFile.exists()) tempFile.length() else 0L
+                var isResumed = false
+
+                while (redirects < 8) {
                     val url = URL(currentUrl)
-                    connection = (url.openConnection() as HttpURLConnection).apply {
-                        connectTimeout = 20000
-                        readTimeout = 40000
-                        instanceFollowRedirects = true
-                        setRequestProperty("User-Agent", "LifeOS-ModelDownloader/2.0")
+                    val conn = (url.openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 25000
+                        readTimeout = 45000
+                        instanceFollowRedirects = false
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) LifeOS/2.0")
+                        if (existingBytes > 0) {
+                            setRequestProperty("Range", "bytes=$existingBytes-")
+                        }
                     }
-                    val code = connection.responseCode
-                    if (code in 300..399) {
-                        val newLocation = connection.getHeaderField("Location")
-                        if (!newLocation.isNullOrBlank()) {
-                            currentUrl = newLocation
+
+                    val code = try {
+                        conn.responseCode
+                    } catch (e: Exception) {
+                        conn.disconnect()
+                        throw e
+                    }
+
+                    if (code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_MOVED_TEMP || code == 307 || code == 308 || code == 303) {
+                        val location = conn.getHeaderField("Location")
+                        conn.disconnect()
+                        if (!location.isNullOrBlank()) {
+                            currentUrl = if (location.startsWith("http://") || location.startsWith("https://")) {
+                                location
+                            } else {
+                                URL(URL(currentUrl), location).toString()
+                            }
                             redirects++
                             continue
                         }
                     }
+
+                    connection = conn
                     break
                 }
 
-                val responseCode = connection?.responseCode ?: 0
-                if (responseCode !in 200..299) {
+                var responseCode = connection?.responseCode ?: 0
+
+                // If 416 Range Not Satisfiable, temp file might be corrupted or full, reset and reconnect from 0
+                if (responseCode == 416) {
+                    connection?.disconnect()
+                    tempFile.delete()
+                    existingBytes = 0L
+                    val freshConn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 25000
+                        readTimeout = 45000
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) LifeOS/2.0")
+                    }
+                    connection = freshConn
+                    responseCode = freshConn.responseCode
+                }
+
+                if (responseCode == 206) {
+                    isResumed = true
+                } else if (responseCode in 200..299) {
+                    isResumed = false
+                    existingBytes = 0L
+                } else {
                     throw Exception("Server returned HTTP $responseCode")
                 }
 
-                val contentLength = connection?.contentLengthLong?.takeIf { it > 0 }
-                    ?: (model.sizeGb * 1024 * 1024 * 1024).toLong()
+                val streamLength = connection?.contentLengthLong?.takeIf { it > 0 } ?: -1L
+                totalExpectedBytes = if (isResumed) {
+                    if (streamLength > 0) existingBytes + streamLength else (model.sizeGb * 1024 * 1024 * 1024).toLong()
+                } else {
+                    if (streamLength > 0) streamLength else (model.sizeGb * 1024 * 1024 * 1024).toLong()
+                }
+
+                val startOffset = if (isResumed) existingBytes else 0L
+                var totalBytesOnDisk = startOffset
 
                 inputStream = connection!!.inputStream
-                outputStream = FileOutputStream(tempFile)
+                outputStream = FileOutputStream(tempFile, isResumed)
 
                 val buffer = ByteArray(speedMode.bufferSizeBytes)
                 var bytesRead: Int
-                var totalBytesRead = 0L
+                var bytesReadThisSession = 0L
                 var lastTime = System.currentTimeMillis()
                 var lastBytesRead = 0L
                 var lastNotifUpdate = 0L
 
                 while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                    if (!activeJob!!.isActive) {
+                    if (activeJob?.isActive != true) {
+                        outputStream.flush()
                         outputStream.close()
                         inputStream.close()
-                        if (tempFile.exists()) tempFile.delete()
                         cancelNotification(context)
                         return@launch
                     }
 
                     outputStream.write(buffer, 0, bytesRead)
-                    totalBytesRead += bytesRead
+                    bytesReadThisSession += bytesRead
+                    totalBytesOnDisk = startOffset + bytesReadThisSession
 
                     if (speedMode.chunkDelayMs > 0) {
                         delay(speedMode.chunkDelayMs)
@@ -251,28 +321,28 @@ object ModelDownloadManager {
                     var etaSec = _downloadState.value.etaSeconds
 
                     if (timeDiffSec >= 0.5) {
-                        val bytesSinceLast = totalBytesRead - lastBytesRead
+                        val bytesSinceLast = bytesReadThisSession - lastBytesRead
                         speedMBps = ((bytesSinceLast / (1024.0 * 1024.0)) / timeDiffSec).let { Math.round(it * 10) / 10.0 }
-                        val remainingBytes = maxOf(0L, contentLength - totalBytesRead)
+                        val remainingBytes = maxOf(0L, totalExpectedBytes - totalBytesOnDisk)
                         etaSec = if (speedMBps > 0.05) (remainingBytes / (speedMBps * 1024.0 * 1024.0)).toLong() else 0L
                         lastTime = now
-                        lastBytesRead = totalBytesRead
+                        lastBytesRead = bytesReadThisSession
                     }
 
-                    val progress = if (contentLength > 0) {
-                        (totalBytesRead.toDouble() / contentLength.toDouble()).toFloat().coerceIn(0f, 1f)
+                    val progress = if (totalExpectedBytes > 0) {
+                        (totalBytesOnDisk.toDouble() / totalExpectedBytes.toDouble()).toFloat().coerceIn(0f, 1f)
                     } else 0.5f
 
-                    val mbRead = (totalBytesRead / (1024.0 * 1024.0)).toInt()
-                    val totalMb = (contentLength / (1024.0 * 1024.0)).toInt()
+                    val mbRead = (totalBytesOnDisk / (1024.0 * 1024.0)).toInt()
+                    val totalMb = (totalExpectedBytes / (1024.0 * 1024.0)).toInt()
 
                     val statusStr = "Downloading $mbRead MB / $totalMb MB ($speedMBps MB/s)"
 
                     _downloadState.value = DownloadProgressState(
                         modelId = model.id,
                         progress = progress,
-                        bytesDownloaded = totalBytesRead,
-                        totalBytes = contentLength,
+                        bytesDownloaded = totalBytesOnDisk,
+                        totalBytes = totalExpectedBytes,
                         speedMBps = speedMBps,
                         etaSeconds = etaSec,
                         speedMode = speedMode,
@@ -292,14 +362,37 @@ object ModelDownloadManager {
                 outputStream.close()
                 inputStream.close()
 
+                val finalFileSize = tempFile.length()
+                val minAcceptableBytes = if (totalExpectedBytes > 0) {
+                    (totalExpectedBytes * 0.95).toLong()
+                } else {
+                    (model.sizeGb * 1024 * 1024 * 1024 * 0.85).toLong()
+                }
+
+                if (finalFileSize < minAcceptableBytes || finalFileSize < 30 * 1024 * 1024) {
+                    val downloadedMb = finalFileSize / (1024 * 1024)
+                    val expectedMb = totalExpectedBytes / (1024 * 1024)
+                    throw Exception("Download incomplete: received $downloadedMb MB of $expectedMb MB. Tap to resume download.")
+                }
+
                 if (destFile.exists()) destFile.delete()
-                tempFile.renameTo(destFile)
+                val renamed = tempFile.renameTo(destFile)
+                if (!renamed) {
+                    tempFile.copyTo(destFile, overwrite = true)
+                    tempFile.delete()
+                }
+
+                if (!destFile.exists() || destFile.length() < 30 * 1024 * 1024) {
+                    throw Exception("Failed to write model file to storage.")
+                }
 
                 _downloadState.value = DownloadProgressState(
                     modelId = model.id,
                     progress = 1.0f,
                     speedMode = speedMode,
-                    statusText = "Qwen 2.5 Coder 1.5B ready to run offline!",
+                    bytesDownloaded = destFile.length(),
+                    totalBytes = destFile.length(),
+                    statusText = "${model.name} ready to run offline!",
                     isDownloading = false,
                     isCompleted = true
                 )
@@ -311,17 +404,27 @@ object ModelDownloadManager {
                 }
             } catch (e: Exception) {
                 try {
+                    outputStream?.flush()
                     outputStream?.close()
                     inputStream?.close()
-                    if (tempFile.exists()) tempFile.delete()
                 } catch (_: Exception) {}
 
-                val errMsg = e.localizedMessage ?: "Download encountered a network interruption."
+                val currentSavedBytes = if (tempFile.exists()) tempFile.length() else 0L
+                val savedMb = currentSavedBytes / (1024 * 1024)
+                val baseMsg = e.localizedMessage ?: "Network interrupted"
+                val errMsg = if (savedMb > 0) {
+                    "Interrupted at $savedMb MB ($baseMsg). Tap Download to resume."
+                } else {
+                    baseMsg
+                }
+
                 _downloadState.value = DownloadProgressState(
                     modelId = model.id,
-                    progress = 0f,
+                    progress = if (totalExpectedBytes > 0) (currentSavedBytes.toFloat() / totalExpectedBytes.toFloat()).coerceIn(0f, 0.99f) else 0f,
+                    bytesDownloaded = currentSavedBytes,
+                    totalBytes = totalExpectedBytes,
                     speedMode = speedMode,
-                    statusText = "Download error: $errMsg",
+                    statusText = errMsg,
                     isDownloading = false,
                     error = errMsg
                 )

@@ -106,6 +106,13 @@ class MainActivity : ComponentActivity() {
         com.example.util.FocusDisplayManager.notifyUserInteracted(this)
     }
 
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
+        if (ev != null) {
+            com.example.util.FocusDisplayManager.notifyUserInteracted(this)
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -248,6 +255,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Initialize Central Network & Traffic Controller
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    com.example.util.NetworkTrafficManager.init(this@MainActivity)
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Failed to init NetworkTrafficManager: ${e.message}", e)
+                }
+            }
+
             // Register Network Reconnection Event Listener asynchronously
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
@@ -258,6 +274,7 @@ class MainActivity : ComponentActivity() {
                     connectivityManager.registerNetworkCallback(networkRequest, object : android.net.ConnectivityManager.NetworkCallback() {
                         private var isFirstCallback = true
                         override fun onAvailable(network: android.net.Network) {
+                            com.example.util.NetworkTrafficManager.updateCurrentNetworkState(this@MainActivity)
                             if (isFirstCallback) {
                                 isFirstCallback = false
                                 return // ignore the initial callback upon registration

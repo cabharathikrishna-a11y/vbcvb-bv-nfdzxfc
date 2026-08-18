@@ -606,17 +606,25 @@ object PersistentWebMediaManager {
                 Object.defineProperty(navigator, 'maxTouchPoints', { get: function() { return 0; }, configurable: true });
                 Object.defineProperty(navigator, 'userAgent', { get: function() { return modernUa; }, configurable: true });
                 Object.defineProperty(navigator, 'appVersion', { get: function() { return modernAppVersion; }, configurable: true });
+                Object.defineProperty(navigator, 'oscpu', { get: function() { return 'Windows NT 10.0; Win64; x64'; }, configurable: true });
+                Object.defineProperty(navigator, 'deviceMemory', { get: function() { return 8; }, configurable: true });
+                Object.defineProperty(navigator, 'hardwareConcurrency', { get: function() { return 8; }, configurable: true });
+                Object.defineProperty(navigator, 'webdriver', { get: function() { return false; }, configurable: true });
+                Object.defineProperty(navigator, 'cookieEnabled', { get: function() { return true; }, configurable: true });
+                Object.defineProperty(navigator, 'pdfViewerEnabled', { get: function() { return true; }, configurable: true });
+                Object.defineProperty(navigator, 'languages', { get: function() { return ['en-US', 'en']; }, configurable: true });
+                Object.defineProperty(navigator, 'language', { get: function() { return 'en-US'; }, configurable: true });
 
                 var brandList = [
-                    { brand: 'Chromium', version: '134' },
                     { brand: 'Google Chrome', version: '134' },
-                    { brand: 'Not:A-Brand', version: '24' }
+                    { brand: 'Chromium', version: '134' },
+                    { brand: 'Not_A Brand', version: '24' }
                 ];
 
                 var fullVersionList = [
-                    { brand: 'Chromium', version: '134.0.6998.35' },
                     { brand: 'Google Chrome', version: '134.0.6998.35' },
-                    { brand: 'Not:A-Brand', version: '24.0.0.0' }
+                    { brand: 'Chromium', version: '134.0.6998.35' },
+                    { brand: 'Not_A Brand', version: '24.0.0.0' }
                 ];
 
                 Object.defineProperty(navigator, 'userAgentData', {
@@ -637,11 +645,41 @@ object PersistentWebMediaManager {
                                     platformVersion: '15.0.0',
                                     uaFullVersion: '134.0.6998.35'
                                 });
+                            },
+                            toJSON: function() {
+                                return {
+                                    brands: brandList,
+                                    mobile: false,
+                                    platform: 'Windows'
+                                };
                             }
                         };
                     },
                     configurable: true
                 });
+
+                if (!window.chrome) {
+                    window.chrome = {
+                        app: { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' } },
+                        runtime: {
+                            OnInstalledReason: { CHROME_UPDATE: 'chrome_update', INSTALL: 'install', SHARED_MODULE_UPDATE: 'shared_module_update', UPDATE: 'update' },
+                            OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic' },
+                            PlatformArch: { ARM: 'arm', ARM64: 'arm64', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+                            PlatformNaclArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+                            PlatformOs: { ANDROID: 'android', CROS: 'cros', LINUX: 'linux', MAC: 'mac', OPENBSD: 'openbsd', WIN: 'win' },
+                            RequestUpdateCheckStatus: { NO_UPDATE: 'no_update', THROTTLED: 'throttled', UPDATE_AVAILABLE: 'update_available' }
+                        }
+                    };
+                }
+
+                try {
+                    Object.defineProperty(screen, 'width', { get: function() { return 1920; }, configurable: true });
+                    Object.defineProperty(screen, 'height', { get: function() { return 1080; }, configurable: true });
+                    Object.defineProperty(screen, 'availWidth', { get: function() { return 1920; }, configurable: true });
+                    Object.defineProperty(screen, 'availHeight', { get: function() { return 1040; }, configurable: true });
+                    Object.defineProperty(screen, 'colorDepth', { get: function() { return 24; }, configurable: true });
+                    Object.defineProperty(screen, 'pixelDepth', { get: function() { return 24; }, configurable: true });
+                } catch(e) {}
 
                 // Audio unlocker & unmuter for HTML5 audio elements in WebView
                 document.addEventListener('click', function() {
@@ -697,6 +735,14 @@ object PersistentWebMediaManager {
                     var st = document.createElement('style');
                     st.id = 'anti-outdated-spotify-style';
                     st.innerHTML = `
+                        html, body {
+                            -webkit-overflow-scrolling: touch !important;
+                            scroll-behavior: smooth !important;
+                            overscroll-behavior-y: contain !important;
+                        }
+                        * {
+                            -webkit-tap-highlight-color: transparent !important;
+                        }
                         a[href*="/download"],
                         a[href*="spotify.com/download"],
                         a[href*="open.spotify.com/download"],

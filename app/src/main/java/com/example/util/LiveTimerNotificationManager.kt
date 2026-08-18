@@ -55,6 +55,7 @@ object LiveTimerNotificationManager {
     const val ACTION_ADD_1_MIN = "com.example.service.ACTION_ADD_1_MIN"
     const val ACTION_ADD_5_MIN = "com.example.service.ACTION_ADD_5_MIN"
     const val ACTION_REFRESH_NOTIFICATION = "com.example.service.ACTION_REFRESH_NOTIFICATION"
+    const val ACTION_CLOSE_FULLSCREEN_OVERLAY = "com.example.service.ACTION_CLOSE_FULLSCREEN_OVERLAY"
 
     // =========================================================================
     // 2. DATA MODELS & ENUMS
@@ -527,6 +528,9 @@ object LiveTimerNotificationManager {
                 }
                 ACTION_REFRESH_NOTIFICATION -> {
                     updateNotification(appContext)
+                }
+                ACTION_CLOSE_FULLSCREEN_OVERLAY -> {
+                    FocusDisplayManager.dismissFullScreenIdleTimer(appContext)
                 }
                 else -> {
                     Log.w(TAG, "Unknown action received: $action")

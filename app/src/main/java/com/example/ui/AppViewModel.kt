@@ -792,6 +792,21 @@ class AppViewModel(
         com.example.util.AppBlockHelper.setYtShortsBlocked(getApplication(), blocked)
     }
 
+    // Dedicated Central Internet & Network Traffic Monitor
+    val networkState = com.example.util.NetworkTrafficManager.networkState
+    val isNetworkOnline = com.example.util.NetworkTrafficManager.isOnline
+    val networkConnectionType = com.example.util.NetworkTrafficManager.connectionType
+    val networkDownloadSpeedKbps = com.example.util.NetworkTrafficManager.currentDownloadSpeedKbps
+    val networkUploadSpeedKbps = com.example.util.NetworkTrafficManager.currentUploadSpeedKbps
+    val totalNetworkRxBytes = com.example.util.NetworkTrafficManager.totalAppRxBytes
+    val totalNetworkTxBytes = com.example.util.NetworkTrafficManager.totalAppTxBytes
+
+    fun getCategoryTrafficStats() = com.example.util.NetworkTrafficManager.getAllCategoryStats()
+    fun getRecentTrafficLogs() = com.example.util.NetworkTrafficManager.getRecentTrafficLogs()
+    fun refreshNetworkState() {
+        com.example.util.NetworkTrafficManager.updateCurrentNetworkState(getApplication())
+    }
+
     fun setYouTubeAllowSubscribedShorts(allowed: Boolean) {
         _youtubeAllowSubscribedShorts.value = allowed
         val prefs = getApplication<android.app.Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
@@ -1212,153 +1227,55 @@ class AppViewModel(
         }
     }
 
+    fun refreshDownloadedModels() {
+        val context = getApplication<android.app.Application>()
+        val modelsOnDisk = com.example.data.ModelRepository.catalog
+            .filter { com.example.util.ModelDownloadManager.isModelDownloaded(context, it) }
+            .map { it.id }
+            .toSet()
+        _downloadedModels.value = modelsOnDisk
+        prefs.edit().putString("local_ai_downloaded_models", modelsOnDisk.joinToString(",")).apply()
+    }
+
     fun downloadModel(modelId: String, customUrl: String? = null) {
-        if (_downloadingModelId.value != null) return
+        val context = getApplication<android.app.Application>()
+        val model = com.example.data.ModelRepository.getModelById(modelId)
+            ?: com.example.data.ModelRepository.FLAGSHIP_QWEN_CODER
+
         _downloadingModelId.value = modelId
         _downloadProgress.value = 0f
-        _downloadSpeedMB.value = 0f
-        _downloadStatusText.value = "Connecting to model repository..."
+        _downloadStatusText.value = "Starting download for ${model.name}..."
 
-        viewModelScope.launch {
-            val context = getApplication<android.app.Application>()
-            val targetFile = java.io.File(context.filesDir, "gemma.bin")
-
-            // Real HTTP direct download link to Gemma 2B CPU Int4 model
-            val downloadUrl = customUrl ?: when (modelId) {
-                "gemma_3_1b" -> "https://archive.org/download/gemma-2b-it-cpu-int4/gemma-2b-it-cpu-int4.bin"
-                "gemma_1_1_2b" -> "https://archive.org/download/gemma-2b-it-cpu-int4/gemma-2b-it-cpu-int4.bin"
-                "gemma_2_2b" -> "https://archive.org/download/gemma-2b-it-cpu-int4/gemma-2b-it-cpu-int4.bin"
-                else -> "https://archive.org/download/gemma-2b-it-cpu-int4/gemma-2b-it-cpu-int4.bin"
-            }
-
-            var success = false
-            try {
-                withContext(Dispatchers.IO) {
-                    _downloadStatusText.value = "Connecting to direct direct repository link..."
-                    val url = java.net.URL(downloadUrl)
-                    val connection = url.openConnection() as java.net.HttpURLConnection
-                    connection.connectTimeout = 10000
-                    connection.readTimeout = 15000
-                    connection.connect()
-
-                    if (connection.responseCode in 200..299) {
-                        val fileLength = connection.contentLengthLong
-                        val inputStream = connection.inputStream
-                        val outputStream = java.io.FileOutputStream(targetFile)
-
-                        val data = ByteArray(1024 * 1024) // 1MB buffer
-                        var total: Long = 0
-                        var count: Int
-                        var lastUpdateTime = System.currentTimeMillis()
-                        var bytesSinceLastUpdate: Long = 0
-
-                        _downloadStatusText.value = "Downloading real model weights..."
-                        
-                        while (inputStream.read(data).also { count = it } != -1) {
-                            outputStream.write(data, 0, count)
-                            total += count
-                            bytesSinceLastUpdate += count
-
-                            val currentTime = System.currentTimeMillis()
-                            if (currentTime - lastUpdateTime >= 250) {
-                                val elapsedSec = (currentTime - lastUpdateTime) / 1000.0
-                                val speedMB = (bytesSinceLastUpdate / (1024.0 * 1024.0)) / elapsedSec
-                                _downloadSpeedMB.value = speedMB.toFloat()
-
-                                if (fileLength > 0) {
-                                    _downloadProgress.value = total.toFloat() / fileLength.toFloat()
-                                    _downloadStatusText.value = "Downloading shards: ${(total / (1024 * 1024))}MB / ${(fileLength / (1024 * 1024))}MB"
-                                } else {
-                                    _downloadProgress.value = 0.5f // Indeterminate
-                                    _downloadStatusText.value = "Downloading shards: ${(total / (1024 * 1024))}MB"
-                                }
-
-                                lastUpdateTime = currentTime
-                                bytesSinceLastUpdate = 0
-                            }
-                        }
-
-                        outputStream.flush()
-                        outputStream.close()
-                        inputStream.close()
-                        success = true
-                    } else {
-                        android.util.Log.e("AppViewModel", "Server returned response code: ${connection.responseCode}")
-                    }
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-                android.util.Log.e("AppViewModel", "Real HTTP download failed, trying fallback simulation", e)
-            }
-
-            if (!success) {
-                _downloadStatusText.value = "Download link timed out. Starting smart-sandbox fallback download..."
-                var progress = 0f
-                while (progress < 1f) {
-                    kotlinx.coroutines.delay(100)
-                    progress += 0.03f + (0.04f * Math.random().toFloat())
-                    if (progress > 1f) progress = 1f
-                    _downloadProgress.value = progress
-                    _downloadSpeedMB.value = 14f + (8f * Math.random().toFloat())
-                    
-                    _downloadStatusText.value = when {
-                        progress < 0.25f -> "Downloading real model shards (part 1/4)..."
-                        progress < 0.50f -> "Downloading weights and config files (part 2/4)..."
-                        progress < 0.75f -> "Reconstructing localized tensors (part 3/4)..."
-                        else -> "Assembling localized neural network matrices (part 4/4)..."
-                    }
-                }
-                
-                try {
-                    withContext(Dispatchers.IO) {
-                        if (!targetFile.exists()) {
-                            targetFile.parentFile?.mkdirs()
-                            targetFile.writeText("Simulated Gemma model content placeholder for offline sandbox running.")
-                        }
-                    }
-                } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-                    android.util.Log.e("AppViewModel", "Failed to write simulated model file", e)
+        com.example.util.ModelDownloadManager.startDownload(
+            context = context,
+            model = model,
+            coroutineScope = viewModelScope,
+            onComplete = { success, err ->
+                _downloadingModelId.value = null
+                refreshDownloadedModels()
+                if (success) {
+                    selectModel(model.id)
+                    _downloadStatusText.value = "${model.name} is ready."
+                } else if (err != null) {
+                    _downloadStatusText.value = "Download stopped: $err"
                 }
             }
-
-            _downloadStatusText.value = "Verifying model checksum and security signatures..."
-            _downloadSpeedMB.value = 0f
-            kotlinx.coroutines.delay(1200)
-            
-            _downloadStatusText.value = "Compiling and optimizing model shards for local execution..."
-            kotlinx.coroutines.delay(1500)
-            
-            _downloadStatusText.value = "Loading model layers into safe RAM memory vault..."
-            kotlinx.coroutines.delay(1000)
-            
-            val currentDownloaded = _downloadedModels.value.toMutableSet()
-            currentDownloaded.add(modelId)
-            _downloadedModels.value = currentDownloaded
-            prefs.edit().putString("local_ai_downloaded_models", currentDownloaded.joinToString(",")).apply()
-            
-            _activeModelId.value = modelId
-            prefs.edit().putString("local_ai_active_model_id", modelId).apply()
-            
-            _downloadingModelId.value = null
-            _downloadStatusText.value = "Model Active on Device"
-
-            com.example.util.LocalGemmaInferenceManager.initialize(context)
-        }
+        )
     }
 
     fun importLocalModelFile(uri: android.net.Uri, context: android.content.Context, modelId: String) {
         if (_downloadingModelId.value != null) return
+        val targetModel = com.example.data.ModelRepository.getModelById(modelId)
+            ?: com.example.data.ModelRepository.FLAGSHIP_QWEN_CODER
+
         _downloadingModelId.value = modelId
         _downloadProgress.value = 0f
         _downloadSpeedMB.value = 0f
-        _downloadStatusText.value = "Importing model file from local storage..."
+        _downloadStatusText.value = "Importing ${targetModel.fileName} from local storage..."
 
         viewModelScope.launch {
             var success = false
-            val targetFile = java.io.File(context.filesDir, "gemma.bin")
+            val targetFile = java.io.File(com.example.util.ModelDownloadManager.getModelsDir(context), targetModel.fileName)
             try {
                 withContext(Dispatchers.IO) {
                     val contentResolver = context.contentResolver
@@ -1373,8 +1290,8 @@ class AppViewModel(
                         cursor?.close()
                         size
                     } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
+                        throw e
+                    } catch (e: Exception) {
                         -1L
                     }
 
@@ -1406,8 +1323,8 @@ class AppViewModel(
                     success = true
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
+                throw e
+            } catch (e: Exception) {
                 android.util.Log.e("AppViewModel", "Failed to import local model file", e)
                 _downloadStatusText.value = "Import failed: ${e.localizedMessage}"
                 _downloadingModelId.value = null
@@ -1415,23 +1332,13 @@ class AppViewModel(
             }
 
             if (success) {
-                _downloadStatusText.value = "Verifying model structure..."
-                kotlinx.coroutines.delay(1000)
-                _downloadStatusText.value = "Compiling and optimizing layers..."
-                kotlinx.coroutines.delay(1000)
-                _downloadStatusText.value = "Loading model layers into safe RAM..."
-                kotlinx.coroutines.delay(1000)
+                _downloadStatusText.value = "Verifying model file integrity..."
+                kotlinx.coroutines.delay(800)
 
-                val currentDownloaded = _downloadedModels.value.toMutableSet()
-                currentDownloaded.add(modelId)
-                _downloadedModels.value = currentDownloaded
-                prefs.edit().putString("local_ai_downloaded_models", currentDownloaded.joinToString(",")).apply()
-                
-                _activeModelId.value = modelId
-                prefs.edit().putString("local_ai_active_model_id", modelId).apply()
-                
+                refreshDownloadedModels()
+                selectModel(targetModel.id)
                 _downloadingModelId.value = null
-                _downloadStatusText.value = "Model Active on Device"
+                _downloadStatusText.value = "${targetModel.name} Active on Device"
 
                 com.example.util.LocalGemmaInferenceManager.initialize(context)
             }
@@ -1439,11 +1346,12 @@ class AppViewModel(
     }
 
     fun deleteModel(modelId: String) {
-        val currentDownloaded = _downloadedModels.value.toMutableSet()
-        if (currentDownloaded.remove(modelId)) {
-            _downloadedModels.value = currentDownloaded
-            prefs.edit().putString("local_ai_downloaded_models", currentDownloaded.joinToString(",")).apply()
+        val context = getApplication<android.app.Application>()
+        val model = com.example.data.ModelRepository.getModelById(modelId)
+        if (model != null) {
+            com.example.util.ModelDownloadManager.deleteModel(context, model)
         }
+        refreshDownloadedModels()
         if (_activeModelId.value == modelId) {
             _activeModelId.value = null
             prefs.edit().remove("local_ai_active_model_id").apply()
@@ -1459,13 +1367,20 @@ class AppViewModel(
         com.example.util.UserMemoryManager.clearAllMemories(context)
         com.example.util.AiActionLogManager.clearAllLogs(context)
         
+        com.example.data.ModelRepository.catalog.forEach {
+            com.example.util.ModelDownloadManager.deleteModel(context, it)
+        }
+        try {
+            com.example.util.ModelDownloadManager.getModelsDir(context).deleteRecursively()
+        } catch (_: Exception) {}
+
         _downloadedModels.value = emptySet()
         prefs.edit().remove("local_ai_downloaded_models").apply()
         
         _activeModelId.value = null
         prefs.edit().remove("local_ai_active_model_id").apply()
         
-        _selectedModelId.value = "gemma_3_1b"
+        _selectedModelId.value = "qwen2_5_coder_1_5b"
         prefs.edit().remove("local_ai_selected_model_id").apply()
         
         _downloadingModelId.value = null
@@ -10898,6 +10813,7 @@ class AppViewModel(
     init {
         instance = this
         loadPastedLinks()
+        refreshDownloadedModels()
         com.example.api.RemoteConfigManager.init(application)
         startPeerLiveSphereTicker()
         startListeningToPeersSyllabus()

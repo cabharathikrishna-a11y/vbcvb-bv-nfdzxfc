@@ -48,7 +48,11 @@ object AppDataLiveSyncEngine {
 
     fun triggerGoogleDriveBackupIfConnected(context: Context, database: AppDatabase) {
         CoroutineScope(Dispatchers.IO).launch {
-            try {
+            com.example.util.NetworkTrafficManager.routeOperation(
+                context = context,
+                category = com.example.util.NetworkTrafficManager.TrafficCategory.CLOUD_BACKUP,
+                operationName = "Google Drive Database Backup"
+            ) {
                 if (com.example.util.GoogleDriveReadManager.hasDrivePermission(context)) {
                     val baos = java.io.ByteArrayOutputStream()
                     val success = com.example.util.DatabaseBackupHelper.exportDataToStream(context, database, baos)
@@ -60,8 +64,6 @@ object AppDataLiveSyncEngine {
                         )
                     }
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("AppDataLiveSyncEngine", "Error triggering Google Drive backup", e)
             }
         }
     }

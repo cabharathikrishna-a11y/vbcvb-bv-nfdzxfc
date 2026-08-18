@@ -94,8 +94,13 @@ object WebViewTurboHelper {
         isDesktopMode: Boolean = false,
         customUserAgent: String? = null
     ) {
-        // 1. Enable Hardware Layer for GPU compositing
+        // 1. Enable Hardware Layer for GPU compositing & 60/120fps smooth rasterization
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        webView.isNestedScrollingEnabled = true
+        webView.isVerticalScrollBarEnabled = true
+        webView.isHorizontalScrollBarEnabled = false
+        webView.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
+        webView.overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
 
         // 2. Cookie acceleration
         try {
@@ -133,6 +138,7 @@ object WebViewTurboHelper {
             saveFormData = false
             savePassword = false
             layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
+            textZoom = 100
 
             // Viewport & layout engine acceleration
             useWideViewPort = true

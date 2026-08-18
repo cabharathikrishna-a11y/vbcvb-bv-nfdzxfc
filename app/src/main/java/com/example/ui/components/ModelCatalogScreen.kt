@@ -58,6 +58,13 @@ fun ModelCatalogScreen(
         deviceSpecs = DeviceSpecsManager.getDeviceSpecs(context)
     }
 
+    LaunchedEffect(downloadState.isCompleted) {
+        if (downloadState.isCompleted) {
+            refreshDownloadedList()
+            viewModel.refreshDownloadedModels()
+        }
+    }
+
     var modelForWarningDialog by remember { mutableStateOf<LocalAiModel?>(null) }
 
     Column(

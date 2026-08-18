@@ -2009,8 +2009,9 @@ object FocusTimerManager {
         saveActiveSessionState(appContext)
         reportActionToFirebase(appContext, "pause_timer")
         KeepAliveService.updateNotification(appContext)
-                syncStateToFirebase(appContext)
+        syncStateToFirebase(appContext)
         updateOverlayVisibility(appContext)
+        FocusDisplayManager.dismissFullScreenIdleTimer(appContext)
         com.example.widget.WidgetManager.updateAllWidgets(appContext)
     }
 
@@ -2687,8 +2688,9 @@ object FocusTimerManager {
         saveActiveSessionState(appContext)
         reportActionToFirebase(appContext, "pause_stopwatch")
         KeepAliveService.updateNotification(appContext)
-                syncStateToFirebase(appContext)
+        syncStateToFirebase(appContext)
         updateOverlayVisibility(appContext)
+        FocusDisplayManager.dismissFullScreenIdleTimer(appContext)
         com.example.widget.WidgetManager.updateAllWidgets(appContext)
     }
 

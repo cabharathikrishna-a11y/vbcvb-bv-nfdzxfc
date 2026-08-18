@@ -1058,10 +1058,10 @@ object AppUpdateManager {
     }
 
     /**
-     * Checks if the active network has internet connectivity.
+     * Checks if the active network has internet connectivity via Central NetworkTrafficManager.
      */
     private fun isNetworkAvailable(context: Context): Boolean {
-        return com.example.util.NetworkChecker.isOnline(context)
+        return com.example.util.NetworkTrafficManager.canPerformNetworkTask(context, com.example.util.NetworkTrafficManager.TrafficCategory.APP_UPDATE)
     }
 
     /**

@@ -127,6 +127,7 @@ class KeepAliveService : Service() {
         LiveTimerNotificationManager.createNotificationChannel(this)
         com.example.util.LiveTimerDisplayRelay.start(this)
         com.example.util.FocusDisplayManager.init(this)
+        com.example.util.NetworkTrafficManager.init(this)
         val initialNotification = LiveTimerNotificationManager.buildNotification(this)
         try {
             startForegroundSafe(NOTIFICATION_ID, initialNotification)

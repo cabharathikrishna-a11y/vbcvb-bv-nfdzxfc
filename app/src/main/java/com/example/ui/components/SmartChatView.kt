@@ -304,6 +304,13 @@ fun SmartChatView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 private fun ModelDownloadHeroScreen(onInitiateDownload: () -> Unit) {
     val context = LocalContext.current
     val specs = remember { DeviceSpecsManager.getDeviceSpecs(context) }
+    val downloadState by ModelDownloadManager.downloadState.collectAsState()
+
+    val isDownloading = downloadState.isDownloading
+    val tempFile = remember(isDownloading) {
+        java.io.File(ModelDownloadManager.getModelsDir(context), "${ModelRepository.FLAGSHIP_QWEN_CODER.fileName}.download")
+    }
+    val partialMb = if (tempFile.exists()) (tempFile.length() / (1024 * 1024)).toInt() else 0
 
     Box(
         modifier = Modifier
@@ -371,6 +378,22 @@ private fun ModelDownloadHeroScreen(onInitiateDownload: () -> Unit) {
                     }
                 }
 
+                if (!downloadState.error.isNullOrBlank()) {
+                    Surface(
+                        color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = downloadState.error ?: "",
+                            color = Color(0xFFFCA5A5),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+
                 // FEATURES LIST
                 Column(
                     modifier = Modifier
@@ -402,7 +425,7 @@ private fun ModelDownloadHeroScreen(onInitiateDownload: () -> Unit) {
                     }
 
                     Text(
-                        text = "Size: 1.0 GB",
+                        text = if (partialMb > 0) "$partialMb MB / 1.0 GB" else "Size: 1.0 GB",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -418,13 +441,17 @@ private fun ModelDownloadHeroScreen(onInitiateDownload: () -> Unit) {
                         .testTag("download_ai_model_button"),
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF6366F1)
+                        containerColor = if (partialMb > 0) Color(0xFF10B981) else Color(0xFF6366F1)
                     )
                 ) {
-                    Icon(Icons.Default.Download, contentDescription = "Download", modifier = Modifier.size(20.dp))
+                    Icon(
+                        imageVector = if (partialMb > 0) Icons.Default.PlayArrow else Icons.Default.Download,
+                        contentDescription = "Download",
+                        modifier = Modifier.size(20.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Download AI Model (1.0 GB)",
+                        text = if (partialMb > 0) "Resume Download ($partialMb MB saved)" else "Download AI Model (1.0 GB)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
