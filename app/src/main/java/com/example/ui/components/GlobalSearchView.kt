@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -435,15 +436,15 @@ fun SectionHeader(title: String, count: Int) {
 @Composable
 fun TaskSearchItem(task: Task, onToggle: () -> Unit, onOpen: () -> Unit) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
-        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = if (task.isCompleted) SurfaceCard.copy(alpha = 0.5f) else SurfaceCard),
+        shape = RoundedCornerShape(if (task.isCompleted) 6.dp else 12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpen() }
             .testTag("task_search_item_${task.id}")
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(if (task.isCompleted) 6.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
@@ -452,13 +453,14 @@ fun TaskSearchItem(task: Task, onToggle: () -> Unit, onOpen: () -> Unit) {
                 colors = CheckboxDefaults.colors(
                     checkedColor = WaterBlue,
                     uncheckedColor = Color.Gray
-                )
+                ),
+                modifier = Modifier.size(if (task.isCompleted) 18.dp else 24.dp)
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(if (task.isCompleted) 4.dp else 8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     val priorityColor = when (task.priority.uppercase()) {
                         "HIGH" -> Color.Red
@@ -467,32 +469,33 @@ fun TaskSearchItem(task: Task, onToggle: () -> Unit, onOpen: () -> Unit) {
                     }
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(priorityColor.copy(alpha = 0.2f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(priorityColor.copy(alpha = if (task.isCompleted) 0.1f else 0.2f))
+                            .padding(horizontal = if (task.isCompleted) 4.dp else 6.dp, vertical = 1.dp)
                     ) {
                         Text(
                             text = task.priority,
-                            color = priorityColor,
-                            fontSize = 9.sp,
+                            color = if (task.isCompleted) priorityColor.copy(alpha = 0.6f) else priorityColor,
+                            fontSize = if (task.isCompleted) 8.sp else 9.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                     Text(
                         text = task.listCategory,
                         color = Color.Gray,
-                        fontSize = 10.sp,
+                        fontSize = if (task.isCompleted) 9.sp else 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(if (task.isCompleted) 2.dp else 4.dp))
                 
                 Text(
                     text = task.title,
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
+                    color = if (task.isCompleted) Color.Gray else Color.White,
+                    fontSize = if (task.isCompleted) 12.sp else 14.sp,
+                    fontWeight = if (task.isCompleted) FontWeight.Medium else FontWeight.Bold,
+                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
                     overflow = TextOverflow.Ellipsis,
                     maxLines = 1
                 )
@@ -500,9 +503,9 @@ fun TaskSearchItem(task: Task, onToggle: () -> Unit, onOpen: () -> Unit) {
                 if (task.description.isNotEmpty()) {
                     Text(
                         text = task.description,
-                        color = Color.LightGray,
-                        fontSize = 12.sp,
-                        maxLines = 2,
+                        color = Color.Gray,
+                        fontSize = if (task.isCompleted) 10.sp else 12.sp,
+                        maxLines = if (task.isCompleted) 1 else 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }

@@ -605,6 +605,81 @@ object GoogleCalendarSyncHelper {
 
     private const val TAG = "GoogleCalendarSync"
 
+    fun normalizeEventTitle(title: String): String {
+        return title.trim().lowercase(Locale.ROOT)
+            .replace(Regex("[\\[\\](){}]"), " ")
+            .replace("gazetted holiday", "")
+            .replace("restricted holiday", "")
+            .replace("regional holiday", "")
+            .replace("public holiday", "")
+            .replace("national holiday", "")
+            .replace("state holiday", "")
+            .replace("bank holiday", "")
+            .replace("observance", "")
+            .replace("optional", "")
+            .replace("festival of colors", "")
+            .replace("vinayaka chavithi", "ganesh chaturthi")
+            .replace("vinayaka chaturthi", "ganesh chaturthi")
+            .replace("deepavali", "diwali")
+            .replace("vijayadashami", "dussehra")
+            .replace("maha shivaratri", "maha shivratri")
+            .replace(Regex("(?i)\\bholiday\\b"), "")
+            .replace(Regex("(?i)\\bfestival\\b"), "")
+            .replace(Regex("[^a-z0-9]"), "")
+            .trim()
+    }
+
+    fun cleanDisplayEventTitle(title: String): String {
+        var clean = title.trim()
+        // Remove trailing or leading brackets/parentheses with holiday details
+        clean = clean.replace(Regex("(?i)\\s*[\\[\\(](gazetted|restricted|regional|public|national|state|bank|optional|observance|holiday|festivals?)[^\\]\\)]*[\\]\\)]"), "")
+        clean = clean.replace(Regex("(?i)\\s*-\\s*(gazetted|restricted|regional|public|national|holiday).*$"), "")
+        // If it's a slash-separated alternate name like "Ganesh Chaturthi / Vinayaka Chavithi", keep the primary
+        if (clean.contains("/")) {
+            val parts = clean.split("/").map { it.trim() }
+            clean = parts.firstOrNull { it.isNotEmpty() } ?: clean
+        }
+        return clean.trim().ifEmpty { title.trim() }
+    }
+
+    fun deduplicateCalendarEvents(events: List<SystemCalendarEvent>): List<SystemCalendarEvent> {
+        val result = mutableListOf<SystemCalendarEvent>()
+        val byDate = events.groupBy { it.dateStr }
+        for ((_, dayList) in byDate) {
+            val sortedDayList = dayList.sortedByDescending { it.isHolidayOrFestival }
+            val dayUnique = mutableListOf<SystemCalendarEvent>()
+            for (item in sortedDayList) {
+                val normTitle = normalizeEventTitle(item.title)
+                if (normTitle.isEmpty()) continue
+
+                val alreadyExists = dayUnique.any { existing ->
+                    val existingNorm = normalizeEventTitle(existing.title)
+                    if (existingNorm == normTitle) return@any true
+                    if (existingNorm.isNotEmpty() && normTitle.isNotEmpty()) {
+                        if (existingNorm.contains(normTitle) || normTitle.contains(existingNorm)) return@any true
+                    }
+                    // Token overlap check: if both share significant name tokens (e.g. "ganesh" & "chaturthi")
+                    val itemTokens = item.title.lowercase(Locale.ROOT)
+                        .split(Regex("[^a-z0-9]+"))
+                        .filter { it.length >= 4 && it !in listOf("holiday", "gazetted", "restricted", "regional", "public", "observance", "festival", "festivals", "events", "calendar") }
+                    val existingTokens = existing.title.lowercase(Locale.ROOT)
+                        .split(Regex("[^a-z0-9]+"))
+                        .filter { it.length >= 4 && it !in listOf("holiday", "gazetted", "restricted", "regional", "public", "observance", "festival", "festivals", "events", "calendar") }
+                    val common = itemTokens.filter { it in existingTokens }
+                    if (common.isNotEmpty() && (common.size >= 2 || (itemTokens.size == 1 && existingTokens.size == 1))) {
+                        return@any true
+                    }
+                    false
+                }
+                if (!alreadyExists) {
+                    dayUnique.add(item)
+                }
+            }
+            result.addAll(dayUnique)
+        }
+        return result
+    }
+
     fun isHolidayCalendar(accountName: String, displayName: String): Boolean {
         val lowerAcc = accountName.lowercase(Locale.ROOT).trim()
         val lowerDisp = displayName.lowercase(Locale.ROOT).trim()
@@ -758,7 +833,7 @@ object GoogleCalendarSyncHelper {
             Log.e(TAG, "Error fetching system calendar events: ${e.message}")
         }
 
-        return events
+        return deduplicateCalendarEvents(events)
     }
 
     // Helper to check and get a calendar ID (preferring Google account calendars or user's selected preferences)
@@ -2444,6 +2519,14 @@ object GoogleDriveSyncManager {
 
     fun ensureVaultStructureAndReadme(token: String): GoogleDriveUploadManager.VaultFolders? =
         GoogleDriveUploadManager.ensureVaultStructureAndReadme(token)
+
+    suspend fun manageAndCleanDriveAppData(
+        context: Context,
+        onAuthResolutionRequired: (Intent) -> Unit = {}
+    ): Pair<Boolean, String> = GoogleDriveUploadManager.manageAndCleanDriveAppData(context, onAuthResolutionRequired)
+
+    fun consolidateAndCleanDriveAppData(token: String): GoogleDriveUploadManager.VaultFolders? =
+        GoogleDriveUploadManager.consolidateAndCleanDriveAppData(token)
 
     fun deleteOlderDuplicateFiles(token: String, folderId: String, fileName: String, keepLatestId: String) =
         GoogleDriveWriteManager.deleteOlderDuplicateFiles(token, folderId, fileName, keepLatestId)

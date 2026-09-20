@@ -60,7 +60,7 @@ class TimerStopwatchWidgetProvider : AppWidgetProvider() {
                                 FocusTimerManager.resetTimer(context, saveSession = true)
                                 FocusTimerManager.startStopwatch(context, isResuming = false)
                             } else {
-                                val isPausedOrMidSession = isPaused || FocusTimerManager.accumulatedSessionTimeMs.value > 0L || FocusTimerManager.stopwatchSeconds.value > 0
+                                val isPausedOrMidSession = isPaused || FocusTimerManager.accumulatedSessionTimeMs.value > 0L || FocusTimerManager.stopwatchSeconds.value > 0 || FocusTimerManager.cumulativeSessionFocusSeconds.value > 0
                                 FocusTimerManager.startStopwatch(context, isResuming = isPausedOrMidSession)
                             }
                         }

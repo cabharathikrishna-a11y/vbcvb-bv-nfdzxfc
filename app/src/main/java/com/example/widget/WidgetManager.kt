@@ -90,7 +90,16 @@ object WidgetManager {
     data class TimelineBlock(
         val startMs: Long,
         val endMs: Long,
-        val color: Int
+        val color: Int,
+        val subject: String = ""
+    )
+
+    data class SubjectFocusStat(
+        val subject: String,
+        val totalSeconds: Int,
+        val sessionCount: Int,
+        val color: Int,
+        val percentage: Float
     )
 
     data class FocusingUserLogo(
@@ -158,6 +167,16 @@ object WidgetManager {
         }
     }
 
+    fun hasTimelineSubjectsWidgets(context: Context): Boolean {
+        return try {
+            val appWidgetManager = AppWidgetManager.getInstance(context) ?: return false
+            val thisWidget = ComponentName(context, TimelineSubjectsWidgetProvider::class.java)
+            appWidgetManager.getAppWidgetIds(thisWidget).isNotEmpty()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     // --- HELPER & INTENT UTILITIES ---
 
     fun getPendingIntentFlags(isMutable: Boolean = false): Int {
@@ -201,23 +220,37 @@ object WidgetManager {
     // --- CENTRALIZED DATA FETCHERS ---
 
     /**
-     * Calculates the total focus time in seconds for today across accumulated session,
-     * pending review, and active session.
+     * Calculates the total focus time in seconds for today using the single-source-of-truth
+     * TodayTotalFocusTimeManager.
      */
     fun fetchTodayTotalFocusSeconds(context: Context): Int {
         FocusTimerManager.init(context)
-        val baseTodaySecs = FocusTimerManager.getTodayFocusSeconds()
-        val pendingFocusReview = FocusTimerManager.pendingFocusReview.value
-        val todayStr = SystemTimeService.getTodayString()
-        val pendingSecs = pendingFocusReview?.let { FocusTimerManager.getOverlapSecondsForDate(it, todayStr) } ?: 0
+        return com.example.util.TodayTotalFocusTimeManager.getTodayTotalSeconds(context)
+    }
 
-        val isRunningOrPaused = FocusTimerManager.isTimerRunning.value || FocusTimerManager.isStopwatchActive.value || FocusTimerManager.isPaused.value
-        val activeSecs = if (FocusTimerManager.isFocusPhase.value && pendingFocusReview == null && isRunningOrPaused) {
-            (FocusTimerManager.accumulatedSessionTimeMs.value / 1000).toInt()
-        } else {
-            0
+    fun getSubjectColor(subject: String): Int {
+        val colors = intArrayOf(
+            Color.parseColor("#38BDF8"), // Light Blue / Sky
+            Color.parseColor("#34C759"), // Green
+            Color.parseColor("#FFCC00"), // Yellow
+            Color.parseColor("#AF52DE"), // Purple
+            Color.parseColor("#FF9500"), // Orange
+            Color.parseColor("#007AFF"), // Blue
+            Color.parseColor("#FF3B30"), // Red
+            Color.parseColor("#E91E63")  // Pink
+        )
+        return colors[Math.abs(subject.hashCode()) % colors.size]
+    }
+
+    fun formatSubjectDuration(totalSeconds: Int): String {
+        val h = totalSeconds / 3600
+        val m = (totalSeconds % 3600) / 60
+        return when {
+            h > 0 && m > 0 -> "${h}h ${m}m"
+            h > 0 -> "${h}h"
+            m > 0 -> "${m}m"
+            else -> "${totalSeconds}s"
         }
-        return baseTodaySecs + pendingSecs + activeSecs
     }
 
     /**
@@ -234,16 +267,6 @@ object WidgetManager {
         val startOfDayMs = cal.timeInMillis
         val endOfDayMs = startOfDayMs + (24 * 3600 * 1000L)
 
-        val colors = intArrayOf(
-            Color.parseColor("#FFCC00"), // Yellow
-            Color.parseColor("#30B0C7"), // Cyan
-            Color.parseColor("#FF3B30"), // Red
-            Color.parseColor("#007AFF"), // Blue
-            Color.parseColor("#AF52DE"), // Purple
-            Color.parseColor("#34C759"), // Green
-            Color.parseColor("#FF9500")  // Orange
-        )
-
         try {
             val db = AppDatabase.getInstance(context)
             val records = try {
@@ -256,8 +279,9 @@ object WidgetManager {
                 val startMs = record.start_time_ms
                 val endMs = if (record.end_time_ms > record.start_time_ms) record.end_time_ms else startMs + record.total_focus_ms
                 if (startMs < endOfDayMs && endMs > startOfDayMs) {
-                    val color = colors[Math.abs((record.subject ?: "").hashCode()) % colors.size]
-                    blocks.add(TimelineBlock(startMs, endMs, color))
+                    val subjectName = record.subject.ifBlank { "General Study" }
+                    val color = getSubjectColor(subjectName)
+                    blocks.add(TimelineBlock(startMs, endMs, color, subjectName))
                 }
             }
         } catch (e: Throwable) {
@@ -271,11 +295,68 @@ object WidgetManager {
             if (activeSecs > 0) {
                 val now = System.currentTimeMillis()
                 val startMs = maxOf(startOfDayMs, now - (activeSecs * 1000L))
-                blocks.add(TimelineBlock(startMs, now, Color.parseColor("#FF3B30")))
+                val activeSubj = FocusTimerManager.attachedTag.value.ifBlank { "Study" }
+                blocks.add(TimelineBlock(startMs, now, getSubjectColor(activeSubj), activeSubj))
             }
         }
 
         return@withContext blocks
+    }
+
+    /**
+     * Fetches today's subject-wise focus details (total focus seconds, session counts, percentage, color)
+     * for displaying below the timeline in widgets.
+     */
+    suspend fun fetchTodaySubjectDetails(context: Context): List<SubjectFocusStat> = withContext(Dispatchers.IO) {
+        val todayStr = SystemTimeService.getTodayString()
+        val subjectSecondsMap = mutableMapOf<String, Int>()
+        val subjectCountMap = mutableMapOf<String, Int>()
+
+        try {
+            val db = AppDatabase.getInstance(context)
+            val records = try {
+                db.localHistoryVaultDao().getAllHistoryDirect().filter { it.date_string == todayStr }
+            } catch (e: Throwable) {
+                emptyList()
+            }
+
+            for (record in records) {
+                val subj = record.subject.ifBlank { "General Study" }
+                val secs = (record.total_focus_ms / 1000L).toInt()
+                if (secs > 0) {
+                    subjectSecondsMap[subj] = (subjectSecondsMap[subj] ?: 0) + secs
+                    subjectCountMap[subj] = (subjectCountMap[subj] ?: 0) + 1
+                }
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error querying subject history", e)
+        }
+
+        // Include active live session
+        FocusTimerManager.init(context)
+        val isRunningOrPaused = FocusTimerManager.isTimerRunning.value || FocusTimerManager.isStopwatchActive.value || FocusTimerManager.isPaused.value
+        if (FocusTimerManager.isFocusPhase.value && isRunningOrPaused) {
+            val activeSecs = (FocusTimerManager.accumulatedSessionTimeMs.value / 1000).toInt()
+            if (activeSecs > 0) {
+                val activeSubj = FocusTimerManager.attachedTag.value.ifBlank { "Study" }
+                subjectSecondsMap[activeSubj] = (subjectSecondsMap[activeSubj] ?: 0) + activeSecs
+                subjectCountMap[activeSubj] = (subjectCountMap[activeSubj] ?: 0) + 1
+            }
+        }
+
+        val totalSecs = subjectSecondsMap.values.sum()
+        val stats = subjectSecondsMap.map { (subj, secs) ->
+            val pct = if (totalSecs > 0) (secs.toFloat() / totalSecs) * 100f else 0f
+            SubjectFocusStat(
+                subject = subj,
+                totalSeconds = secs,
+                sessionCount = subjectCountMap[subj] ?: 1,
+                color = getSubjectColor(subj),
+                percentage = pct
+            )
+        }.sortedByDescending { it.totalSeconds }
+
+        return@withContext stats
     }
 
     /**
@@ -358,6 +439,7 @@ object WidgetManager {
                 if (hasStopwatchWidgets(context)) updateStopwatchWidget(context)
                 if (hasPomodoroWidgets(context)) updatePomodoroWidget(context)
                 if (hasTotalFocusWidgets(context)) updateTotalFocusTimeWidget(context)
+                if (hasTimelineSubjectsWidgets(context)) updateTimelineSubjectsWidget(context)
                 if (hasPhotoShowerWidgets(context)) updatePhotoShowerWidget(context)
                 com.example.util.AppShortcutHelper.publishDynamicShortcuts(context)
             } catch (e: Exception) {
@@ -761,6 +843,7 @@ object WidgetManager {
             val formattedTime = formatWidgetFocusTime(totalSeconds)
 
             val timelineBlocks = fetchTodayTimelineBlocks(context)
+            val subjectStats = fetchTodaySubjectDetails(context)
             val currentHash = timelineBlocks.hashCode()
 
             val timelineBitmap = synchronized(this@WidgetManager) {
@@ -774,6 +857,7 @@ object WidgetManager {
                     bmp
                 }
             }
+            val distBitmap = generateSubjectDistributionBitmap(context, subjectStats)
 
             val timerIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -787,8 +871,64 @@ object WidgetManager {
                     setTextViewText(R.id.focus_title, "Today")
                     setTextViewText(R.id.focus_time_display, formattedTime)
                     setImageViewBitmap(R.id.focus_timeline_canvas, timelineBitmap)
+                    setImageViewBitmap(R.id.subject_distribution_bar, distBitmap)
+
+                    populateSubjectRows(this, subjectStats, maxRows = 4)
 
                     setOnClickPendingIntent(android.R.id.background, timerPending)
+                }
+                appWidgetManager.updateAppWidget(widgetId, remoteViews)
+            }
+        }
+    }
+
+    /**
+     * Updates the Timeline + Subject-Wise Details Widget
+     */
+    fun updateTimelineSubjectsWidget(context: Context, isPartialUpdate: Boolean = false) {
+        widgetScope.launch(Dispatchers.IO) {
+            val appWidgetManager = AppWidgetManager.getInstance(context) ?: return@launch
+            val thisWidget = ComponentName(context, TimelineSubjectsWidgetProvider::class.java)
+            val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
+            if (allWidgetIds.isEmpty()) return@launch
+
+            val bgRes = getBackgroundDrawableRes(context)
+
+            val totalSeconds = fetchTodayTotalFocusSeconds(context)
+            val formattedTime = formatWidgetFocusTime(totalSeconds)
+
+            val timelineBlocks = fetchTodayTimelineBlocks(context)
+            val subjectStats = fetchTodaySubjectDetails(context)
+
+            val timelineBitmap = generateTimelineBitmap(context, timelineBlocks)
+            val distBitmap = generateSubjectDistributionBitmap(context, subjectStats)
+
+            val timerIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("SHOW_TIMER_PAGE", true)
+            }
+            val timerPending = PendingIntent.getActivity(context, 5001, timerIntent, getPendingIntentFlags())
+
+            val refreshIntent = Intent(context, TimelineSubjectsWidgetProvider::class.java).apply {
+                action = "com.example.widget.ACTION_REFRESH_TIMELINE_SUBJECTS"
+            }
+            val refreshPending = PendingIntent.getBroadcast(context, 5002, refreshIntent, getPendingIntentFlags())
+
+            val todayDateFormatted = java.text.SimpleDateFormat("EEEE, MMM d", java.util.Locale.getDefault()).format(java.util.Date())
+
+            for (widgetId in allWidgetIds) {
+                val remoteViews = RemoteViews(context.packageName, R.layout.widget_timeline_subjects).apply {
+                    setInt(android.R.id.background, "setBackgroundResource", bgRes)
+                    setTextViewText(R.id.focus_title, "Today's Focus Timeline")
+                    setTextViewText(R.id.focus_date_display, todayDateFormatted)
+                    setTextViewText(R.id.focus_time_display, formattedTime)
+                    setImageViewBitmap(R.id.focus_timeline_canvas, timelineBitmap)
+                    setImageViewBitmap(R.id.subject_distribution_bar, distBitmap)
+
+                    populateSubjectRows(this, subjectStats, maxRows = 6)
+
+                    setOnClickPendingIntent(android.R.id.background, timerPending)
+                    setOnClickPendingIntent(R.id.btn_widget_refresh, refreshPending)
                 }
                 appWidgetManager.updateAppWidget(widgetId, remoteViews)
             }
@@ -1308,6 +1448,155 @@ object WidgetManager {
         }
 
         return bitmap
+    }
+
+    private fun generateSubjectDistributionBitmap(context: Context, stats: List<SubjectFocusStat>): Bitmap {
+        val width = 540
+        val height = 16
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        if (stats.isEmpty()) {
+            val emptyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#27272A")
+                style = Paint.Style.FILL
+            }
+            canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), 8f, 8f, emptyPaint)
+            return bitmap
+        }
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#18181B")
+            style = Paint.Style.FILL
+        }
+        canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), 8f, 8f, bgPaint)
+
+        val clipPath = android.graphics.Path().apply {
+            addRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), 8f, 8f, android.graphics.Path.Direction.CW)
+        }
+        canvas.clipPath(clipPath)
+
+        val totalSecs = stats.sumOf { it.totalSeconds }.coerceAtLeast(1)
+        var currentX = 0f
+        val segPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+        }
+
+        stats.forEach { stat ->
+            val segWidth = (stat.totalSeconds.toFloat() / totalSecs) * width
+            if (segWidth > 0f) {
+                segPaint.color = stat.color
+                canvas.drawRect(currentX, 0f, currentX + segWidth, height.toFloat(), segPaint)
+                currentX += segWidth
+            }
+        }
+
+        return bitmap
+    }
+
+    private fun createColorDotBitmap(color: Int, sizePx: Int = 24): Bitmap {
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(sizePx / 2f, sizePx / 2f, (sizePx / 2f) - 1.5f, paint)
+        return bitmap
+    }
+
+    private fun populateSubjectRows(
+        remoteViews: RemoteViews,
+        stats: List<SubjectFocusStat>,
+        maxRows: Int = 6
+    ) {
+        val rowIds = intArrayOf(
+            R.id.subject_row_1,
+            R.id.subject_row_2,
+            R.id.subject_row_3,
+            R.id.subject_row_4,
+            R.id.subject_row_5,
+            R.id.subject_row_6
+        )
+        val dotIds = intArrayOf(
+            R.id.subject_dot_1,
+            R.id.subject_dot_2,
+            R.id.subject_dot_3,
+            R.id.subject_dot_4,
+            R.id.subject_dot_5,
+            R.id.subject_dot_6
+        )
+        val nameIds = intArrayOf(
+            R.id.subject_name_1,
+            R.id.subject_name_2,
+            R.id.subject_name_3,
+            R.id.subject_name_4,
+            R.id.subject_name_5,
+            R.id.subject_name_6
+        )
+        val countIds = intArrayOf(
+            R.id.subject_count_1,
+            R.id.subject_count_2,
+            R.id.subject_count_3,
+            R.id.subject_count_4,
+            R.id.subject_count_5,
+            R.id.subject_count_6
+        )
+        val timeIds = intArrayOf(
+            R.id.subject_time_1,
+            R.id.subject_time_2,
+            R.id.subject_time_3,
+            R.id.subject_time_4,
+            R.id.subject_time_5,
+            R.id.subject_time_6
+        )
+
+        val totalSessions = stats.sumOf { it.sessionCount }
+        val subjectsCount = stats.size
+
+        if (stats.isEmpty()) {
+            remoteViews.setViewVisibility(R.id.subjects_section_header, View.VISIBLE)
+            remoteViews.setTextViewText(R.id.subjects_count_summary, "0 Subjects")
+            remoteViews.setViewVisibility(R.id.subjects_empty_text, View.VISIBLE)
+            remoteViews.setViewVisibility(R.id.subject_distribution_bar, View.GONE)
+            for (i in 0 until minOf(maxRows, rowIds.size)) {
+                remoteViews.setViewVisibility(rowIds[i], View.GONE)
+            }
+            remoteViews.setViewVisibility(R.id.subject_more_text, View.GONE)
+        } else {
+            remoteViews.setViewVisibility(R.id.subjects_section_header, View.VISIBLE)
+            remoteViews.setTextViewText(
+                R.id.subjects_count_summary,
+                "$subjectsCount ${if (subjectsCount == 1) "Subject" else "Subjects"} • $totalSessions ${if (totalSessions == 1) "Session" else "Sessions"}"
+            )
+            remoteViews.setViewVisibility(R.id.subjects_empty_text, View.GONE)
+            remoteViews.setViewVisibility(R.id.subject_distribution_bar, View.VISIBLE)
+
+            val displayCount = minOf(stats.size, maxRows, rowIds.size)
+            for (i in 0 until displayCount) {
+                val stat = stats[i]
+                remoteViews.setViewVisibility(rowIds[i], View.VISIBLE)
+                remoteViews.setImageViewBitmap(dotIds[i], createColorDotBitmap(stat.color))
+                remoteViews.setTextViewText(nameIds[i], stat.subject)
+                val pctStr = String.format(java.util.Locale.US, "%.0f%%", stat.percentage)
+                remoteViews.setTextViewText(
+                    countIds[i],
+                    "${stat.sessionCount} sess ($pctStr)"
+                )
+                remoteViews.setTextViewText(timeIds[i], formatSubjectDuration(stat.totalSeconds))
+            }
+
+            for (i in displayCount until minOf(maxRows, rowIds.size)) {
+                remoteViews.setViewVisibility(rowIds[i], View.GONE)
+            }
+
+            if (stats.size > displayCount) {
+                remoteViews.setViewVisibility(R.id.subject_more_text, View.VISIBLE)
+                remoteViews.setTextViewText(R.id.subject_more_text, "+ ${stats.size - displayCount} more subjects")
+            } else {
+                remoteViews.setViewVisibility(R.id.subject_more_text, View.GONE)
+            }
+        }
     }
 
     private fun getRotationFromExif(inputStream: InputStream): Int {

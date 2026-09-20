@@ -103,6 +103,23 @@ object SmartUpdateManager {
 
         _updateStatus.value = SmartUpdateStatus.Checking
         updateScope.launch {
+            if (!NetworkTrafficManager.isConnected(context)) {
+                val offlineMsg = "Device is offline. Connect to Wi-Fi or Mobile Data to check for updates."
+                _updateStatus.value = SmartUpdateStatus.Error(offlineMsg)
+                if (manualCheck) {
+                    withContext(Dispatchers.Main) {
+                        try {
+                            android.widget.Toast.makeText(
+                                context,
+                                "⚠️ Device is offline. Connect to Wi-Fi or Mobile Data to check for updates.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        } catch (e: Exception) {}
+                    }
+                }
+                return@launch
+            }
+
             try {
                 val localVersion = AppUpdateManager.getCurrentVersionCode(context)
                 Firebase.ensureAuthenticated(context)

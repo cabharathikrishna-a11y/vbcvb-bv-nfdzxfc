@@ -121,6 +121,10 @@ object DatabaseBackupHelper {
                 obj.put("orderIndex", it.orderIndex)
                 obj.put("scheduledTime", it.scheduledTime)
                 obj.put("isReminderEnabled", it.isReminderEnabled)
+                obj.put("actionType", it.actionType)
+                obj.put("actionContactName", it.actionContactName)
+                obj.put("actionContactPhone", it.actionContactPhone)
+                obj.put("actionMessage", it.actionMessage)
                 habitsArray.put(obj)
             }
             root.put("habits", habitsArray)
@@ -829,7 +833,11 @@ object DatabaseBackupHelper {
                         monthlyEndDate = obj.optInt("monthlyEndDate", 30),
                         orderIndex = obj.optInt("orderIndex", 0),
                         scheduledTime = obj.optString("scheduledTime", "08:00"),
-                        isReminderEnabled = obj.optBoolean("isReminderEnabled", false)
+                        isReminderEnabled = obj.optBoolean("isReminderEnabled", false),
+                        actionType = obj.optString("actionType", ""),
+                        actionContactName = obj.optString("actionContactName", ""),
+                        actionContactPhone = obj.optString("actionContactPhone", ""),
+                        actionMessage = obj.optString("actionMessage", "")
                     )
                     val newId = database.habitDao().insertHabit(habit).toInt()
                     if (oldId != -1) {
@@ -1503,9 +1511,10 @@ object DatabaseBackupHelper {
     }
 
     private fun downloadPublicFileDirect(urlStr: String, destFile: java.io.File) {
-        val client = okhttp3.OkHttpClient()
+        val client = com.example.util.NetworkTrafficManager.getOkHttpClient()
         val request = okhttp3.Request.Builder()
             .url(urlStr)
+            .header(com.example.util.NetworkTrafficManager.HEADER_TRAFFIC_CATEGORY, com.example.util.NetworkTrafficManager.TrafficCategory.CLOUD_BACKUP.name)
             .get()
             .build()
         client.newCall(request).execute().use { response ->

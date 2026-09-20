@@ -322,19 +322,6 @@ object MovieSearchService {
             return@withContext blended
         }
 
-        // Fallback to Gemini AI query lookup if remote search was empty or failed
-        val geminiKey = BuildConfig.GEMINI_API_KEY
-        if (geminiKey.isNotEmpty() && geminiKey != "MY_GEMINI_API_KEY") {
-            try {
-                val aiMovieItem = searchViaGeminiAi(cleanQuery)
-                if (aiMovieItem != null) {
-                    return@withContext (listOf(aiMovieItem) + matchedShowcase).distinctBy { it.title.lowercase() }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
         // If query doesn't match showcase, generate dynamically structured item so user NEVER types details manually!
         if (matchedShowcase.isEmpty()) {
             val generated = generateFallbackMovieItem(cleanQuery)
@@ -413,10 +400,6 @@ object MovieSearchService {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return null
-    }
-
-    private suspend fun searchViaGeminiAi(query: String): MovieItem? {
         return null
     }
 

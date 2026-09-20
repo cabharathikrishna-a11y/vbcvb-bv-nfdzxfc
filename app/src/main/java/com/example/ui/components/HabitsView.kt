@@ -35,6 +35,8 @@ import com.example.ui.AppViewModel
 import com.example.ui.theme.Charcoal
 import com.example.ui.theme.SurfaceCard
 import com.example.ui.theme.WaterBlue
+import com.example.util.TaskActionHelper
+import com.example.util.TaskActionData
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -77,6 +79,9 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     var curMonthlyEndDate by remember { mutableStateOf("30") }
     var curScheduledTime by remember { mutableStateOf("08:00") }
     var curIsReminderEnabled by remember { mutableStateOf(false) }
+    var curHabitActionData by remember { mutableStateOf(TaskActionData()) }
+    var showActionConfigDialog by remember { mutableStateOf(false) }
+    val contactsList by viewModel.contacts.collectAsState()
 
     val externalSelectedId by viewModel.selectedHabitId.collectAsState()
     LaunchedEffect(externalSelectedId, allDbHabits) {
@@ -94,6 +99,7 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 curMonthlyEndDate = habit.monthlyEndDate.toString()
                 curScheduledTime = habit.scheduledTime
                 curIsReminderEnabled = habit.isReminderEnabled
+                curHabitActionData = TaskActionHelper.parseActionData(habit)
                 showCreateEditDialog = true
                 viewModel.clearSelectedHabitId()
             }
@@ -419,7 +425,7 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 }
                                             }
                                             Spacer(modifier = Modifier.height(4.dp))
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 Text(
                                                     text = when (habit.frequency.uppercase()) {
                                                         "WEEKLY" -> "Weekly (${getWeeklyDayName(habit.weeklyDay)})"
@@ -430,6 +436,34 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     color = Color.LightGray,
                                                     fontSize = 11.sp
                                                 )
+                                            }
+                                            if (habit.actionType.isNotEmpty()) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                val parsedAction = remember(habit.actionType, habit.actionContactName, habit.actionContactPhone, habit.actionMessage) {
+                                                    TaskActionHelper.parseActionData(habit)
+                                                }
+                                                val (actIcon, actColor, actLabel) = when (parsedAction.type.uppercase()) {
+                                                    "CALL" -> Triple("📞", Color(0xFF00E676), "Call ${parsedAction.contactName.ifEmpty { parsedAction.contactPhone }}")
+                                                    "SMS" -> Triple("💬", Color(0xFF2E6FF3), "SMS ${parsedAction.contactName.ifEmpty { parsedAction.contactPhone }}")
+                                                    "WHATSAPP" -> Triple("🟢", Color(0xFF25D366), "WA ${parsedAction.contactName.ifEmpty { parsedAction.contactPhone }}")
+                                                    else -> Triple("⚡", WaterBlue, parsedAction.type)
+                                                }
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(actColor.copy(alpha = 0.2f))
+                                                        .clickable {
+                                                            TaskActionHelper.executeAction(context, parsedAction)
+                                                        }
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "$actIcon $actLabel",
+                                                        color = actColor,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
                                             }
                                         }
 
@@ -588,6 +622,7 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 curMonthlyEndDate = "30"
                                 curScheduledTime = "08:00"
                                 curIsReminderEnabled = false
+                                curHabitActionData = TaskActionData()
                                 showCreateEditDialog = true
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
@@ -800,7 +835,11 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 streakCount = if (isEditMode) (editingHabitTarget?.streakCount ?: 0) else 0,
                                 lastCompletedTimestamp = if (isEditMode) (editingHabitTarget?.lastCompletedTimestamp) else null,
                                 scheduledTime = curScheduledTime,
-                                isReminderEnabled = curIsReminderEnabled
+                                isReminderEnabled = curIsReminderEnabled,
+                                actionType = curHabitActionData.type,
+                                actionContactName = curHabitActionData.contactName,
+                                actionContactPhone = curHabitActionData.contactPhone,
+                                actionMessage = curHabitActionData.message
                             )
 
                             if (isEditMode) {
@@ -816,7 +855,11 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     monthlyStartDate = freshHabit.monthlyStartDate,
                                     monthlyEndDate = freshHabit.monthlyEndDate,
                                     scheduledTime = freshHabit.scheduledTime,
-                                    isReminderEnabled = freshHabit.isReminderEnabled
+                                    isReminderEnabled = freshHabit.isReminderEnabled,
+                                    actionType = freshHabit.actionType,
+                                    actionContactName = freshHabit.actionContactName,
+                                    actionContactPhone = freshHabit.actionContactPhone,
+                                    actionMessage = freshHabit.actionMessage
                                 )
                             }
                         }
@@ -1066,6 +1109,65 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             )
                         }
                     }
+
+                    item {
+                        Text("HABIT ACTION", color = WaterBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SurfaceCard)
+                                .clickable { showActionConfigDialog = true }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(
+                                    imageVector = Icons.Default.FlashOn,
+                                    contentDescription = "Habit Action",
+                                    tint = WaterBlue,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Action",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (curHabitActionData.type.isNotEmpty()) {
+                                        val summary = when (curHabitActionData.type.uppercase()) {
+                                            "CALL" -> "📞 Call ${curHabitActionData.contactName.ifEmpty { curHabitActionData.contactPhone }}"
+                                            "SMS" -> "💬 SMS ${curHabitActionData.contactName.ifEmpty { curHabitActionData.contactPhone }}"
+                                            "WHATSAPP" -> "🟢 WhatsApp ${curHabitActionData.contactName.ifEmpty { curHabitActionData.contactPhone }}"
+                                            else -> curHabitActionData.type
+                                        }
+                                        Text(
+                                            text = summary,
+                                            color = WaterBlue,
+                                            fontSize = 11.sp,
+                                            maxLines = 1
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Call, SMS, or WhatsApp reminder",
+                                            color = Color.Gray,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -1093,7 +1195,11 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 streakCount = if (isEditMode) (editingHabitTarget?.streakCount ?: 0) else 0,
                                 lastCompletedTimestamp = if (isEditMode) (editingHabitTarget?.lastCompletedTimestamp) else null,
                                 scheduledTime = curScheduledTime,
-                                isReminderEnabled = curIsReminderEnabled
+                                isReminderEnabled = curIsReminderEnabled,
+                                actionType = curHabitActionData.type,
+                                actionContactName = curHabitActionData.contactName,
+                                actionContactPhone = curHabitActionData.contactPhone,
+                                actionMessage = curHabitActionData.message
                             )
 
                             if (isEditMode) {
@@ -1109,7 +1215,11 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     monthlyStartDate = freshHabit.monthlyStartDate,
                                     monthlyEndDate = freshHabit.monthlyEndDate,
                                     scheduledTime = freshHabit.scheduledTime,
-                                    isReminderEnabled = freshHabit.isReminderEnabled
+                                    isReminderEnabled = freshHabit.isReminderEnabled,
+                                    actionType = freshHabit.actionType,
+                                    actionContactName = freshHabit.actionContactName,
+                                    actionContactPhone = freshHabit.actionContactPhone,
+                                    actionMessage = freshHabit.actionMessage
                                 )
                             }
                         }
@@ -1124,6 +1234,20 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 TextButton(onClick = { showCreateEditDialog = false }) {
                     Text("Cancel", color = Color.White)
                 }
+            }
+        )
+    }
+
+    if (showActionConfigDialog) {
+        TaskActionConfigDialog(
+            initialAction = curHabitActionData,
+            contacts = contactsList,
+            onSave = { updatedAction ->
+                curHabitActionData = updatedAction
+                showActionConfigDialog = false
+            },
+            onDismiss = {
+                showActionConfigDialog = false
             }
         )
     }
@@ -1421,7 +1545,29 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             title = { Text("Manage Habit: ${targetHabit.name}", fontWeight = FontWeight.Bold, color = Color.White) },
             containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f),
             text = {
-                Text("Select an action to modify or delete this habit plan.", color = Color.LightGray, fontSize = 14.sp)
+                Column {
+                    Text("Select an action to modify or delete this habit plan.", color = Color.LightGray, fontSize = 14.sp)
+                    val actData = remember(targetHabit) { TaskActionHelper.parseActionData(targetHabit) }
+                    if (actData.type.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                TaskActionHelper.executeAction(context, actData)
+                                showLongPressOptionsForHabit = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WaterBlue.copy(alpha = 0.25f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val actLabel = when (actData.type.uppercase()) {
+                                "CALL" -> "📞 Call ${actData.contactName.ifEmpty { actData.contactPhone }}"
+                                "SMS" -> "💬 Send SMS to ${actData.contactName.ifEmpty { actData.contactPhone }}"
+                                "WHATSAPP" -> "🟢 WhatsApp ${actData.contactName.ifEmpty { actData.contactPhone }}"
+                                else -> "⚡ Action: ${actData.type}"
+                            }
+                            Text(actLabel, color = WaterBlue, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
             },
             confirmButton = {
                 Row(
@@ -1441,6 +1587,7 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             curMonthlyEndDate = targetHabit.monthlyEndDate.toString()
                             curScheduledTime = targetHabit.scheduledTime
                             curIsReminderEnabled = targetHabit.isReminderEnabled
+                            curHabitActionData = TaskActionHelper.parseActionData(targetHabit)
                             showCreateEditDialog = true
                             showLongPressOptionsForHabit = null
                         },

@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_black_glass"
+    android:orientation="vertical"
+    android:paddingLeft="14dp"
+    android:paddingRight="14dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp"
+    android:gravity="top">
+
+    <!-- Top Header: Title, Date, Total Time and Refresh -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/focus_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Today's Focus Timeline"
+                android:textColor="#A1A1AA"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.03" />
+
+            <TextView
+                android:id="@+id/focus_date_display"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Today"
+                android:textColor="#71717A"
+                android:textSize="10sp"
+                android:layout_marginTop="1dp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/focus_time_display"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0m"
+            android:textColor="#00E5FF"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:includeFontPadding="false"
+            android:layout_marginEnd="8dp" />
+
+        <ImageView
+            android:id="@+id/btn_widget_refresh"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:src="@drawable/ic_widget_refresh"
+            android:contentDescription="Refresh Widget"
+            android:alpha="0.8" />
+    </LinearLayout>
+
+    <!-- Visual Chronological Timeline Canvas -->
+    <ImageView
+        android:id="@+id/focus_timeline_canvas"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scaleType="fitCenter"
+        android:adjustViewBounds="true"
+        android:contentDescription="Focus Timeline Canvas"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="4dp" />
+
+    <!-- Subject Breakdown Section Header below the Timeline -->
+    <LinearLayout
+        android:id="@+id/subjects_section_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="2dp">
+
+        <TextView
+            android:id="@+id/subjects_header_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="SUBJECT BREAKDOWN (TOTAL FOCUS)"
+            android:textColor="#71717A"
+            android:textSize="9.5sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.05" />
+
+        <TextView
+            android:id="@+id/subjects_count_summary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0 Subjects"
+            android:textColor="#A1A1AA"
+            android:textSize="9.5sp" />
+    </LinearLayout>
+
+    <!-- Multi-color proportional distribution bar below timeline -->
+    <ImageView
+        android:id="@+id/subject_distribution_bar"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:scaleType="fitXY"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="6dp"
+        android:contentDescription="Subject Proportion Bar"
+        android:visibility="gone" />
+
+    <!-- Empty State Text -->
+    <TextView
+        android:id="@+id/subjects_empty_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="No focus sessions recorded today yet"
+        android:textColor="#52525B"
+        android:textSize="11sp"
+        android:gravity="center"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:visibility="visible" />
+
+    <!-- Subject Rows: Row 1 -->
+    <LinearLayout
+        android:id="@+id/subject_row_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/subject_dot_1"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="Subject Color" />
+
+        <TextView
+            android:id="@+id/subject_name_1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Subject 1"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/subject_count_1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 sess (50%)"
+            android:textColor="#A1A1AA"
+            android:textSize="9.5sp"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:id="@+id/subject_time_1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1h 30m"
+            android:textColor="#38BDF8"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Subject Rows: Row 2 -->
+    <LinearLayout
+        android:id="@+id/subject_row_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/subject_dot_2"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="Subject Color" />
+
+        <TextView
+            android:id="@+id/subject_name_2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Subject 2"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/subject_count_2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 sess (30%)"
+            android:textColor="#A1A1AA"
+            android:textSize="9.5sp"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:id="@+id/subject_time_2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="45m"
+            android:textColor="#38BDF8"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Subject Rows: Row 3 -->
+    <LinearLayout
+        android:id="@+id/subject_row_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/subject_dot_3"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="Subject Color" />
+
+        <TextView
+            android:id="@+id/subject_name_3"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Subject 3"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/subject_count_3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 sess (20%)"
+            android:textColor="#A1A1AA"
+            android:textSize="9.5sp"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:id="@+id/subject_time_3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="30m"
+            android:textColor="#38BDF8"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Subject Rows: Row 4 -->
+    <LinearLayout
+        android:id="@+id/subject_row_4"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/subject_dot_4"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="Subject Color" />
+
+        <TextView
+            android:id="@+id/subject_name_4"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Subject 4"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/subject_count_4"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 sess"
+            android:textColor="#A1A1AA"
+            android:textSize="9.5sp"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:id="@+id/subject_time_4"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="20m"
+            android:textColor="#38BDF8"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Subject Rows: Row 5 -->
+    <LinearLayout
+        android:id="@+id/subject_row_5"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/subject_dot_5"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="Subject Color" />
+
+        <TextView
+            android:id="@+id/subject_name_5"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Subject 5"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/subject_count_5"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 sess"
+            android:textColor="#A1A1AA"
+            android:textSize="9.5sp"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:id="@+id/subject_time_5"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="15m"
+            android:textColor="#38BDF8"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Subject Rows: Row 6 -->
+    <LinearLayout
+        android:id="@+id/subject_row_6"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/subject_dot_6"
+            android:layout_width="7dp"
+            android:layout_height="7dp"
+            android:layout_marginEnd="6dp"
+            android:contentDescription="Subject Color" />
+
+        <TextView
+            android:id="@+id/subject_name_6"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Subject 6"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/subject_count_6"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 sess"
+            android:textColor="#A1A1AA"
+            android:textSize="9.5sp"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:id="@+id/subject_time_6"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="10m"
+            android:textColor="#38BDF8"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- More Subjects Counter -->
+    <TextView
+        android:id="@+id/subject_more_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="+ more subjects"
+        android:textColor="#71717A"
+        android:textSize="9.5sp"
+        android:layout_gravity="end"
+        android:layout_marginTop="2dp"
+        android:visibility="gone" />
+
+</LinearLayout>

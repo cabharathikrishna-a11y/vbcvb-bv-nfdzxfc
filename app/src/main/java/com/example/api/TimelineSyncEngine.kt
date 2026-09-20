@@ -47,6 +47,16 @@ object TimelineSyncEngine {
                             cleanStatus == "offline" || cleanStatus.isEmpty()
 
         if (isNotFocusing) {
+            if (cleanStatus == "paused") {
+                val lastEvent = timeline.lastOrNull()
+                val trueTime = TimeEngine.getTrueTimeMs()
+                if (lastEvent != null && lastEvent.timestamp > 0L) {
+                    val isStale = (trueTime - lastEvent.timestamp) > 12 * 60 * 60 * 1000L || !TimeEngine.isUpdatedToday(lastEvent.timestamp, trueTime)
+                    if (isStale) {
+                        return 0L
+                    }
+                }
+            }
             return minOf(86_400_000L, maxOf(0L, totalFocusMs))
         }
 

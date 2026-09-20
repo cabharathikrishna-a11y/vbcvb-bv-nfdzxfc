@@ -381,6 +381,170 @@ fun VisualTimelineGraph(
                     Text("Idle Gaps", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                 }
             }
+
+            // Subject-Wise Focus Details section
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(color = Color(0xFF27272A), thickness = 1.dp)
+            Spacer(modifier = Modifier.height(14.dp))
+
+            val totalDayFocusMs = remember(dayRecords) {
+                dayRecords.sumOf { it.total_focus_ms }
+            }
+
+            val subjectStatsList = remember(dayRecords) {
+                val grouped = dayRecords.groupBy { it.subject.ifBlank { "General Study" } }
+                val totalMs = totalDayFocusMs.coerceAtLeast(1L)
+                grouped.map { (subject, records) ->
+                    val subjTotalMs = records.sumOf { it.total_focus_ms }
+                    val pct = (subjTotalMs.toFloat() / totalMs.toFloat()) * 100f
+                    val colorInt = com.example.widget.WidgetManager.getSubjectColor(subject)
+                    object {
+                        val subjectName = subject
+                        val totalMs = subjTotalMs
+                        val count = records.size
+                        val color = Color(colorInt)
+                        val percentage = pct
+                    }
+                }.sortedByDescending { it.totalMs }
+            }
+
+            val formattedTotalTime = remember(totalDayFocusMs) {
+                val totalSecs = (totalDayFocusMs / 1000L).toInt()
+                val hrs = totalSecs / 3600
+                val mins = (totalSecs % 3600) / 60
+                val secs = totalSecs % 60
+                when {
+                    hrs > 0 -> "${hrs}h ${mins}m"
+                    mins > 0 -> "${mins}m ${secs}s"
+                    else -> "${secs}s"
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        "Subject-Wise Details",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        if (subjectStatsList.isEmpty()) "0 Subjects Tracked"
+                        else "${subjectStatsList.size} ${if (subjectStatsList.size == 1) "Subject" else "Subjects"} • ${dayRecords.size} ${if (dayRecords.size == 1) "Session" else "Sessions"}",
+                        fontSize = 11.sp,
+                        color = Color(0xFFA1A1AA)
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1E293B)
+                ) {
+                    Text(
+                        text = "Total: $formattedTotalTime",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF38BDF8),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            if (subjectStatsList.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                // Proportional Subject Distribution Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFF27272A))
+                ) {
+                    subjectStatsList.forEach { stat ->
+                        val weight = (stat.percentage / 100f).coerceIn(0.001f, 1f)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .weight(weight)
+                                .background(stat.color)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    subjectStatsList.forEach { stat ->
+                        val durationText = run {
+                            val secs = (stat.totalMs / 1000L).toInt()
+                            val h = secs / 3600
+                            val m = (secs % 3600) / 60
+                            when {
+                                h > 0 && m > 0 -> "${h}h ${m}m"
+                                h > 0 -> "${h}h"
+                                m > 0 -> "${m}m"
+                                else -> "${secs}s"
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF141416), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(RoundedCornerShape(5.dp))
+                                    .background(stat.color)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = stat.subjectName,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "${stat.count} ${if (stat.count == 1) "sess" else "sessions"} (${String.format(Locale.US, "%.0f%%", stat.percentage)})",
+                                fontSize = 11.sp,
+                                color = Color(0xFFA1A1AA),
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                            Text(
+                                text = durationText,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF38BDF8)
+                            )
+                        }
+                    }
+                }
+            } else {
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF141416), RoundedCornerShape(8.dp))
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "No focused sessions recorded for this day yet.",
+                        fontSize = 12.sp,
+                        color = Color(0xFF71717A)
+                    )
+                }
+            }
         }
     }
 }

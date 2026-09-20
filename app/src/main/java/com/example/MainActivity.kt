@@ -964,6 +964,7 @@ class MainActivity : ComponentActivity() {
                                             Screen.GOOGLE_DRIVE_SYNC -> com.example.ui.components.GoogleDriveSyncView(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.SETTINGS) })
                                             Screen.MOVIE_TRACKER -> com.example.ui.components.MovieTrackerView(viewModel = viewModel)
                                             Screen.MULTI_WINDOW_DESKTOP -> com.example.ui.components.MultiWindowDesktopOverlay(viewModel = viewModel, onExit = { viewModel.navigateTo(Screen.DEEPA_AI) })
+                                            Screen.SHOPPING_CART -> com.example.ui.components.ShoppingCartView(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.DEEPA_AI) })
                                         }
                                     }
                                 }
@@ -2173,6 +2174,7 @@ class MainActivity : ComponentActivity() {
                     "messages" -> viewModel.navigateTo(Screen.MESSAGES)
                     "file_explorer" -> viewModel.navigateTo(Screen.FILE_EXPLORER)
                     "finances", "financials" -> viewModel.navigateTo(Screen.FINANCES)
+                    "shopping", "shopping_cart", "cart" -> viewModel.navigateTo(Screen.SHOPPING_CART)
                     "analytics" -> viewModel.navigateTo(Screen.ANALYTICS)
                     "settings" -> viewModel.navigateTo(Screen.SETTINGS)
                     "instagram", "instagram_web" -> viewModel.navigateTo(Screen.INSTAGRAM_WEB_APP)
@@ -2603,7 +2605,8 @@ class MainActivity : ComponentActivity() {
             Screen.SETTINGS to NavigationItem(Screen.SETTINGS, Icons.Default.Settings, "Settings"),
             Screen.HEALTH to NavigationItem(Screen.HEALTH, Icons.Default.Favorite, "Health"),
             Screen.FLEX_GRID_STUDIO to NavigationItem(Screen.FLEX_GRID_STUDIO, Icons.Default.Dashboard, "Layout Studio"),
-            Screen.MOVIE_TRACKER to NavigationItem(Screen.MOVIE_TRACKER, Icons.Default.Movie, "Movie Tracker")
+            Screen.MOVIE_TRACKER to NavigationItem(Screen.MOVIE_TRACKER, Icons.Default.Movie, "Movie Tracker"),
+            Screen.SHOPPING_CART to NavigationItem(Screen.SHOPPING_CART, Icons.Default.ShoppingCart, "Shopping Cart")
         )
         return order.mapNotNull { mapping[it] }
     }

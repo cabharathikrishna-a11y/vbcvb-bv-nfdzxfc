@@ -1,5 +1,10 @@
 package com.example.util
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import com.example.data.Habit
 import com.example.data.Task
 
 data class TaskActionData(
@@ -34,6 +39,18 @@ object TaskActionHelper {
         )
     }
 
+    fun parseActionData(habit: Habit): TaskActionData {
+        if (habit.actionType.isNotEmpty()) {
+            return TaskActionData(
+                type = habit.actionType,
+                contactName = habit.actionContactName,
+                contactPhone = habit.actionContactPhone,
+                message = habit.actionMessage
+            )
+        }
+        return TaskActionData()
+    }
+
     fun cleanDescription(description: String): String {
         return description.replace(metaActionRegex, "").trim()
     }
@@ -43,5 +60,36 @@ object TaskActionHelper {
         if (actionData.type.isEmpty()) return clean
         val tag = "[Action: ${actionData.type}|${actionData.contactName}|${actionData.contactPhone}|${actionData.message}]"
         return if (clean.isEmpty()) tag else "$clean\n$tag"
+    }
+
+    fun executeAction(context: Context, actionData: TaskActionData) {
+        if (actionData.type.isEmpty() || actionData.contactPhone.isEmpty()) return
+        val cleanPhone = actionData.contactPhone.replace(Regex("[^0-9+]"), "")
+        try {
+            when (actionData.type.uppercase()) {
+                "CALL" -> {
+                    val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$cleanPhone")).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(dialIntent)
+                }
+                "SMS" -> {
+                    val smsIntent = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$cleanPhone")).apply {
+                        putExtra("sms_body", actionData.message)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(smsIntent)
+                }
+                "WHATSAPP" -> {
+                    val url = "https://api.whatsapp.com/send?phone=$cleanPhone&text=${Uri.encode(actionData.message)}"
+                    val waIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(waIntent)
+                }
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Could not launch action: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 }

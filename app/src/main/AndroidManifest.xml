@@ -696,6 +696,24 @@
         </receiver>
 
         <receiver
+            android:name=".widget.TimelineSubjectsWidgetProvider"
+            android:label="@string/widget_name_timeline_subjects"
+            android:description="@string/widget_desc_timeline_subjects"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.ACTION_REFRESH_TIMELINE_SUBJECTS" />
+                <action android:name="android.intent.action.TIME_TICK" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/timeline_subjects_widget_info" />
+        </receiver>
+
+        <receiver
             android:name=".widget.PhotoShowerWidgetProvider"
             android:label="@string/widget_name_photo_shower"
             android:description="@string/widget_desc_photo_shower"

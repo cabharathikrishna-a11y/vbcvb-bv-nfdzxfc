@@ -321,6 +321,7 @@ object SameUserMultiDeviceSyncManager {
             try {
                 if (!NetworkChecker.isOnline(context)) {
                     Log.d(TAG, "Device is offline. Skipping fetchAndSyncAllData.")
+                    updateSyncState(SyncState.ERROR, "Device is offline. Multi-device sync will resume when online.")
                     return@launch
                 }
 

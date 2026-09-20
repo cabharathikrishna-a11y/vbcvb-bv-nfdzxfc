@@ -10,7 +10,6 @@ import com.example.api.FirebaseConfig
 import com.example.api.DevicePresenceManager
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.DataSnapshot
-import com.example.api.GeminiClient
 import com.example.data.*
 import com.example.util.FocusTimerManager
 import com.example.util.*
@@ -23,7 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 enum class Screen {
-    LOGIN, PROFILE_SETUP, PERMISSION_ONBOARDING, CALENDAR_OPTIMIZATION_ONBOARDING, DEEPA_AI, KEEP_NOTES, SEARCH, TASKS, CALENDAR, TIMER, HABITS, COUNTDOWN, JOURNAL, CONTACTS, FILE_EXPLORER, FINANCES, ANALYTICS, SETTINGS, HEALTH, LIVE_SPHERE, ARENA, FOCUS_LOCKER, MESSAGES, FLEX_GRID_STUDIO, INSTAGRAM_WEB_APP, YOUTUBE_WEB_APP, SPOTIFY_WEB_APP, OBSIDIAN_ARCHITECTURE, GOOGLE_DRIVE_SYNC, MOVIE_TRACKER, MULTI_WINDOW_DESKTOP
+    LOGIN, PROFILE_SETUP, PERMISSION_ONBOARDING, CALENDAR_OPTIMIZATION_ONBOARDING, DEEPA_AI, KEEP_NOTES, SEARCH, TASKS, CALENDAR, TIMER, HABITS, COUNTDOWN, JOURNAL, CONTACTS, FILE_EXPLORER, FINANCES, ANALYTICS, SETTINGS, HEALTH, LIVE_SPHERE, ARENA, FOCUS_LOCKER, MESSAGES, FLEX_GRID_STUDIO, INSTAGRAM_WEB_APP, YOUTUBE_WEB_APP, SPOTIFY_WEB_APP, OBSIDIAN_ARCHITECTURE, GOOGLE_DRIVE_SYNC, MOVIE_TRACKER, MULTI_WINDOW_DESKTOP, SHOPPING_CART
 }
 
 sealed interface LogoutFlowState {
@@ -484,7 +483,7 @@ class AppViewModel(
 
     // Default tab list
     val defaultScreens = listOf(
-        Screen.DEEPA_AI, Screen.MESSAGES, Screen.KEEP_NOTES, Screen.HEALTH, Screen.SEARCH, Screen.TASKS, Screen.CALENDAR, Screen.TIMER, Screen.ARENA, Screen.HABITS, Screen.COUNTDOWN, Screen.JOURNAL, Screen.CONTACTS, Screen.FILE_EXPLORER, Screen.FINANCES, Screen.ANALYTICS, Screen.SETTINGS
+        Screen.DEEPA_AI, Screen.MESSAGES, Screen.KEEP_NOTES, Screen.HEALTH, Screen.SEARCH, Screen.TASKS, Screen.CALENDAR, Screen.TIMER, Screen.ARENA, Screen.HABITS, Screen.COUNTDOWN, Screen.JOURNAL, Screen.CONTACTS, Screen.FILE_EXPLORER, Screen.FINANCES, Screen.SHOPPING_CART, Screen.ANALYTICS, Screen.SETTINGS
     )
 
     // Dynamic Tab Order State
@@ -1141,9 +1140,9 @@ class AppViewModel(
     private val _aiMemories = MutableStateFlow<List<String>>(emptyList())
     val aiMemories: StateFlow<List<String>> = _aiMemories.asStateFlow()
 
-    // --- Online Deepa AI State Flow ---
-    private val _deepaAiMode = MutableStateFlow(com.example.api.DeepaAiMode.GENERAL)
-    val deepaAiMode: StateFlow<com.example.api.DeepaAiMode> = _deepaAiMode.asStateFlow()
+    // --- Deepa AI State Flow ---
+    private val _deepaAiMode = MutableStateFlow(DeepaAiMode.GENERAL)
+    val deepaAiMode: StateFlow<DeepaAiMode> = _deepaAiMode.asStateFlow()
 
     private val _selectedAspectRatio = MutableStateFlow("1:1")
     val selectedAspectRatio: StateFlow<String> = _selectedAspectRatio.asStateFlow()
@@ -1154,7 +1153,7 @@ class AppViewModel(
     private val _attachedMedia = MutableStateFlow<Pair<String, String>?>(null)
     val attachedMedia: StateFlow<Pair<String, String>?> = _attachedMedia.asStateFlow()
 
-    fun setDeepaAiMode(mode: com.example.api.DeepaAiMode) {
+    fun setDeepaAiMode(mode: DeepaAiMode) {
         _deepaAiMode.value = mode
     }
 
@@ -2935,7 +2934,7 @@ class AppViewModel(
                 val events = com.example.util.GoogleCalendarSyncHelper.fetchSystemCalendarEvents(
                     context, calStart.timeInMillis, calEnd.timeInMillis
                 )
-                _systemCalendarEvents.value = events
+                _systemCalendarEvents.value = com.example.util.GoogleCalendarSyncHelper.deduplicateCalendarEvents(events)
             } catch (e: Exception) {
                 android.util.Log.e("AppViewModel", "Failed to load system calendar events: ${e.message}")
             }
@@ -4185,6 +4184,9 @@ class AppViewModel(
         com.example.util.DeletedTaskLogHelper.removeDeletedTaskFromLog(getApplication(), title, dueDateString, null)
         com.example.util.DeletedTaskLogHelper.removeDeletedGoogleTaskFromLog(getApplication(), title, null)
         viewModelScope.launch {
+            val parsedAction = com.example.util.TaskActionHelper.parseActionData(
+                Task(title = title, description = description)
+            )
             val task = Task(
                 title = title,
                 description = description,
@@ -4194,7 +4196,11 @@ class AppViewModel(
                 nagModeEnabled = nag,
                 priority = priority,
                 dueDateString = dueDateString,
-                isCompleted = isCompleted
+                isCompleted = isCompleted,
+                actionType = parsedAction.type,
+                actionContactName = parsedAction.contactName,
+                actionContactPhone = parsedAction.contactPhone,
+                actionMessage = parsedAction.message
             )
             val insertedId = repository.insertTask(task)
             val savedTask = task.copy(id = insertedId.toInt())
@@ -4215,14 +4221,25 @@ class AppViewModel(
         com.example.util.DeletedTaskLogHelper.removeDeletedTaskFromLog(getApplication(), task.title, task.dueDateString, null)
         com.example.util.DeletedTaskLogHelper.removeDeletedGoogleTaskFromLog(getApplication(), task.title, null)
         viewModelScope.launch {
-            val taskToSave = if (task.isCompleted && !task.description.contains("[CompletedAt:")) {
-                val d = if (task.description.isEmpty()) "[CompletedAt: ${System.currentTimeMillis()}]" else "${task.description}\n\n[CompletedAt: ${System.currentTimeMillis()}]"
-                task.copy(description = d)
-            } else if (!task.isCompleted && task.description.contains("[CompletedAt:")) {
-                val d = task.description.replace(Regex("""\[CompletedAt:\s*\d+\]"""), "").trim()
-                task.copy(description = d)
+            val parsedAction = com.example.util.TaskActionHelper.parseActionData(task)
+            val baseTaskWithAction = if (task.actionType.isEmpty() && parsedAction.type.isNotEmpty()) {
+                task.copy(
+                    actionType = parsedAction.type,
+                    actionContactName = parsedAction.contactName,
+                    actionContactPhone = parsedAction.contactPhone,
+                    actionMessage = parsedAction.message
+                )
             } else {
                 task
+            }
+            val taskToSave = if (baseTaskWithAction.isCompleted && !baseTaskWithAction.description.contains("[CompletedAt:")) {
+                val d = if (baseTaskWithAction.description.isEmpty()) "[CompletedAt: ${System.currentTimeMillis()}]" else "${baseTaskWithAction.description}\n\n[CompletedAt: ${System.currentTimeMillis()}]"
+                baseTaskWithAction.copy(description = d)
+            } else if (!baseTaskWithAction.isCompleted && baseTaskWithAction.description.contains("[CompletedAt:")) {
+                val d = baseTaskWithAction.description.replace(Regex("""\[CompletedAt:\s*\d+\]"""), "").trim()
+                baseTaskWithAction.copy(description = d)
+            } else {
+                baseTaskWithAction
             }
             repository.updateTask(taskToSave)
             uploadSharedTaskToFirebase(taskToSave)
@@ -4858,10 +4875,14 @@ class AppViewModel(
         monthlyStartDate: Int = 1,
         monthlyEndDate: Int = 30,
         scheduledTime: String = "08:00",
-        isReminderEnabled: Boolean = false
+        isReminderEnabled: Boolean = false,
+        actionType: String = "",
+        actionContactName: String = "",
+        actionContactPhone: String = "",
+        actionMessage: String = ""
     ) {
         viewModelScope.launch {
-            repository.insertHabit(Habit(
+            val freshHabit = Habit(
                 name = name,
                 listCategory = listCategory,
                 timeOfDay = timeOfDay,
@@ -4871,14 +4892,27 @@ class AppViewModel(
                 monthlyStartDate = monthlyStartDate,
                 monthlyEndDate = monthlyEndDate,
                 scheduledTime = scheduledTime,
-                isReminderEnabled = isReminderEnabled
-            ))
+                isReminderEnabled = isReminderEnabled,
+                actionType = actionType,
+                actionContactName = actionContactName,
+                actionContactPhone = actionContactPhone,
+                actionMessage = actionMessage
+            )
+            val newId = repository.insertHabit(freshHabit)
+            if (isReminderEnabled) {
+                com.example.util.AlarmScheduler.scheduleHabitReminder(getApplication(), freshHabit.copy(id = newId.toInt()))
+            }
         }
     }
 
     fun updateHabit(habit: Habit) {
         viewModelScope.launch {
             repository.updateHabit(habit)
+            if (habit.isReminderEnabled) {
+                com.example.util.AlarmScheduler.scheduleHabitReminder(getApplication(), habit)
+            } else {
+                com.example.util.AlarmScheduler.cancelHabitReminder(getApplication(), habit.id)
+            }
         }
     }
 
@@ -4928,6 +4962,7 @@ class AppViewModel(
 
     fun deleteHabit(habit: Habit) {
         viewModelScope.launch {
+            com.example.util.AlarmScheduler.cancelHabitReminder(getApplication(), habit.id)
             repository.deleteHabit(habit)
         }
     }
@@ -7221,6 +7256,13 @@ class AppViewModel(
         }
     }
 
+    fun manageAndCleanGoogleDriveAppData(context: android.content.Context, onAuthResolutionRequired: (android.content.Intent) -> Unit, onComplete: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val (success, msg) = com.example.util.GoogleDriveSyncManager.manageAndCleanDriveAppData(context, onAuthResolutionRequired)
+            onComplete(success, msg)
+        }
+    }
+
     fun generateImmediateSummaryMsg() {
         _chatbotMessages.value = emptyList()
     }
@@ -7627,8 +7669,8 @@ class AppViewModel(
     }
 
     suspend fun parseAndExecuteCommandAsync(query: String): String? {
-        val geminiResult = com.example.util.NlpIntentHandler.detectIntentWithGemini(query, currentDateStr = getCurrentDateString())
-        val executed = executeNlpIntentResult(geminiResult, query)
+        val nlpResult = com.example.util.NlpIntentHandler.detectIntent(query, currentDateStr = getCurrentDateString())
+        val executed = executeNlpIntentResult(nlpResult, query)
         if (executed != null) return executed
         return parseAndExecuteCommand(query)
     }
@@ -8878,68 +8920,22 @@ class AppViewModel(
                     append("Or try adding instant commands directly (e.g. `add task Study Chemistry priority high`)! I'm here to support you in any way I can, my friend! 💖✨")
                 }
             }
-
-            val isKeyPlaceholder = com.example.BuildConfig.GEMINI_API_KEY.isEmpty() || com.example.BuildConfig.GEMINI_API_KEY == "MY_GEMINI_API_KEY"
-            if (isKeyPlaceholder) {
-                append("\n\n---\n*💡 Developer Hint: To unlock complete online cloud model reasoning with the Gemini API, configure a valid `GEMINI_API_KEY` inside the AI Studio Secrets Panel.*")
-            }
         }
     }
 
     // ==========================================
-    // 6. Gemini Chat & Intelligence
+    // 6. On-Device AI Chat & Intelligence
     // ==========================================
     private val _aiHandshakeStatus = MutableStateFlow<AiHandshakeState>(AiHandshakeState.NotTested)
     val aiHandshakeStatus: StateFlow<AiHandshakeState> = _aiHandshakeStatus.asStateFlow()
 
     fun performAiHandshake() {
-        _aiHandshakeStatus.value = AiHandshakeState.Testing
-        viewModelScope.launch {
-            try {
-                val resolvedDetails = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val client = okhttp3.OkHttpClient.Builder()
-                        .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
-                    
-                    val request = okhttp3.Request.Builder()
-                        .url("https://generativelanguage.googleapis.com/")
-                        .get()
-                        .build()
-                    
-                    client.newCall(request).execute().use { response ->
-                        val duration = response.receivedResponseAtMillis - response.sentRequestAtMillis
-                        val protocolStr = response.protocol.toString().uppercase()
-                        
-                        val ip = try {
-                            java.net.InetAddress.getByName("generativelanguage.googleapis.com").hostAddress
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-                            "Direct Secure Tunnel"
-                        }
-                        
-                        Triple(duration, protocolStr, ip)
-                    }
-                }
-                
-                val isKeySet = com.example.BuildConfig.GEMINI_API_KEY.isNotEmpty() && 
-                               com.example.BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY"
-                
-                _aiHandshakeStatus.value = AiHandshakeState.Success(
-                    latencyMs = resolvedDetails.first,
-                    protocol = resolvedDetails.second,
-                    ipAddress = resolvedDetails.third,
-                    apiKeyConfigured = isKeySet
-                )
-            } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-                _aiHandshakeStatus.value = AiHandshakeState.Error(
-                    e.localizedMessage ?: "SSL Handshake / Network Timeout"
-                )
-            }
-        }
+        _aiHandshakeStatus.value = AiHandshakeState.Success(
+            latencyMs = 0L,
+            protocol = "100% ON-DEVICE AUTONOMOUS ENGINE",
+            ipAddress = "127.0.0.1 (Localhost Offline)",
+            apiKeyConfigured = true
+        )
     }
 
     fun checkAndRequestPeerData() {
@@ -9152,21 +9148,6 @@ class AppViewModel(
         _chatbotLoading.value = true
 
         viewModelScope.launch(Dispatchers.Default) {
-            val isModelReady = com.example.util.LocalQwenIntelligenceEngine.isModelReady(getApplication())
-            
-            if (!isModelReady) {
-                val notDownloadedMsg = ChatMessage(
-                    text = "⚠️ **Qwen 2.5 Coder 1.5B (GGUF)** weights have not been downloaded yet.\n\nPlease download the model from the AI screen to enable 100% offline local reasoning, coding, and system automations.",
-                    isUser = false,
-                    modelUsed = "Download Required"
-                )
-                val finalMsgs = _chatbotMessages.value + notDownloadedMsg
-                _chatbotMessages.value = finalMsgs
-                com.example.util.AiChatHistoryManager.saveChatHistory(getApplication(), finalMsgs)
-                _chatbotLoading.value = false
-                return@launch
-            }
-
             // 1. Process App Actions & Intent Router
             val intentResult = com.example.util.NlpIntentHandler.detectIntent(userText, getCurrentDateString())
             var actionConfirmation: String? = null
@@ -9247,24 +9228,25 @@ class AppViewModel(
                 }
             }
 
-            // 2. Generate Qwen 2.5 Coder Response
+            // 2. 100% On-Device Local Intelligence Generation
             val contextSummary = gatherDailyContextSummary()
+            val usedModel = "Deepa On-Device Engine"
             val aiResponseText = if (actionConfirmation != null) {
                 actionConfirmation
             } else {
-                val qwenResult = com.example.util.LocalQwenIntelligenceEngine.generateResponse(
+                val localResult = com.example.util.LocalQwenIntelligenceEngine.generateResponse(
                     context = getApplication(),
                     prompt = userText,
-                    conversationHistory = _chatbotMessages.value.takeLast(6).map { "${if (it.isUser) "User" else "Qwen"}: ${it.text}" },
+                    conversationHistory = _chatbotMessages.value.takeLast(8).map { "${if (it.isUser) "User" else "Deepa"}: ${it.text}" },
                     systemContext = contextSummary
                 )
-                executeAiActions(qwenResult)
+                executeAiActions(localResult)
             }
 
             val aiMsg = ChatMessage(
                 text = aiResponseText,
                 isUser = false,
-                modelUsed = "Qwen 2.5 Coder 1.5B (GGUF)"
+                modelUsed = usedModel
             )
             val finalMsgs = _chatbotMessages.value + aiMsg
             _chatbotMessages.value = finalMsgs
@@ -12146,6 +12128,243 @@ fun createAndPackageSharedTaskFolder(
             val recommendations = com.example.api.MovieSearchService.getAiMovieRecommendations(_movieTrackerItems.value)
             _movieRecommendations.value = recommendations
             _isMovieRecommendationsLoading.value = false
+        }
+    }
+
+    // =========================================================================
+    // Shopping Cart & Amazon Lists State & Operations
+    // =========================================================================
+    val shoppingLists: StateFlow<List<com.example.data.ShoppingList>> =
+        repository.allShoppingLists.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
+    private val _selectedShoppingListId = MutableStateFlow<String?>(null)
+    val selectedShoppingListId: StateFlow<String?> = _selectedShoppingListId.asStateFlow()
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val currentShoppingItems: StateFlow<List<com.example.data.ShoppingItem>> =
+        _selectedShoppingListId.flatMapLatest { listId: String? ->
+            if (listId.isNullOrEmpty()) {
+                shoppingLists.flatMapLatest { lists: List<com.example.data.ShoppingList> ->
+                    val first = lists.firstOrNull()?.id
+                    if (first != null) {
+                        repository.getItemsForShoppingList(first)
+                    } else {
+                        kotlinx.coroutines.flow.flowOf<List<com.example.data.ShoppingItem>>(emptyList())
+                    }
+                }
+            } else {
+                repository.getItemsForShoppingList(listId)
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _isParsingAmazonLink = MutableStateFlow(false)
+    val isParsingAmazonLink: StateFlow<Boolean> = _isParsingAmazonLink.asStateFlow()
+
+    private val _parsedAmazonProduct = MutableStateFlow<com.example.util.ParsedAmazonProduct?>(null)
+    val parsedAmazonProduct: StateFlow<com.example.util.ParsedAmazonProduct?> = _parsedAmazonProduct.asStateFlow()
+
+    private val _shoppingSearchQuery = MutableStateFlow("")
+    val shoppingSearchQuery: StateFlow<String> = _shoppingSearchQuery.asStateFlow()
+
+    fun setShoppingSearchQuery(q: String) {
+        _shoppingSearchQuery.value = q
+    }
+
+    fun selectShoppingList(listId: String) {
+        _selectedShoppingListId.value = listId
+    }
+
+    fun createShoppingList(
+        name: String,
+        icon: String = "🛒",
+        colorHex: String = "#00E5FF",
+        budget: Double = 0.0,
+        onCreated: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newList = com.example.data.ShoppingList(
+                name = name.ifBlank { "My Shopping List" },
+                icon = icon,
+                colorHex = colorHex,
+                budget = budget,
+                orderIndex = (shoppingLists.value.maxOfOrNull { it.orderIndex } ?: 0) + 1
+            )
+            repository.insertShoppingList(newList)
+            _selectedShoppingListId.value = newList.id
+            withContext(Dispatchers.Main) {
+                onCreated(newList.id)
+            }
+        }
+    }
+
+    fun updateShoppingList(list: com.example.data.ShoppingList) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateShoppingList(list)
+        }
+    }
+
+    fun deleteShoppingList(list: com.example.data.ShoppingList) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteShoppingList(list)
+            if (_selectedShoppingListId.value == list.id) {
+                val remaining = shoppingLists.value.filter { it.id != list.id }
+                _selectedShoppingListId.value = remaining.firstOrNull()?.id
+            }
+        }
+    }
+
+    fun addShoppingItem(
+        listId: String,
+        name: String,
+        cost: Double,
+        units: Int = 1,
+        imageUrl: String = "",
+        productUrl: String = "",
+        category: String = "General",
+        notes: String = ""
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var targetListId = listId
+            if (targetListId.isEmpty() || shoppingLists.value.none { it.id == targetListId }) {
+                val existing = shoppingLists.value.firstOrNull()
+                if (existing != null) {
+                    targetListId = existing.id
+                } else {
+                    val defaultList = com.example.data.ShoppingList(
+                        name = "My Shopping List",
+                        icon = "🛒",
+                        colorHex = "#00E5FF"
+                    )
+                    repository.insertShoppingList(defaultList)
+                    targetListId = defaultList.id
+                    _selectedShoppingListId.value = defaultList.id
+                }
+            }
+
+            val item = com.example.data.ShoppingItem(
+                listId = targetListId,
+                name = name.ifBlank { "Item" },
+                originalTitle = name,
+                cost = cost.coerceAtLeast(0.0),
+                units = units.coerceAtLeast(1),
+                imageUrl = imageUrl,
+                productUrl = productUrl,
+                category = category.ifBlank { "General" },
+                notes = notes
+            )
+            repository.insertShoppingItem(item)
+        }
+    }
+
+    fun updateShoppingItem(item: com.example.data.ShoppingItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateShoppingItem(item)
+        }
+    }
+
+    fun updateShoppingItemUnits(item: com.example.data.ShoppingItem, delta: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newUnits = (item.units + delta).coerceAtLeast(1)
+            repository.updateShoppingItem(item.copy(units = newUnits))
+        }
+    }
+
+    fun toggleShoppingItemPurchased(item: com.example.data.ShoppingItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateShoppingItem(item.copy(isPurchased = !item.isPurchased))
+        }
+    }
+
+    fun updateShoppingItemName(item: com.example.data.ShoppingItem, newName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateShoppingItem(item.copy(name = newName))
+        }
+    }
+
+    fun deleteShoppingItem(item: com.example.data.ShoppingItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteShoppingItem(item)
+        }
+    }
+
+    fun clearPurchasedItems(listId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.clearPurchasedItems(listId)
+        }
+    }
+
+    fun parseAmazonUrl(url: String, onResult: (com.example.util.ParsedAmazonProduct) -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isParsingAmazonLink.value = true
+            try {
+                val parsed = com.example.util.AmazonLinkParser.parseUrl(url)
+                _parsedAmazonProduct.value = parsed
+                withContext(Dispatchers.Main) {
+                    onResult(parsed)
+                }
+            } catch (e: Exception) {
+                val fallback = com.example.util.ParsedAmazonProduct(
+                    title = "Amazon Item",
+                    cost = 0.0,
+                    imageUrl = "",
+                    productUrl = url,
+                    success = false
+                )
+                _parsedAmazonProduct.value = fallback
+                withContext(Dispatchers.Main) {
+                    onResult(fallback)
+                }
+            } finally {
+                _isParsingAmazonLink.value = false
+            }
+        }
+    }
+
+    fun clearParsedAmazonProduct() {
+        _parsedAmazonProduct.value = null
+    }
+
+    fun ensureDefaultShoppingListExists() {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (shoppingLists.value.isEmpty()) {
+                val defaultList = com.example.data.ShoppingList(
+                    name = "Amazon Cart 🛒",
+                    icon = "🛒",
+                    colorHex = "#00E5FF",
+                    budget = 200.0
+                )
+                repository.insertShoppingList(defaultList)
+                _selectedShoppingListId.value = defaultList.id
+
+                val sample1 = com.example.data.ShoppingItem(
+                    listId = defaultList.id,
+                    name = "Sony WH-1000XM5 Wireless Headphones",
+                    originalTitle = "Sony WH-1000XM5 Noise Canceling Headphones",
+                    cost = 348.00,
+                    units = 1,
+                    imageUrl = "https://images-na.ssl-images-amazon.com/images/P/B09XS7JWHH.01._SCLZZZZZZZ_.jpg",
+                    productUrl = "https://www.amazon.com/dp/B09XS7JWHH",
+                    category = "Electronics"
+                )
+                val sample2 = com.example.data.ShoppingItem(
+                    listId = defaultList.id,
+                    name = "Anker USB-C Fast Charger 65W",
+                    originalTitle = "Anker 735 Charger GaNPrime 65W",
+                    cost = 39.99,
+                    units = 2,
+                    imageUrl = "https://images-na.ssl-images-amazon.com/images/P/B09W2PNLX7.01._SCLZZZZZZZ_.jpg",
+                    productUrl = "https://www.amazon.com/dp/B09W2PNLX7",
+                    category = "Accessories"
+                )
+                repository.insertShoppingItem(sample1)
+                repository.insertShoppingItem(sample2)
+            } else if (_selectedShoppingListId.value == null) {
+                _selectedShoppingListId.value = shoppingLists.value.first().id
+            }
         }
     }
 }

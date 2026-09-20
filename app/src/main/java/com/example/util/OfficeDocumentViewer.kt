@@ -7,10 +7,15 @@ import android.util.Log
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,10 +37,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -413,6 +423,13 @@ fun OfficeDocumentViewerContent(
 }
 
 /**
+ * Data class representing a rectangular range selection of cells in Excel viewer
+ */
+data class SelectionBox(val minR: Int, val maxR: Int, val minC: Int, val maxC: Int) {
+    val cellCount: Int get() = (maxR - minR + 1) * (maxC - minC + 1)
+}
+
+/**
  * Excel / CSV Interactive Grid Viewer & Editor
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -421,6 +438,10 @@ fun ExcelSpreadsheetViewer(
     data: OfficeDocumentData.ExcelData,
     searchQuery: String
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val density = LocalDensity.current.density
+
     // 1. In-memory editable sheets model
     val editableSheets = remember(data) {
         val map = mutableStateMapOf<String, MutableList<MutableList<String>>>()
@@ -445,19 +466,25 @@ fun ExcelSpreadsheetViewer(
     val currentRows = editableSheets[selectedSheetName] ?: mutableListOf()
     val columnCount = if (currentRows.isEmpty()) 0 else currentRows.maxOfOrNull { it.size } ?: 0
 
-    // 2. Selection States
+    // 2. Selection States (Single, Multi, Range Drag)
     var selectedCell by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (row, col)
+    var rangeStart by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var rangeEnd by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var selectedRows by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var selectedCols by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var multiSelectedCells by remember { mutableStateOf<Set<Pair<Int, Int>>>(emptySet()) }
     var isMultiSelectMode by remember { mutableStateOf(false) }
+    var isDragSelectMode by remember { mutableStateOf(false) }
 
-    // 3. Cell Sizing States (Expand / Decrease)
+    // 3. Cell Sizing & Formatting States (Cell Adjusting)
     var defaultCellWidth by remember { mutableStateOf(120.dp) }
     var defaultCellHeight by remember { mutableStateOf(36.dp) }
     val columnWidthOverrides = remember { mutableStateMapOf<Int, androidx.compose.ui.unit.Dp>() }
     val rowHeightOverrides = remember { mutableStateMapOf<Int, androidx.compose.ui.unit.Dp>() }
-    var showSizingPanel by remember { mutableStateOf(false) }
+    var showCellAdjustDialog by remember { mutableStateOf(false) }
+    var globalAlignment by remember { mutableStateOf(TextAlign.Start) }
+    val cellAlignments = remember { mutableStateMapOf<Pair<Int, Int>, TextAlign>() }
+    var isWrapTextEnabled by remember { mutableStateOf(false) }
 
     // 4. Cell Editing State
     var formulaText by remember { mutableStateOf("") }
@@ -475,13 +502,59 @@ fun ExcelSpreadsheetViewer(
         }
     }
 
+    // Effective selected cells set calculation
+    val effectiveSelectedCells = remember(rangeStart, rangeEnd, multiSelectedCells, selectedRows, selectedCols, currentRows.size, columnCount) {
+        val set = mutableSetOf<Pair<Int, Int>>()
+        if (rangeStart != null && rangeEnd != null) {
+            val minR = minOf(rangeStart!!.first, rangeEnd!!.first).coerceIn(0, (currentRows.size - 1).coerceAtLeast(0))
+            val maxR = maxOf(rangeStart!!.first, rangeEnd!!.first).coerceIn(0, (currentRows.size - 1).coerceAtLeast(0))
+            val minC = minOf(rangeStart!!.second, rangeEnd!!.second).coerceIn(0, (columnCount - 1).coerceAtLeast(0))
+            val maxC = maxOf(rangeStart!!.second, rangeEnd!!.second).coerceIn(0, (columnCount - 1).coerceAtLeast(0))
+            for (r in minR..maxR) {
+                for (c in minC..maxC) {
+                    set.add(Pair(r, c))
+                }
+            }
+        }
+        set.addAll(multiSelectedCells)
+        if (selectedRows.isNotEmpty()) {
+            for (r in selectedRows) {
+                for (c in 0 until columnCount) {
+                    set.add(Pair(r, c))
+                }
+            }
+        }
+        if (selectedCols.isNotEmpty()) {
+            for (c in selectedCols) {
+                for (r in currentRows.indices) {
+                    set.add(Pair(r, c))
+                }
+            }
+        }
+        set
+    }
+
+    // Selection bounding box
+    val selectionBounds = remember(effectiveSelectedCells, selectedCell) {
+        val allSelected = if (effectiveSelectedCells.isNotEmpty()) {
+            effectiveSelectedCells
+        } else if (selectedCell != null) {
+            setOf(selectedCell!!)
+        } else emptySet()
+
+        if (allSelected.isNotEmpty()) {
+            val minR = allSelected.minOf { it.first }
+            val maxR = allSelected.maxOf { it.first }
+            val minC = allSelected.minOf { it.second }
+            val maxC = allSelected.maxOf { it.second }
+            SelectionBox(minR, maxR, minC, maxC)
+        } else null
+    }
+
     // Helper functions for cell values and selection
     fun isCellSelected(r: Int, c: Int): Boolean {
-        if (selectedRows.contains(r)) return true
-        if (selectedCols.contains(c)) return true
         if (selectedCell == Pair(r, c)) return true
-        if (multiSelectedCells.contains(Pair(r, c))) return true
-        return false
+        return effectiveSelectedCells.contains(Pair(r, c))
     }
 
     fun updateCellValue(r: Int, c: Int, newValue: String) {
@@ -496,31 +569,121 @@ fun ExcelSpreadsheetViewer(
         }
     }
 
+    // Cell adjusting & table operations
+    fun autoFitColumn(colIndex: Int) {
+        val maxLen = currentRows.maxOfOrNull { it.getOrNull(colIndex)?.length ?: 0 } ?: 4
+        val headerLen = getColumnLetterName(colIndex).length
+        val charCount = maxOf(maxLen, headerLen)
+        val calculatedWidth = (charCount * 9 + 36).dp.coerceIn(60.dp, 350.dp)
+        columnWidthOverrides[colIndex] = calculatedWidth
+    }
+
+    fun autoFitAllColumns() {
+        for (c in 0 until columnCount) {
+            autoFitColumn(c)
+        }
+        Toast.makeText(context, "Auto-fitted all $columnCount columns to content", Toast.LENGTH_SHORT).show()
+    }
+
+    fun fillDownSelection() {
+        val bounds = selectionBounds ?: return
+        if (bounds.minR >= bounds.maxR) {
+            Toast.makeText(context, "Select 2 or more rows to fill down", Toast.LENGTH_SHORT).show()
+            return
+        }
+        for (c in bounds.minC..bounds.maxC) {
+            val sourceVal = currentRows.getOrNull(bounds.minR)?.getOrNull(c) ?: ""
+            val numMatch = Regex("""^(.*?)(\d+)$""").find(sourceVal)
+            val prefix = numMatch?.groupValues?.get(1)
+            val baseNum = numMatch?.groupValues?.get(2)?.toLongOrNull()
+
+            for (r in (bounds.minR + 1)..bounds.maxR) {
+                val fillVal = if (prefix != null && baseNum != null) {
+                    val step = r - bounds.minR
+                    "$prefix${baseNum + step}"
+                } else {
+                    sourceVal
+                }
+                updateCellValue(r, c, fillVal)
+            }
+        }
+        editableSheets[selectedSheetName] = ArrayList(currentRows)
+        Toast.makeText(context, "Filled ${bounds.maxR - bounds.minR} rows down", Toast.LENGTH_SHORT).show()
+    }
+
+    fun copySelectionToClipboard() {
+        val bounds = selectionBounds ?: return
+        val tsv = StringBuilder()
+        for (r in bounds.minR..bounds.maxR) {
+            val row = currentRows.getOrNull(r)
+            val rowVals = (bounds.minC..bounds.maxC).map { c -> row?.getOrNull(c) ?: "" }
+            tsv.append(rowVals.joinToString("\t")).append("\n")
+        }
+        clipboardManager.setText(AnnotatedString(tsv.toString().trimEnd()))
+        Toast.makeText(context, "Copied ${bounds.cellCount} cells to clipboard", Toast.LENGTH_SHORT).show()
+    }
+
+    fun pasteFromClipboard() {
+        val clipText = clipboardManager.getText()?.text ?: return
+        if (clipText.isEmpty()) return
+        val startR = selectedCell?.first ?: selectionBounds?.minR ?: 0
+        val startC = selectedCell?.second ?: selectionBounds?.minC ?: 0
+        val lines = clipText.split("\n").filter { it.isNotEmpty() }
+        lines.forEachIndexed { rOffset, line ->
+            val targetR = startR + rOffset
+            while (currentRows.size <= targetR) {
+                currentRows.add(MutableList(columnCount.coerceAtLeast(3)) { "" })
+            }
+            val cols = if (line.contains("\t")) line.split("\t") else line.split(",")
+            cols.forEachIndexed { cOffset, cellVal ->
+                val targetC = startC + cOffset
+                updateCellValue(targetR, targetC, cellVal.trim())
+            }
+        }
+        editableSheets[selectedSheetName] = ArrayList(currentRows)
+        Toast.makeText(context, "Pasted ${lines.size} row(s)", Toast.LENGTH_SHORT).show()
+    }
+
+    fun clearSelection() {
+        effectiveSelectedCells.forEach { (r, c) ->
+            updateCellValue(r, c, "")
+        }
+        selectedCell?.let { (r, c) -> updateCellValue(r, c, "") }
+        formulaText = ""
+        editableSheets[selectedSheetName] = ArrayList(currentRows)
+        Toast.makeText(context, "Cleared selected cells", Toast.LENGTH_SHORT).show()
+    }
+
+    fun insertAutoSum() {
+        val bounds = selectionBounds ?: return
+        val sumRowIdx = bounds.maxR + 1
+        while (currentRows.size <= sumRowIdx) {
+            currentRows.add(MutableList(columnCount.coerceAtLeast(3)) { "" })
+        }
+        for (c in bounds.minC..bounds.maxC) {
+            val numbers = (bounds.minR..bounds.maxR).mapNotNull { r ->
+                currentRows.getOrNull(r)?.getOrNull(c)?.trim()?.toDoubleOrNull()
+            }
+            if (numbers.isNotEmpty()) {
+                val sum = numbers.sum()
+                val formatted = if (sum % 1.0 == 0.0) sum.toLong().toString() else String.format(java.util.Locale.US, "%.2f", sum)
+                updateCellValue(sumRowIdx, c, formatted)
+            }
+        }
+        editableSheets[selectedSheetName] = ArrayList(currentRows)
+        Toast.makeText(context, "Auto-Sum added in Row ${sumRowIdx + 1}", Toast.LENGTH_SHORT).show()
+    }
+
     // Math calculations on selected cells
-    val selectedValues = remember(selectedCell, selectedRows, selectedCols, multiSelectedCells, currentRows) {
+    val selectedValues = remember(effectiveSelectedCells, selectedCell, currentRows) {
         val list = mutableListOf<String>()
-        if (selectedRows.isNotEmpty()) {
-            for (r in selectedRows) {
-                if (r in currentRows.indices) {
-                    for (c in 0 until columnCount) {
-                        list.add(currentRows[r].getOrNull(c) ?: "")
-                    }
-                }
-            }
-        } else if (selectedCols.isNotEmpty()) {
-            for (c in selectedCols) {
-                for (r in currentRows.indices) {
-                    list.add(currentRows[r].getOrNull(c) ?: "")
-                }
-            }
-        } else if (multiSelectedCells.isNotEmpty()) {
-            for ((r, c) in multiSelectedCells) {
-                if (r in currentRows.indices) {
-                    list.add(currentRows[r].getOrNull(c) ?: "")
-                }
-            }
+        val cellsToRead = if (effectiveSelectedCells.isNotEmpty()) {
+            effectiveSelectedCells.sortedWith(compareBy({ it.first }, { it.second }))
         } else if (selectedCell != null) {
-            val (r, c) = selectedCell!!
+            listOf(selectedCell!!)
+        } else emptyList()
+
+        for ((r, c) in cellsToRead) {
             if (r in currentRows.indices) {
                 list.add(currentRows[r].getOrNull(c) ?: "")
             }
@@ -650,6 +813,11 @@ fun ExcelSpreadsheetViewer(
             ) {
                 // Cell Coordinate Label (e.g., [B3] or Selection Summary)
                 val coordLabel = when {
+                    selectionBounds != null && selectionBounds.cellCount > 1 -> {
+                        val startName = "${getColumnLetterName(selectionBounds.minC)}${selectionBounds.minR + 1}"
+                        val endName = "${getColumnLetterName(selectionBounds.maxC)}${selectionBounds.maxR + 1}"
+                        "[$startName:$endName] (${selectionBounds.cellCount})"
+                    }
                     selectedRows.isNotEmpty() -> "Rows: ${selectedRows.map { it + 1 }.sorted().joinToString(",")}"
                     selectedCols.isNotEmpty() -> "Cols: ${selectedCols.map { getColumnLetterName(it) }.sorted().joinToString(",")}"
                     multiSelectedCells.isNotEmpty() -> "${multiSelectedCells.size} Cells"
@@ -732,15 +900,41 @@ fun ExcelSpreadsheetViewer(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Drag Select Mode Chip
+                FilterChip(
+                    selected = isDragSelectMode,
+                    onClick = {
+                        isDragSelectMode = !isDragSelectMode
+                        if (isDragSelectMode) {
+                            Toast.makeText(context, "Drag Select ON: Touch and drag across cells to select", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    label = { Text(if (isDragSelectMode) "Drag Select: ON" else "Drag Select", fontSize = 11.sp) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isDragSelectMode) Icons.Default.CheckCircle else Icons.Default.TouchApp,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFF10B981),
+                        selectedLabelColor = Color.White,
+                        containerColor = Color(0xFF334155),
+                        labelColor = Color(0xFFE2E8F0)
+                    )
+                )
+
                 // Multi-select Mode Toggle
                 FilterChip(
                     selected = isMultiSelectMode,
                     onClick = { isMultiSelectMode = !isMultiSelectMode },
-                    label = { Text(if (isMultiSelectMode) "Multi: ON" else "Multi-Select", fontSize = 11.sp) },
+                    label = { Text(if (isMultiSelectMode) "Multi: ON" else "Multi", fontSize = 11.sp) },
                     leadingIcon = {
                         Icon(
                             imageVector = if (isMultiSelectMode) Icons.Default.CheckCircle else Icons.Default.SelectAll,
@@ -756,160 +950,220 @@ fun ExcelSpreadsheetViewer(
                     )
                 )
 
-                // Expand / Decrease Cell Size controls
+                // Dedicated "Adjust Cells" Button (opens formatting dialog)
+                FilledTonalButton(
+                    onClick = { showCellAdjustDialog = true },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.height(30.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = Color(0xFF0284C7),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Adjust Cells", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                VerticalDivider(modifier = Modifier.height(18.dp), color = Color(0xFF475569))
+
+                // Cell Sizing Quick Controls (+ / -)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Text("Cell Size:", color = Color(0xFF94A3B8), fontSize = 11.sp)
-
-                    // Width shrink / expand
+                    Text("W:", color = Color(0xFF94A3B8), fontSize = 11.sp)
                     IconButton(
-                        onClick = {
-                            defaultCellWidth = maxOf(60.dp, defaultCellWidth - 20.dp)
-                        },
-                        modifier = Modifier.size(28.dp)
+                        onClick = { defaultCellWidth = maxOf(50.dp, defaultCellWidth - 15.dp) },
+                        modifier = Modifier.size(26.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Remove,
-                            contentDescription = "Decrease Width",
-                            tint = Color.LightGray,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Icon(Icons.Default.Remove, contentDescription = "Decrease Width", tint = Color.LightGray, modifier = Modifier.size(14.dp))
                     }
-
                     Text(
-                        "${defaultCellWidth.value.toInt()}w",
+                        "${defaultCellWidth.value.toInt()}",
                         color = Color(0xFF38BDF8),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
-
                     IconButton(
-                        onClick = {
-                            defaultCellWidth = minOf(300.dp, defaultCellWidth + 20.dp)
-                        },
-                        modifier = Modifier.size(28.dp)
+                        onClick = { defaultCellWidth = minOf(350.dp, defaultCellWidth + 15.dp) },
+                        modifier = Modifier.size(26.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Expand Width",
-                            tint = Color.LightGray,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Icon(Icons.Default.Add, contentDescription = "Increase Width", tint = Color.LightGray, modifier = Modifier.size(14.dp))
                     }
 
-                    VerticalDivider(modifier = Modifier.height(16.dp), color = Color(0xFF475569))
-
-                    // Height shrink / expand
+                    Spacer(Modifier.width(4.dp))
+                    Text("H:", color = Color(0xFF94A3B8), fontSize = 11.sp)
                     IconButton(
-                        onClick = {
-                            defaultCellHeight = maxOf(24.dp, defaultCellHeight - 6.dp)
-                        },
-                        modifier = Modifier.size(28.dp)
+                        onClick = { defaultCellHeight = maxOf(22.dp, defaultCellHeight - 6.dp) },
+                        modifier = Modifier.size(26.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ExpandLess,
-                            contentDescription = "Decrease Height",
-                            tint = Color.LightGray,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Icon(Icons.Default.ExpandLess, contentDescription = "Decrease Height", tint = Color.LightGray, modifier = Modifier.size(14.dp))
                     }
-
                     Text(
-                        "${defaultCellHeight.value.toInt()}h",
+                        "${defaultCellHeight.value.toInt()}",
                         color = Color(0xFF34D399),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    IconButton(
+                        onClick = { defaultCellHeight = minOf(120.dp, defaultCellHeight + 6.dp) },
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Icon(Icons.Default.ExpandMore, contentDescription = "Increase Height", tint = Color.LightGray, modifier = Modifier.size(14.dp))
+                    }
+                }
 
+                VerticalDivider(modifier = Modifier.height(18.dp), color = Color(0xFF475569))
+
+                // Quick Row/Col Add Operations Menu
+                IconButton(
+                    onClick = {
+                        val newRow = MutableList(columnCount.coerceAtLeast(3)) { "" }
+                        currentRows.add(newRow)
+                        editableSheets[selectedSheetName] = ArrayList(currentRows)
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.TableRows,
+                        contentDescription = "Add Row",
+                        tint = Color(0xFF60A5FA),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = {
+                        currentRows.forEach { it.add("") }
+                        editableSheets[selectedSheetName] = ArrayList(currentRows)
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ViewColumn,
+                        contentDescription = "Add Column",
+                        tint = Color(0xFF34D399),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                if (selectedRows.isNotEmpty() || selectedCols.isNotEmpty() || (selectionBounds != null && selectionBounds.cellCount > 1)) {
                     IconButton(
                         onClick = {
-                            defaultCellHeight = minOf(80.dp, defaultCellHeight + 6.dp)
+                            if (selectedRows.isNotEmpty()) {
+                                val sortedRows = selectedRows.sortedDescending()
+                                sortedRows.forEach { idx ->
+                                    if (idx in currentRows.indices) {
+                                        currentRows.removeAt(idx)
+                                    }
+                                }
+                                selectedRows = emptySet()
+                            } else if (selectedCols.isNotEmpty()) {
+                                val sortedCols = selectedCols.sortedDescending()
+                                currentRows.forEach { row ->
+                                    sortedCols.forEach { cIdx ->
+                                        if (cIdx in row.indices) {
+                                            row.removeAt(cIdx)
+                                        }
+                                    }
+                                }
+                                selectedCols = emptySet()
+                            } else {
+                                clearSelection()
+                            }
+                            editableSheets[selectedSheetName] = ArrayList(currentRows)
                         },
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ExpandMore,
-                            contentDescription = "Expand Height",
-                            tint = Color.LightGray,
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Selected",
+                            tint = Color(0xFFEF4444),
                             modifier = Modifier.size(16.dp)
                         )
                     }
                 }
+            }
+        }
 
-                // Quick Row/Col Add Operations Menu
+        // ==========================================
+        // TOP 4: Selection Actions & Quick Drag Bar (When multiple cells selected)
+        // ==========================================
+        if (selectionBounds != null && (selectionBounds.cellCount > 1 || selectedRows.isNotEmpty() || selectedCols.isNotEmpty())) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF064E3B), // Deep emerald
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981))
+            ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // Add Row Button
-                    IconButton(
-                        onClick = {
-                            val newRow = MutableList(columnCount.coerceAtLeast(3)) { "" }
-                            currentRows.add(newRow)
-                            editableSheets[selectedSheetName] = ArrayList(currentRows)
-                        },
-                        modifier = Modifier.size(28.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.TableRows,
-                            contentDescription = "Add Row",
-                            tint = Color(0xFF60A5FA),
-                            modifier = Modifier.size(16.dp)
+                        Icon(Icons.Default.Highlight, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "${selectionBounds.cellCount} cells [${getColumnLetterName(selectionBounds.minC)}${selectionBounds.minR + 1}:${getColumnLetterName(selectionBounds.maxC)}${selectionBounds.maxR + 1}]",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
 
-                    // Add Column Button
-                    IconButton(
-                        onClick = {
-                            currentRows.forEach { it.add("") }
-                            editableSheets[selectedSheetName] = ArrayList(currentRows)
-                        },
-                        modifier = Modifier.size(28.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ViewColumn,
-                            contentDescription = "Add Column",
-                            tint = Color(0xFF34D399),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                        // Fill Down button
+                        FilledTonalButton(
+                            onClick = { fillDownSelection() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFF047857), contentColor = Color.White)
+                        ) {
+                            Icon(Icons.Default.ArrowDownward, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Fill Down", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
 
-                    // Delete Selected Row / Col Button
-                    if (selectedRows.isNotEmpty() || selectedCols.isNotEmpty()) {
+                        // Copy
+                        IconButton(onClick = { copySelectionToClipboard() }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color.White, modifier = Modifier.size(16.dp))
+                        }
+
+                        // Paste
+                        IconButton(onClick = { pasteFromClipboard() }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = "Paste", tint = Color.White, modifier = Modifier.size(16.dp))
+                        }
+
+                        // Auto-Sum
+                        IconButton(onClick = { insertAutoSum() }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Functions, contentDescription = "Auto-Sum", tint = Color(0xFFFBBF24), modifier = Modifier.size(16.dp))
+                        }
+
+                        // Clear
+                        IconButton(onClick = { clearSelection() }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Clear", tint = Color(0xFFF87171), modifier = Modifier.size(16.dp))
+                        }
+
+                        // Deselect / Close
                         IconButton(
                             onClick = {
-                                if (selectedRows.isNotEmpty()) {
-                                    val sortedRows = selectedRows.sortedDescending()
-                                    sortedRows.forEach { idx ->
-                                        if (idx in currentRows.indices) {
-                                            currentRows.removeAt(idx)
-                                        }
-                                    }
-                                    selectedRows = emptySet()
-                                }
-                                if (selectedCols.isNotEmpty()) {
-                                    val sortedCols = selectedCols.sortedDescending()
-                                    currentRows.forEach { row ->
-                                        sortedCols.forEach { cIdx ->
-                                            if (cIdx in row.indices) {
-                                                row.removeAt(cIdx)
-                                            }
-                                        }
-                                    }
-                                    selectedCols = emptySet()
-                                }
-                                editableSheets[selectedSheetName] = ArrayList(currentRows)
+                                rangeStart = null
+                                rangeEnd = null
+                                multiSelectedCells = emptySet()
+                                selectedRows = emptySet()
+                                selectedCols = emptySet()
                             },
                             modifier = Modifier.size(28.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete Selected",
-                                tint = Color(0xFFEF4444),
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Icon(Icons.Default.Close, contentDescription = "Deselect", tint = Color.LightGray, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
@@ -1042,31 +1296,58 @@ fun ExcelSpreadsheetViewer(
                                         .height(defaultCellHeight)
                                         .background(if (isColSelected) Color(0xFF2563EB) else Color(0xFF1E293B))
                                         .border(0.5.dp, if (isColSelected) Color(0xFF60A5FA) else Color(0xFF475569))
-                                        .clickable {
-                                            if (isMultiSelectMode) {
-                                                selectedCols = if (selectedCols.contains(colIndex)) {
-                                                    selectedCols - colIndex
-                                                } else {
-                                                    selectedCols + colIndex
-                                                }
-                                            } else {
-                                                selectedCols = if (selectedCols.contains(colIndex)) emptySet() else setOf(colIndex)
-                                                selectedRows = emptySet()
-                                                selectedCell = null
-                                            }
-                                        }
-                                        .padding(horizontal = 6.dp),
-                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center
+                                    // Column Header Title & Tap Target
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clickable {
+                                                if (isMultiSelectMode) {
+                                                    selectedCols = if (selectedCols.contains(colIndex)) {
+                                                        selectedCols - colIndex
+                                                    } else {
+                                                        selectedCols + colIndex
+                                                    }
+                                                } else {
+                                                    selectedCols = if (selectedCols.contains(colIndex)) emptySet() else setOf(colIndex)
+                                                    selectedRows = emptySet()
+                                                    selectedCell = null
+                                                    rangeStart = null
+                                                    rangeEnd = null
+                                                }
+                                            }
+                                            .padding(horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
                                     ) {
                                         Text(
                                             text = colLabel,
                                             color = if (isColSelected) Color.White else Color(0xFFCBD5E1),
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    // Column Width Drag Adjust Handle (Right Edge)
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .width(12.dp)
+                                            .fillMaxHeight()
+                                            .pointerInput(colIndex) {
+                                                detectHorizontalDragGestures { change, dragAmount ->
+                                                    change.consume()
+                                                    val currentDp = columnWidthOverrides[colIndex] ?: defaultCellWidth
+                                                    val newDp = (currentDp + (dragAmount / density).dp).coerceIn(45.dp, 450.dp)
+                                                    columnWidthOverrides[colIndex] = newDp
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(2.dp)
+                                                .fillMaxHeight(0.6f)
+                                                .background(Color(0xFF64748B))
                                         )
                                     }
                                 }
@@ -1092,27 +1373,58 @@ fun ExcelSpreadsheetViewer(
                                     .height(rowHeight)
                                     .background(if (isRowSelected) Color(0xFF2563EB) else Color(0xFF1E293B))
                                     .border(0.2.dp, if (isRowSelected) Color(0xFF60A5FA) else Color(0xFF334155))
-                                    .clickable {
-                                        if (isMultiSelectMode) {
-                                            selectedRows = if (selectedRows.contains(rowIndex)) {
-                                                selectedRows - rowIndex
-                                            } else {
-                                                selectedRows + rowIndex
-                                            }
-                                        } else {
-                                            selectedRows = if (selectedRows.contains(rowIndex)) emptySet() else setOf(rowIndex)
-                                            selectedCols = emptySet()
-                                            selectedCell = null
-                                        }
-                                    },
-                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "${rowIndex + 1}",
-                                    color = if (isRowSelected) Color.White else Color.Gray,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable {
+                                            if (isMultiSelectMode) {
+                                                selectedRows = if (selectedRows.contains(rowIndex)) {
+                                                    selectedRows - rowIndex
+                                                } else {
+                                                    selectedRows + rowIndex
+                                                }
+                                            } else {
+                                                selectedRows = if (selectedRows.contains(rowIndex)) emptySet() else setOf(rowIndex)
+                                                selectedCols = emptySet()
+                                                selectedCell = null
+                                                rangeStart = null
+                                                rangeEnd = null
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${rowIndex + 1}",
+                                        color = if (isRowSelected) Color.White else Color.Gray,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+
+                                // Row Height Drag Adjust Handle (Bottom Edge)
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .fillMaxWidth()
+                                        .height(10.dp)
+                                        .pointerInput(rowIndex) {
+                                            detectVerticalDragGestures { change, dragAmount ->
+                                                change.consume()
+                                                val currentDp = rowHeightOverrides[rowIndex] ?: defaultCellHeight
+                                                val newDp = (currentDp + (dragAmount / density).dp).coerceIn(22.dp, 160.dp)
+                                                rowHeightOverrides[rowIndex] = newDp
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(0.6f)
+                                            .height(2.dp)
+                                            .background(Color(0xFF64748B))
+                                    )
+                                }
                             }
 
                             // Individual Cells in Row
@@ -1122,6 +1434,22 @@ fun ExcelSpreadsheetViewer(
                                 val isSelected = isCellSelected(rowIndex, colIndex)
                                 val isMatch = searchQuery.isNotBlank() && cellValue.contains(searchQuery, ignoreCase = true)
                                 val colWidth = columnWidthOverrides[colIndex] ?: defaultCellWidth
+
+                                // Determine whether this cell is the bottom-right of current selection box
+                                val isBottomRightCorner = when {
+                                    selectionBounds != null && selectionBounds.cellCount > 1 -> {
+                                        rowIndex == selectionBounds.maxR && colIndex == selectionBounds.maxC
+                                    }
+                                    isCellActive -> true
+                                    else -> false
+                                }
+
+                                val textAlign = cellAlignments[Pair(rowIndex, colIndex)] ?: globalAlignment
+                                val cellAlignBox = when (textAlign) {
+                                    TextAlign.Center -> Alignment.Center
+                                    TextAlign.End -> Alignment.CenterEnd
+                                    else -> Alignment.CenterStart
+                                }
 
                                 Box(
                                     modifier = Modifier
@@ -1141,33 +1469,93 @@ fun ExcelSpreadsheetViewer(
                                             if (isCellActive) 1.5.dp else if (isSelected) 1.dp else 0.2.dp,
                                             if (isCellActive) Color(0xFF60A5FA) else if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
                                         )
-                                        .clickable {
-                                            if (isMultiSelectMode) {
-                                                val pair = Pair(rowIndex, colIndex)
-                                                multiSelectedCells = if (multiSelectedCells.contains(pair)) {
-                                                    multiSelectedCells - pair
-                                                } else {
-                                                    multiSelectedCells + pair
-                                                }
-                                                selectedCell = pair
+                                        .pointerInput(rowIndex, colIndex, isDragSelectMode, isMultiSelectMode) {
+                                            if (isDragSelectMode) {
+                                                detectDragGestures(
+                                                    onDragStart = {
+                                                        rangeStart = Pair(rowIndex, colIndex)
+                                                        rangeEnd = Pair(rowIndex, colIndex)
+                                                        selectedCell = Pair(rowIndex, colIndex)
+                                                    },
+                                                    onDrag = { change, dragAmount ->
+                                                        change.consume()
+                                                        val cellWPx = colWidth.value * density
+                                                        val cellHPx = rowHeight.value * density
+                                                        val offsetCols = (dragAmount.x / cellWPx).toInt()
+                                                        val offsetRows = (dragAmount.y / cellHPx).toInt()
+                                                        val curEnd = rangeEnd ?: Pair(rowIndex, colIndex)
+                                                        val targetR = (curEnd.first + offsetRows).coerceIn(0, currentRows.size - 1)
+                                                        val targetC = (curEnd.second + offsetCols).coerceIn(0, columnCount - 1)
+                                                        rangeEnd = Pair(targetR, targetC)
+                                                    }
+                                                )
                                             } else {
-                                                selectedCell = Pair(rowIndex, colIndex)
-                                                selectedRows = emptySet()
-                                                selectedCols = emptySet()
-                                                multiSelectedCells = emptySet()
+                                                detectTapGestures(
+                                                    onDoubleTap = {
+                                                        editingCellCoords = Pair(rowIndex, colIndex)
+                                                        editDialogText = cellValue
+                                                        showEditDialog = true
+                                                    },
+                                                    onTap = {
+                                                        if (isMultiSelectMode) {
+                                                            val pair = Pair(rowIndex, colIndex)
+                                                            multiSelectedCells = if (multiSelectedCells.contains(pair)) {
+                                                                multiSelectedCells - pair
+                                                            } else {
+                                                                multiSelectedCells + pair
+                                                            }
+                                                            selectedCell = pair
+                                                        } else {
+                                                            selectedCell = Pair(rowIndex, colIndex)
+                                                            rangeStart = null
+                                                            rangeEnd = null
+                                                            selectedRows = emptySet()
+                                                            selectedCols = emptySet()
+                                                            multiSelectedCells = emptySet()
+                                                        }
+                                                    }
+                                                )
                                             }
                                         }
                                         .padding(horizontal = 6.dp, vertical = 2.dp),
-                                    contentAlignment = Alignment.CenterStart
+                                    contentAlignment = cellAlignBox
                                 ) {
                                     Text(
                                         text = cellValue,
                                         color = if (isHeaderRow) Color(0xFF60A5FA) else Color.White,
                                         fontSize = 12.sp,
                                         fontWeight = if (isHeaderRow) FontWeight.Bold else FontWeight.Normal,
-                                        maxLines = 1,
+                                        textAlign = textAlign,
+                                        maxLines = if (isWrapTextEnabled) 3 else 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+
+                                    // Excel Fill Handle (Autofill square at bottom-right corner)
+                                    if (isBottomRightCorner && (isCellActive || isSelected)) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .offset(x = 5.dp, y = 1.dp)
+                                                .size(10.dp)
+                                                .background(Color(0xFF10B981), RoundedCornerShape(2.dp))
+                                                .border(1.dp, Color.White, RoundedCornerShape(2.dp))
+                                                .pointerInput(rowIndex, colIndex) {
+                                                    detectVerticalDragGestures(
+                                                        onDragEnd = {
+                                                            fillDownSelection()
+                                                        }
+                                                    ) { change, dragAmount ->
+                                                        change.consume()
+                                                        val rowHPx = rowHeight.value * density
+                                                        val extraRows = (dragAmount / rowHPx).toInt().coerceAtLeast(0)
+                                                        val currentStart = rangeStart ?: selectedCell ?: Pair(rowIndex, colIndex)
+                                                        val newMaxR = (rowIndex + extraRows).coerceIn(0, currentRows.size - 1)
+                                                        rangeStart = Pair(minOf(currentStart.first, rowIndex), minOf(currentStart.second, colIndex))
+                                                        rangeEnd = Pair(newMaxR, maxOf(currentStart.second, colIndex))
+                                                    }
+                                                }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1175,6 +1563,171 @@ fun ExcelSpreadsheetViewer(
                 }
             }
         }
+    }
+
+    // ==========================================
+    // DIALOG: Cell Adjust & Formatting Modal
+    // ==========================================
+    if (showCellAdjustDialog) {
+        AlertDialog(
+            onDismissRequest = { showCellAdjustDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF38BDF8))
+                    Text("Cell & Grid Adjustments", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Text Alignment Setting
+                    Text("Text Alignment", color = Color(0xFF94A3B8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            Triple("Left", TextAlign.Start, Icons.Default.FormatAlignLeft),
+                            Triple("Center", TextAlign.Center, Icons.Default.FormatAlignCenter),
+                            Triple("Right", TextAlign.End, Icons.Default.FormatAlignRight)
+                        ).forEach { (label, align, icon) ->
+                            val isSelected = globalAlignment == align
+                            FilledTonalButton(
+                                onClick = {
+                                    globalAlignment = align
+                                    if (selectedCell != null) {
+                                        cellAlignments[selectedCell!!] = align
+                                    }
+                                    effectiveSelectedCells.forEach { cellAlignments[it] = align }
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (isSelected) Color(0xFF2563EB) else Color(0xFF334155),
+                                    contentColor = Color.White
+                                )
+                            ) {
+                                Icon(icon, contentDescription = label, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+
+                    // Wrap Text Switch
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Wrap Text in Cells", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("Expand rows to show full content", color = Color.Gray, fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = isWrapTextEnabled,
+                            onCheckedChange = { isWrapTextEnabled = it },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF10B981))
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFF334155))
+
+                    // Column Width Presets
+                    Text("Column Width (Default)", color = Color(0xFF94A3B8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            Pair("Compact", 80.dp),
+                            Pair("Normal", 120.dp),
+                            Pair("Wide", 180.dp),
+                            Pair("Extra", 240.dp)
+                        ).forEach { (name, width) ->
+                            val isSel = defaultCellWidth == width
+                            FilterChip(
+                                selected = isSel,
+                                onClick = { defaultCellWidth = width },
+                                label = { Text(name, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF0284C7),
+                                    selectedLabelColor = Color.White,
+                                    containerColor = Color(0xFF334155),
+                                    labelColor = Color(0xFFCBD5E1)
+                                )
+                            )
+                        }
+                    }
+
+                    // Auto-fit All Columns Button
+                    OutlinedButton(
+                        onClick = { autoFitAllColumns() },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF38BDF8))
+                    ) {
+                        Icon(Icons.Default.FitScreen, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Auto-Fit All Columns to Content", fontSize = 12.sp)
+                    }
+
+                    HorizontalDivider(color = Color(0xFF334155))
+
+                    // Row Height Presets
+                    Text("Row Height (Default)", color = Color(0xFF94A3B8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            Pair("Dense", 28.dp),
+                            Pair("Normal", 36.dp),
+                            Pair("Comfortable", 48.dp),
+                            Pair("Spacious", 64.dp)
+                        ).forEach { (name, height) ->
+                            val isSel = defaultCellHeight == height
+                            FilterChip(
+                                selected = isSel,
+                                onClick = { defaultCellHeight = height },
+                                label = { Text(name, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF059669),
+                                    selectedLabelColor = Color.White,
+                                    containerColor = Color(0xFF334155),
+                                    labelColor = Color(0xFFCBD5E1)
+                                )
+                            )
+                        }
+                    }
+
+                    // Reset all custom sizes button
+                    if (columnWidthOverrides.isNotEmpty() || rowHeightOverrides.isNotEmpty()) {
+                        TextButton(
+                            onClick = {
+                                columnWidthOverrides.clear()
+                                rowHeightOverrides.clear()
+                                Toast.makeText(context, "Reset all custom column & row sizes", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.RestartAlt, contentDescription = null, tint = Color(0xFFF87171), modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Reset Custom Dragged Dimensions", color = Color(0xFFF87171), fontSize = 12.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showCellAdjustDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                ) {
+                    Text("Done", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1E293B)
+        )
     }
 
     // ==========================================

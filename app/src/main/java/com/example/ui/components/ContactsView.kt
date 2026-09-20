@@ -566,6 +566,30 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     c.type == com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_ID || c.type == com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_LINK
                                                 }
 
+                                                // If contact has a mobile number, add WhatsApp redirection button above Instagram info
+                                                if (contact.phone.isNotBlank()) {
+                                                    Row(
+                                                        modifier = Modifier.padding(top = 2.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = Color(0xFF25D366).copy(alpha = 0.16f),
+                                                            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF25D366).copy(alpha = 0.5f)),
+                                                            modifier = Modifier.clickable {
+                                                                com.example.util.ContactSocialHelper.openWhatsApp(context, contact.phone)
+                                                            }
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text("💬 WhatsApp", color = Color(0xFF25D366), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
                                                 if (instaField != null || snapField != null || contact.dobString.isNotBlank()) {
                                                     Row(
                                                         modifier = Modifier.padding(top = 2.dp),
@@ -732,6 +756,17 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                                     // OS direct Action triggers
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (contact.phone.isNotBlank()) {
+                                            IconButton(
+                                                onClick = {
+                                                    com.example.util.ContactSocialHelper.openWhatsApp(context, contact.phone)
+                                                },
+                                                modifier = Modifier.clip(CircleShape).background(Color(0xFF25D366).copy(alpha = 0.18f))
+                                            ) {
+                                                Icon(Icons.Default.Chat, contentDescription = "WhatsApp Redirection", tint = Color(0xFF25D366))
+                                            }
+                                        }
+
                                         IconButton(
                                             onClick = {
                                                 val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${contact.phone}"))
@@ -788,8 +823,38 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                             if (contact.additionalFieldsJson.isNotEmpty()) {
                                 val customFields = com.example.util.ContactSocialHelper.parseCustomFields(contact.additionalFieldsJson)
+                                val hasInstagramField = customFields.any { (k, v) ->
+                                    val c = com.example.util.ContactSocialHelper.classifyField(k, v)
+                                    c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_ID ||
+                                    c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK
+                                }
+
+                                if (!hasInstagramField && contact.phone.isNotBlank()) {
+                                    item {
+                                        WhatsAppRedirectionCard(phoneNumber = contact.phone)
+                                    }
+                                }
+
+                                var renderedWaAboveInsta = false
                                 customFields.forEach { (k, v) ->
-                                    item { ContactCustomFieldRow(key = k, value = v) }
+                                    val c = com.example.util.ContactSocialHelper.classifyField(k, v)
+                                    val isInsta = c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_ID ||
+                                                  c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK
+                                    val showWaAboveThis = isInsta && !renderedWaAboveInsta && contact.phone.isNotBlank()
+                                    if (showWaAboveThis) {
+                                        renderedWaAboveInsta = true
+                                    }
+                                    item {
+                                        ContactCustomFieldRow(
+                                            key = k,
+                                            value = v,
+                                            phoneNumber = if (showWaAboveThis) contact.phone else null
+                                        )
+                                    }
+                                }
+                            } else if (contact.phone.isNotBlank()) {
+                                item {
+                                    WhatsAppRedirectionCard(phoneNumber = contact.phone)
                                 }
                             }
 
@@ -2028,7 +2093,7 @@ fun ContactDetailRow(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
 }
 
 @Composable
-fun ContactCustomFieldRow(key: String, value: String) {
+fun ContactCustomFieldRow(key: String, value: String, phoneNumber: String? = null) {
     val context = LocalContext.current
     val recognized = remember(key, value) {
         com.example.util.ContactSocialHelper.classifyField(key, value)
@@ -2037,20 +2102,25 @@ fun ContactCustomFieldRow(key: String, value: String) {
     when (recognized.type) {
         com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_ID,
         com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK -> {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clickable {
-                        com.example.util.ContactSocialHelper.openInstagram(
-                            context,
-                            recognized.actionUrl ?: value
-                        )
-                    },
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE1306C).copy(alpha = 0.15f)),
-                shape = RoundedCornerShape(10.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE1306C).copy(alpha = 0.4f))
-            ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (!phoneNumber.isNullOrBlank()) {
+                    WhatsAppRedirectionCard(phoneNumber = phoneNumber)
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable {
+                            com.example.util.ContactSocialHelper.openInstagram(
+                                context,
+                                recognized.actionUrl ?: value
+                            )
+                        },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE1306C).copy(alpha = 0.15f)),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE1306C).copy(alpha = 0.4f))
+                ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2098,6 +2168,7 @@ fun ContactCustomFieldRow(key: String, value: String) {
                         Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+            }
             }
         }
         com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_ID,
@@ -2321,6 +2392,75 @@ private fun saveFileToDownloads(context: android.content.Context, sourceFile: Fi
     } catch (e: Exception) {
         e.printStackTrace()
         false
+    }
+}
+
+@Composable
+fun WhatsAppRedirectionCard(phoneNumber: String) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable {
+                com.example.util.ContactSocialHelper.openWhatsApp(context, phoneNumber)
+            },
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF25D366).copy(alpha = 0.14f)),
+        shape = RoundedCornerShape(10.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF25D366).copy(alpha = 0.45f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF25D366)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Chat,
+                    contentDescription = "WhatsApp",
+                    tint = Color.Black,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "WHATSAPP REDIRECTION (wa.me)",
+                    color = Color(0xFF25D366),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = phoneNumber,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Button(
+                onClick = {
+                    com.example.util.ContactSocialHelper.openWhatsApp(context, phoneNumber)
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF25D366),
+                    contentColor = Color.Black
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                modifier = Modifier.height(28.dp),
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text("Chat on WA", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 

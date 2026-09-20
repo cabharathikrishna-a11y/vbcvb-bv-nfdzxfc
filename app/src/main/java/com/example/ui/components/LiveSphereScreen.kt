@@ -172,20 +172,8 @@ fun LiveSphereScreen(
         pendingFocusReviewState?.let { com.example.util.FocusTimerManager.getOverlapSecondsForDate(it, systemTodayStr) } ?: 0
     }
 
-    val globalTodaySeconds = remember(completedTodaySecs, pendingSecs, isFocusPhase, cumulativeSessionFocusSeconds, stopwatchSeconds, wasStartedFromStopwatch, pendingFocusReviewState, optimisticTodaySecs, isTimerRunning, isStopwatchActive, isPaused) {
-        val isRunningOrPaused = isTimerRunning || isStopwatchActive || isPaused
-        val activeSecs = if (isFocusPhase && pendingFocusReviewState == null && isRunningOrPaused) {
-            if (wasStartedFromStopwatch) stopwatchSeconds else cumulativeSessionFocusSeconds
-        } else {
-            0
-        }
-        val base = completedTodaySecs + pendingSecs + activeSecs
-        if (optimisticTodaySecs != null) {
-            maxOf(base, optimisticTodaySecs.toInt())
-        } else {
-            base
-        }
-    }
+    // Unified Today's Total Focus Time from TodayTotalFocusTimeManager
+    val globalTodaySeconds by com.example.util.TodayTotalFocusTimeManager.todayTotalSeconds.collectAsStateWithLifecycle()
 
     val myTodayFocusMs = remember(globalTodaySeconds) {
         globalTodaySeconds * 1000L
@@ -360,7 +348,8 @@ fun LiveSphereScreen(
                         userEmoji = userEmoji,
                         isPaused = isPaused,
                         wasStartedFromStopwatch = wasStartedFromStopwatch,
-                        myRank = myRank
+                        myRank = myRank,
+                        totalFocusTimeToday = com.example.util.TodayTotalFocusTimeManager.formatSecondsToHms(globalTodaySeconds)
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -740,14 +729,28 @@ fun PeerStatusCard(
                 }
             }
 
-            // Bottom Section: Live Ticking Time
-            Column {
+            // Bottom Section: Live Ticking Time & Total Focus Time
+            val peerTodayFocusSecs = (peer.todayFocusMs / 1000L).toInt()
+            val peerTotalFormatted = if (peerTodayFocusSecs > 0) {
+                com.example.util.TodayTotalFocusTimeManager.formatSecondsToHms(peerTodayFocusSecs)
+            } else {
+                "00m 00s"
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = cardModel.formattedLiveTime,
                     color = accentColor,
-                    fontSize = 18.sp,
+                    fontSize = 17.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Total Focused: $peerTotalFormatted",
+                    color = Color(0xFF38BDF8),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
@@ -767,7 +770,8 @@ fun MyStatusCard(
     userEmoji: String,
     isPaused: Boolean,
     wasStartedFromStopwatch: Boolean,
-    myRank: Int
+    myRank: Int,
+    totalFocusTimeToday: String = "00m 00s"
 ) {
     val isRunning = isTimerRunning || isStopwatchActive
     val (accentColor, backgroundColor, statusLabel) = when {
@@ -940,6 +944,27 @@ fun MyStatusCard(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold
                 )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Total Focused Time",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "Total Focused Today: $totalFocusTimeToday",
+                        color = Color(0xFF38BDF8),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
             }
         }
     }

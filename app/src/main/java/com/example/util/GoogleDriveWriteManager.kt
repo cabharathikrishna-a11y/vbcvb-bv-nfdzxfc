@@ -22,7 +22,7 @@ import org.json.JSONObject
 object GoogleDriveWriteManager {
 
     private const val TAG = "GoogleDriveWrite"
-    private val client = OkHttpClient()
+    private val client by lazy { NetworkTrafficManager.createOkHttpClientBuilder(NetworkTrafficManager.TrafficCategory.CLOUD_BACKUP).build() }
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     /**
@@ -534,9 +534,13 @@ object GoogleDriveWriteManager {
                 put("today_pomos_count", pomosCount)
             }
 
-            var fileId = GoogleDriveReadManager.findFileId(token, "focus_backup.json")
+            val vault = GoogleDriveUploadManager.ensureVaultStructureAndReadme(token)
+            val targetFolderId = vault?.focusDataId
+            val fileName = "focus_backup.json"
+
+            var fileId = if (targetFolderId != null) GoogleDriveUploadManager.findFileInFolder(token, fileName, targetFolderId) else GoogleDriveReadManager.findFileId(token, fileName)
             if (fileId == null) {
-                fileId = createFileMetadata(token, "focus_backup.json")
+                fileId = if (targetFolderId != null) GoogleDriveUploadManager.createFileMetadataInFolder(token, fileName, targetFolderId) else createFileMetadata(token, fileName)
                 if (fileId == null) {
                     return@withContext Pair(false, "Failed to initialize backup slot on Google Drive.")
                 }
@@ -551,8 +555,12 @@ object GoogleDriveWriteManager {
 
             client.newCall(request).execute().use { res ->
                 if (res.isSuccessful) {
+                    if (targetFolderId != null) {
+                        deleteOlderDuplicateFiles(token, targetFolderId, fileName, keepLatestId = fileId)
+                    }
+                    makeFilePublic(token, fileId)
                     prefs.edit().putLong("gd_focus_last_sync_timestamp", System.currentTimeMillis()).apply()
-                    Pair(true, "Successfully backed up focus data to Google Drive.")
+                    Pair(true, "Successfully backed up focus data to Google Drive (${GoogleDriveUploadManager.PRIMARY_VAULT_FOLDER_NAME}/Focus_Data).")
                 } else {
                     Pair(false, "Failed to upload focus backup to Google Drive.")
                 }
@@ -627,7 +635,7 @@ object GoogleDriveWriteManager {
                 makeFilePublic(token, fileId)
                 val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 prefs.edit().putLong("gd_all_last_sync_timestamp", System.currentTimeMillis()).apply()
-                Pair(true, "Successfully backed up all app data and files to Google Drive (LifeOS_Cloud_Vault/App_Backups).")
+                Pair(true, "Successfully backed up all app data and files to Google Drive (${GoogleDriveUploadManager.PRIMARY_VAULT_FOLDER_NAME}/App_Backups).")
             } else {
                 Pair(false, "Failed to upload backup package to Google Drive.")
             }

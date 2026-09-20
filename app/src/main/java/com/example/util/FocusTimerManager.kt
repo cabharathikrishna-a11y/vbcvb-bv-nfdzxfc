@@ -462,6 +462,18 @@ object FocusTimerManager {
     private val _globalVerificationRevisedTotalSeconds = MutableStateFlow(0)
     val globalVerificationRevisedTotalSeconds: StateFlow<Int> = _globalVerificationRevisedTotalSeconds.asStateFlow()
 
+    // Unified Today's Total Focus Time Single Source of Truth
+    val todayFocusSnapshot: StateFlow<TodayFocusTimeSnapshot> = TodayTotalFocusTimeManager.todaySnapshot
+    val todayTotalFocusSeconds: StateFlow<Int> = TodayTotalFocusTimeManager.todayTotalSeconds
+    val todayFormattedHms: StateFlow<String> = TodayTotalFocusTimeManager.todayFormattedHms
+
+    private val _globalTodayFocusSeconds = MutableStateFlow(0)
+    val globalTodayFocusSeconds: StateFlow<Int> = _globalTodayFocusSeconds.asStateFlow()
+
+    fun setGlobalTodayFocusSeconds(value: Int) {
+        _globalTodayFocusSeconds.value = value
+    }
+
     // Session Verification & Break tracking variables
     private val _currentSessionStartMs = MutableStateFlow<Long?>(null)
     val currentSessionStartMs: StateFlow<Long?> = _currentSessionStartMs.asStateFlow()
@@ -916,6 +928,60 @@ object FocusTimerManager {
         val savedIsTabFocusTimerSelected = prefs.getSafeBoolean("timer_is_tab_focus_selected", true)
         
         if (!isRunning && !isStopwatch && !isPaused) return
+
+        val savedLastActive = prefs.getSafeLong("timer_last_active_timestamp", -1L)
+        val savedLastResume = prefs.getSafeLong("last_resume_time_ms", -1L)
+        val savedSessionStart = prefs.getSafeLong("timer_session_start_ms", -1L)
+        val nowMs = StableTime.currentTimeMillis()
+
+        // Check if paused timer has crossed normal limits (12h or date rollover)
+        val lastKnownActivityMs = when {
+            savedLastActive > 0L -> savedLastActive
+            savedLastResume > 0L -> savedLastResume
+            savedSessionStart > 0L -> savedSessionStart
+            else -> 0L
+        }
+        val isPausedStale = isPaused && (
+            (lastKnownActivityMs > 0L && (nowMs - lastKnownActivityMs) > 12 * 60 * 60 * 1000L) ||
+            (lastKnownActivityMs > 0L && !TimeEngine.isUpdatedToday(lastKnownActivityMs, nowMs))
+        )
+
+        if (isPausedStale) {
+            Log.i("FocusTimerManager", "Stale paused session detected in preload (lastActivity=$lastKnownActivityMs). Considering as 00:00:00 and applying default rules.")
+            prefs.edit()
+                .putBoolean("is_paused", false)
+                .putBoolean("timer_is_running", false)
+                .putBoolean("timer_is_stopwatch_active", false)
+                .putLong("accumulated_time_ms", 0L)
+                .putInt("saved_stopwatch_seconds", 0)
+                .putInt("timer_cumulative_seconds", 0)
+                .putLong("last_resume_time_ms", -1L)
+                .putLong("timer_session_start_ms", -1L)
+                .putLong("timer_last_active_timestamp", -1L)
+                .apply()
+
+            _isPaused.value = false
+            _isTimerRunning.value = false
+            _isStopwatchActive.value = false
+            _accumulatedSessionTimeMs.value = 0L
+            _stopwatchSeconds.value = 0
+            _cumulativeSessionFocusSeconds.value = 0
+            _timerSecondsLeft.value = _timerDurationMinutes.value * 60
+
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val db = com.example.data.AppDatabase.getInstance(context.applicationContext)
+                    db.localActiveSessionDao().clearActiveSession()
+                } catch (e: Exception) {
+                    Log.e("FocusTimerManager", "Error clearing stale active session from DB in preload", e)
+                }
+                val email = com.example.api.DynamicCommandManager.activeEmail.ifEmpty { prefs.getSafeString("user_email", "") ?: "" }
+                if (email.isNotEmpty()) {
+                    FocusDriftDetector.ensureRtdbIdleState(context.applicationContext, email)
+                }
+            }
+            return
+        }
         
         _isTimerRunning.value = isRunning
         _isStopwatchActive.value = isStopwatch
@@ -925,9 +991,6 @@ object FocusTimerManager {
         _isTabFocusTimerSelected.value = savedIsTabFocusTimerSelected
         
         val savedAccumulated = prefs.getSafeLong("accumulated_time_ms", 0L)
-        val savedLastResume = prefs.getSafeLong("last_resume_time_ms", -1L)
-        val savedSessionStart = prefs.getSafeLong("timer_session_start_ms", -1L)
-        val nowMs = StableTime.currentTimeMillis()
         
         val effectiveResume = if (savedLastResume != -1L) savedLastResume else savedSessionStart
         val totalMs = if (!isPaused && effectiveResume != -1L && nowMs > effectiveResume) {
@@ -972,6 +1035,44 @@ object FocusTimerManager {
                 val db = com.example.data.AppDatabase.getInstance(appContext)
                 val session = db.localActiveSessionDao().getActiveSession()
                 if (session != null && !session.status.equals("IDLE", ignoreCase = true)) {
+                    val nowMs = StableTime.currentTimeMillis()
+                    val sessionLastTs = if (session.last_event_ts_ms > 0L) session.last_event_ts_ms else 0L
+                    val isSessionPausedStale = session.status.equals("PAUSED", ignoreCase = true) && (
+                        (sessionLastTs > 0L && (nowMs - sessionLastTs) > 12 * 60 * 60 * 1000L) ||
+                        (sessionLastTs > 0L && !TimeEngine.isUpdatedToday(sessionLastTs, nowMs))
+                    )
+
+                    if (isSessionPausedStale) {
+                        Log.i("FocusTimerManager", "recoverAndResumeActiveSession: Local DB session is PAUSED and crossed normal limits ($sessionLastTs). Clearing to 00:00:00 and applying default rules.")
+                        db.localActiveSessionDao().clearActiveSession()
+                        prefs.edit()
+                            .putBoolean("is_paused", false)
+                            .putBoolean("timer_is_running", false)
+                            .putBoolean("timer_is_stopwatch_active", false)
+                            .putLong("accumulated_time_ms", 0L)
+                            .putInt("saved_stopwatch_seconds", 0)
+                            .putInt("timer_cumulative_seconds", 0)
+                            .putLong("last_resume_time_ms", -1L)
+                            .putLong("timer_session_start_ms", -1L)
+                            .putLong("timer_last_active_timestamp", -1L)
+                            .commit()
+
+                        withContext(Dispatchers.Main) {
+                            _isPaused.value = false
+                            _isTimerRunning.value = false
+                            _isStopwatchActive.value = false
+                            _accumulatedSessionTimeMs.value = 0L
+                            _stopwatchSeconds.value = 0
+                            _cumulativeSessionFocusSeconds.value = 0
+                            _timerSecondsLeft.value = _timerDurationMinutes.value * 60
+                        }
+                        val email = com.example.api.DynamicCommandManager.activeEmail.ifEmpty { prefs.getSafeString("user_email", "") ?: "" }
+                        if (email.isNotEmpty()) {
+                            FocusDriftDetector.ensureRtdbIdleState(appContext, email)
+                        }
+                        return@launch
+                    }
+
                     val isRunning = session.status.equals("FOCUSING", ignoreCase = true)
                     val isStopwatch = session.mode.equals("STOPWATCH", ignoreCase = true) || session.mode.equals("stopwatch", ignoreCase = true)
                     val isBreaking = session.status.equals("BREAKING", ignoreCase = true) || session.status.equals("BREAK", ignoreCase = true)
@@ -1014,6 +1115,50 @@ object FocusTimerManager {
             val savedIsStopwatchActive = prefs.getSafeBoolean("timer_is_stopwatch_active", false)
             val savedWasStartedFromStopwatch = prefs.getSafeBoolean("timer_was_started_from_stopwatch", false)
             val savedIsPaused = prefs.getSafeBoolean("is_paused", false)
+            val savedLastActiveTimestamp = prefs.getSafeLong("timer_last_active_timestamp", -1L)
+            val savedLastResume = prefs.getSafeLong("last_resume_time_ms", -1L)
+            val savedSessionStart = prefs.getSafeLong("timer_session_start_ms", -1L)
+            val nowMs = StableTime.currentTimeMillis()
+            val lastKnownActivityMs = when {
+                savedLastActiveTimestamp > 0L -> savedLastActiveTimestamp
+                savedLastResume > 0L -> savedLastResume
+                savedSessionStart > 0L -> savedSessionStart
+                else -> 0L
+            }
+            val isPrefsPausedStale = savedIsPaused && (
+                (lastKnownActivityMs > 0L && (nowMs - lastKnownActivityMs) > 12 * 60 * 60 * 1000L) ||
+                (lastKnownActivityMs > 0L && !TimeEngine.isUpdatedToday(lastKnownActivityMs, nowMs))
+            )
+
+            if (isPrefsPausedStale) {
+                Log.i("FocusTimerManager", "recoverAndResumeActiveSession: SharedPreferences is_paused crossed normal limits. Clearing to 00:00:00 and applying default rules.")
+                prefs.edit()
+                    .putBoolean("is_paused", false)
+                    .putBoolean("timer_is_running", false)
+                    .putBoolean("timer_is_stopwatch_active", false)
+                    .putLong("accumulated_time_ms", 0L)
+                    .putInt("saved_stopwatch_seconds", 0)
+                    .putInt("timer_cumulative_seconds", 0)
+                    .putLong("last_resume_time_ms", -1L)
+                    .putLong("timer_session_start_ms", -1L)
+                    .putLong("timer_last_active_timestamp", -1L)
+                    .commit()
+
+                withContext(Dispatchers.Main) {
+                    _isPaused.value = false
+                    _isTimerRunning.value = false
+                    _isStopwatchActive.value = false
+                    _accumulatedSessionTimeMs.value = 0L
+                    _stopwatchSeconds.value = 0
+                    _cumulativeSessionFocusSeconds.value = 0
+                    _timerSecondsLeft.value = _timerDurationMinutes.value * 60
+                }
+                val email = com.example.api.DynamicCommandManager.activeEmail.ifEmpty { prefs.getSafeString("user_email", "") ?: "" }
+                if (email.isNotEmpty()) {
+                    FocusDriftDetector.ensureRtdbIdleState(appContext, email)
+                }
+                return@launch
+            }
             
             _isPaused.value = savedIsPaused
             savedStopwatchSeconds = prefs.getSafeInt("saved_stopwatch_seconds", 0)
@@ -1023,9 +1168,6 @@ object FocusTimerManager {
             _isTabFocusTimerSelected.value = savedIsTabFocusTimerSelected
             
             val savedAccumulated = if (!savedIsRunning && !savedIsStopwatchActive && !savedIsPaused) 0L else prefs.getSafeLong("accumulated_time_ms", 0L)
-            val savedLastResume = prefs.getSafeLong("last_resume_time_ms", -1L)
-            val savedSessionStart = prefs.getSafeLong("timer_session_start_ms", -1L)
-            val savedLastActiveTimestamp = prefs.getSafeLong("timer_last_active_timestamp", -1L)
             
             _accumulatedSessionTimeMs.value = savedAccumulated
             val restoredSecs = (savedAccumulated / 1000).toInt()
@@ -1188,6 +1330,15 @@ object FocusTimerManager {
     fun ensureActiveSessionTicking(context: Context) {
         init(context)
         val appContext = context.applicationContext
+        if (_isPaused.value) {
+            val prefs = appContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            val savedLastActive = prefs.getSafeLong("timer_last_active_timestamp", -1L)
+            val nowMs = StableTime.currentTimeMillis()
+            if (savedLastActive > 0L && ((nowMs - savedLastActive) > 12 * 60 * 60 * 1000L || !TimeEngine.isUpdatedToday(savedLastActive, nowMs))) {
+                preloadActiveSessionStateFromPrefs(appContext)
+                return
+            }
+        }
         if (_isTimerRunning.value && (timerJob == null || timerJob?.isActive != true) && !_isPaused.value) {
             startTimer(appContext, stopActiveAlarm = false, isResuming = true)
         } else if (_isStopwatchActive.value && (stopwatchJob == null || stopwatchJob?.isActive != true) && !_isPaused.value) {
@@ -1634,7 +1785,12 @@ object FocusTimerManager {
         if (_isFocusPhase.value && !isResuming) {
             _wasStartedFromStopwatch.value = false
         }
-        val actualResuming = isResuming || (_isPaused.value && _accumulatedSessionTimeMs.value > 0L)
+        val isMidSession = _isPaused.value || 
+                           (_isFocusPhase.value && _timerSecondsLeft.value < _timerDurationMinutes.value * 60 && _timerSecondsLeft.value > 0) ||
+                           (!_isFocusPhase.value && _timerSecondsLeft.value > 0) ||
+                           _accumulatedSessionTimeMs.value > 0L || 
+                           _cumulativeSessionFocusSeconds.value > 0
+        val actualResuming = isResuming || isMidSession
         if (!actualResuming) {
             _isPaused.value = false
             if (_isFocusPhase.value) {
@@ -1674,11 +1830,14 @@ object FocusTimerManager {
                 return
             }
 
-            // Only reset to full duration if we are NOT resuming from a pause
-            if (!actualResuming || _timerSecondsLeft.value <= 0) {
+            // Only reset to full duration if we are truly starting a brand new session and NOT resuming
+            if (!actualResuming) {
                 _timerSecondsLeft.value = _timerDurationMinutes.value * 60
                 _accumulatedSessionTimeMs.value = 0L
                 _cumulativeSessionFocusSeconds.value = 0
+            } else if (_timerSecondsLeft.value <= 0 && _isFocusPhase.value) {
+                // If somehow resuming an already expired session, restore the duration
+                _timerSecondsLeft.value = _timerDurationMinutes.value * 60
             }
 
             val isResumingSession = actualResuming
@@ -1969,6 +2128,11 @@ object FocusTimerManager {
         init(context)
         claimCommandDevice(context)
         
+        // Idempotent safety guard: If timer is already paused or not running, don't double-pause and corrupt timestamps
+        if (!_isTimerRunning.value && _isPaused.value) {
+            return
+        }
+
         val appContext = context.applicationContext
         val email = com.example.api.DynamicCommandManager.activeEmail
         val timelineBeforePause = com.example.api.DynamicCommandManager.currentTimelineFlow.value
@@ -2501,7 +2665,8 @@ object FocusTimerManager {
         _isTimerRunning.value = false
         AlarmScheduler.cancelTimerEndAlarm(appContext)
 
-        val actualResuming = isResuming || resumeFromBreak || (_isPaused.value && (_stopwatchSeconds.value > 0 || _accumulatedSessionTimeMs.value > 0L))
+        val isMidSession = _isPaused.value || _stopwatchSeconds.value > 0 || _accumulatedSessionTimeMs.value > 0L || _isStopwatchActive.value
+        val actualResuming = isResuming || resumeFromBreak || isMidSession
         setTabFocusTimerSelected(false)
         _wasStartedFromStopwatch.value = true
         val prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
@@ -2645,6 +2810,11 @@ object FocusTimerManager {
         init(context)
         claimCommandDevice(context)
         
+        // Idempotent safety guard: If stopwatch is already paused or not active, don't double-pause and corrupt timestamps
+        if (!_isStopwatchActive.value && _isPaused.value) {
+            return
+        }
+
         val appContext = context.applicationContext
         val email = com.example.api.DynamicCommandManager.activeEmail
         val timelineBeforePause = com.example.api.DynamicCommandManager.currentTimelineFlow.value
@@ -3265,9 +3435,11 @@ object FocusTimerManager {
                         }
                     } else {
                         if (isTabFocusTimerSelected.value) {
-                            startTimer(context)
+                            val isResuming = isPaused.value || (isFocusPhase.value && timerSecondsLeft.value < timerDurationMinutes.value * 60 && timerSecondsLeft.value > 0) || accumulatedSessionTimeMs.value > 0L
+                            startTimer(context, isResuming = isResuming)
                         } else {
-                            startStopwatch(context)
+                            val isResuming = isPaused.value || stopwatchSeconds.value > 0 || accumulatedSessionTimeMs.value > 0L
+                            startStopwatch(context, isResuming = isResuming)
                         }
                     }
                     updateOverlayTextAndState()
@@ -4916,6 +5088,72 @@ object FocusTimerManager {
                 // 3. Recalculate and commit correct authoritative totals to memory and preferences
                 setOptimisticTodayFocusSeconds(null)
                 val prefs = appContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+
+                // Check and heal stale paused sessions exceeding normal limits (12h or date rollover)
+                val activeSession = db.localActiveSessionDao().getActiveSession()
+                val isPausedInPrefs = prefs.getSafeBoolean("is_paused", false)
+                val lastActiveInPrefs = prefs.getSafeLong("timer_last_active_timestamp", -1L)
+                val nowMs = StableTime.currentTimeMillis()
+
+                if (activeSession != null && activeSession.status.equals("PAUSED", ignoreCase = true)) {
+                    val sessionLastTs = if (activeSession.last_event_ts_ms > 0L) activeSession.last_event_ts_ms else 0L
+                    if ((sessionLastTs > 0L && (nowMs - sessionLastTs) > 12 * 60 * 60 * 1000L) ||
+                        (sessionLastTs > 0L && !TimeEngine.isUpdatedToday(sessionLastTs, nowMs))) {
+                        Log.i("FocusAuditHealer", "Stale paused session detected in audit ($sessionLastTs). Clearing to 00:00:00 and applying default rules.")
+                        db.localActiveSessionDao().clearActiveSession()
+                        prefs.edit()
+                            .putBoolean("is_paused", false)
+                            .putBoolean("timer_is_running", false)
+                            .putBoolean("timer_is_stopwatch_active", false)
+                            .putLong("accumulated_time_ms", 0L)
+                            .putInt("saved_stopwatch_seconds", 0)
+                            .putInt("timer_cumulative_seconds", 0)
+                            .putLong("last_resume_time_ms", -1L)
+                            .putLong("timer_session_start_ms", -1L)
+                            .putLong("timer_last_active_timestamp", -1L)
+                            .apply()
+                        withContext(Dispatchers.Main) {
+                            _isPaused.value = false
+                            _isTimerRunning.value = false
+                            _isStopwatchActive.value = false
+                            _accumulatedSessionTimeMs.value = 0L
+                            _stopwatchSeconds.value = 0
+                            _cumulativeSessionFocusSeconds.value = 0
+                            _timerSecondsLeft.value = _timerDurationMinutes.value * 60
+                        }
+                        val email = com.example.api.DynamicCommandManager.activeEmail.ifEmpty { prefs.getSafeString("user_email", "") ?: "" }
+                        if (email.isNotEmpty()) {
+                            FocusDriftDetector.ensureRtdbIdleState(appContext, email)
+                        }
+                    }
+                } else if (isPausedInPrefs && lastActiveInPrefs > 0L && ((nowMs - lastActiveInPrefs) > 12 * 60 * 60 * 1000L || !TimeEngine.isUpdatedToday(lastActiveInPrefs, nowMs))) {
+                    Log.i("FocusAuditHealer", "Stale paused session in prefs detected in audit ($lastActiveInPrefs). Clearing to 00:00:00 and applying default rules.")
+                    prefs.edit()
+                        .putBoolean("is_paused", false)
+                        .putBoolean("timer_is_running", false)
+                        .putBoolean("timer_is_stopwatch_active", false)
+                        .putLong("accumulated_time_ms", 0L)
+                        .putInt("saved_stopwatch_seconds", 0)
+                        .putInt("timer_cumulative_seconds", 0)
+                        .putLong("last_resume_time_ms", -1L)
+                        .putLong("timer_session_start_ms", -1L)
+                        .putLong("timer_last_active_timestamp", -1L)
+                        .apply()
+                    withContext(Dispatchers.Main) {
+                        _isPaused.value = false
+                        _isTimerRunning.value = false
+                        _isStopwatchActive.value = false
+                        _accumulatedSessionTimeMs.value = 0L
+                        _stopwatchSeconds.value = 0
+                        _cumulativeSessionFocusSeconds.value = 0
+                        _timerSecondsLeft.value = _timerDurationMinutes.value * 60
+                    }
+                    val email = com.example.api.DynamicCommandManager.activeEmail.ifEmpty { prefs.getSafeString("user_email", "") ?: "" }
+                    if (email.isNotEmpty()) {
+                        FocusDriftDetector.ensureRtdbIdleState(appContext, email)
+                    }
+                }
+
                 val activeEmailClean = com.example.api.DevicePresenceManager.sanitizeEmail(com.example.api.DynamicCommandManager.activeEmail)
                 val savedAdoptedDate = if (activeEmailClean.isNotEmpty()) prefs.getSafeString("adopted_today_date_${activeEmailClean}", "") else ""
                 val adoptedTodayMsVal = if (savedAdoptedDate == todayStr && activeEmailClean.isNotEmpty()) {
@@ -4976,12 +5214,7 @@ object FocusTimerManager {
     }
 
     fun getTodayFocusSeconds(): Int {
-        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
-        val completedTodaySeconds = focusRecords.value.sumOf { r ->
-            getOverlapSecondsForDate(r, todayStr)
-        }
-        val adoptedSecs = (adoptedTodayMs.value / 1000).toInt()
-        return completedTodaySeconds + adoptedSecs
+        return TodayTotalFocusTimeManager.getTodayTotalSeconds()
     }
 
     fun getFocusSecondsForDaysRange(days: Int?): Long {

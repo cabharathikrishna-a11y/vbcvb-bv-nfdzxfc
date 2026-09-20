@@ -194,4 +194,58 @@ object ContactSocialHelper {
             android.widget.Toast.makeText(context, "Unable to open link", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
+
+    /**
+     * Attempts to open WhatsApp chat for a given phone number directly, falling back to browser (wa.me).
+     */
+    fun openWhatsApp(context: Context, rawPhone: String, message: String? = null) {
+        val cleanPhone = rawPhone.replace(Regex("[^0-9+]"), "").let {
+            if (it.startsWith("+")) it.substring(1) else it
+        }
+        if (cleanPhone.isBlank()) {
+            android.widget.Toast.makeText(context, "No valid phone number for WhatsApp", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val encodedMsg = if (!message.isNullOrBlank()) Uri.encode(message) else ""
+        val waUriString = if (encodedMsg.isNotEmpty()) {
+            "https://api.whatsapp.com/send?phone=$cleanPhone&text=$encodedMsg"
+        } else {
+            "https://api.whatsapp.com/send?phone=$cleanPhone"
+        }
+
+        // 1. Try standard WhatsApp app
+        val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse(waUriString)).apply {
+            setPackage("com.whatsapp")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        try {
+            context.startActivity(appIntent)
+        } catch (e: Exception) {
+            // 2. Try WhatsApp Business app
+            val waBusinessIntent = Intent(Intent.ACTION_VIEW, Uri.parse(waUriString)).apply {
+                setPackage("com.whatsapp.w4b")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(waBusinessIntent)
+            } catch (e2: Exception) {
+                // 3. Fallback to browser (wa.me)
+                val fallbackUri = if (encodedMsg.isNotEmpty()) {
+                    "https://wa.me/$cleanPhone?text=$encodedMsg"
+                } else {
+                    "https://wa.me/$cleanPhone"
+                }
+                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUri)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    context.startActivity(webIntent)
+                } catch (e3: Exception) {
+                    android.widget.Toast.makeText(context, "Unable to open WhatsApp redirection", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 }

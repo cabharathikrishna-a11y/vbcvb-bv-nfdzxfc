@@ -95,6 +95,7 @@ import com.example.util.GoogleContactsSyncManager
 import com.example.util.GoogleDriveSyncManager
 import com.example.util.GoogleFitSyncManager
 import com.example.util.GoogleTasksSyncManager
+import com.example.util.NetworkTrafficManager
 import com.example.util.UpdateStatus
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.firebase.messaging.FirebaseMessaging
@@ -2792,6 +2793,27 @@ fun LifeOSBackupSection(viewModel: AppViewModel) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("Cloud Restore", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 }
+                            }
+
+                            Button(
+                                onClick = {
+                                    isOperating = true
+                                    gdMessage = "Organizing Google Drive vault and removing duplicate folders..."
+                                    viewModel.manageAndCleanGoogleDriveAppData(context, { intent ->
+                                        authResolutionLauncher.launch(intent)
+                                    }) { success, msg ->
+                                        isOperating = false
+                                        gdMessage = msg
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D2415)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(36.dp).testTag("drive_clean_vault_btn")
+                            ) {
+                                Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFF59E0B))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Clean & Consolidate Drive Folders", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
                             }
                         }
                     }
@@ -7578,6 +7600,13 @@ fun SettingsGeneralSystemPage(
         val spotifyPodcastsBlocked by viewModel.spotifyPodcastsBlocked.collectAsState()
         val context = LocalContext.current
         var tempOrder by remember(tabOrder) { mutableStateOf(tabOrder.filterNot { it == Screen.FOCUS_LOCKER || it == Screen.LIVE_SPHERE || it == Screen.INSTAGRAM_WEB_APP || it == Screen.YOUTUBE_WEB_APP || it == Screen.SPOTIFY_WEB_APP || it == Screen.GOOGLE_DRIVE_SYNC || it == Screen.MOVIE_TRACKER || it == Screen.OBSIDIAN_ARCHITECTURE }) }
+        var showNetworkUsageDialog by remember { mutableStateOf(false) }
+
+        if (showNetworkUsageDialog) {
+            NetworkUsageDialog(
+                onDismiss = { showNetworkUsageDialog = false }
+            )
+        }
 
         // General System Page
         SettingsSubpageWorkspace(
@@ -7585,6 +7614,90 @@ fun SettingsGeneralSystemPage(
             description = "Configure core systems, tab layout orientation and app reordering.",
             onBack = onBack
         ) {
+            // Network Usage Monitoring Card
+            val isOnline by NetworkTrafficManager.rememberIsInternetOn()
+            val usageReport by NetworkTrafficManager.rememberNetworkUsageReport(context)
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showNetworkUsageDialog = true }
+                    .testTag("network_usage_row"),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0C)),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color(0xFF222226))
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(WaterBlue.copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DataUsage,
+                            contentDescription = "Network Usage",
+                            tint = WaterBlue,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Network Usage",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        if (isOnline) Color(0xFF00E676).copy(alpha = 0.2f) else Color(0xFFD32F2F).copy(alpha = 0.2f),
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = if (isOnline) "ONLINE" else "OFFLINE",
+                                    color = if (isOnline) Color(0xFF00E676) else Color(0xFFD32F2F),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "Today: ${usageReport.today.formattedTotal} • 7 Days: ${usageReport.past7Days.formattedTotal} • All Time: ${usageReport.allTime.formattedTotal}",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Tap to view full breakdown: Today, 7 days, 30 days, Total installation",
+                            color = WaterBlue,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Open Network Usage",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
             // Alignment Options Column Block
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -8428,6 +8541,7 @@ fun SettingsGeneralSystemPage(
                                 Screen.GOOGLE_DRIVE_SYNC -> "Google Drive Sync"
                                 Screen.MOVIE_TRACKER -> "Movie Tracker"
                                 Screen.MULTI_WINDOW_DESKTOP -> "4-Window Desktop"
+                                Screen.SHOPPING_CART -> "Shopping Cart"
                             }
 
                             val parentScreen = nestedTabParents[screen]
@@ -11283,11 +11397,33 @@ fun SettingsTimerConfigurationPage(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text("Pin Home Screen Widgets", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("Pin interactive Pomodoro, Stopwatch, Total Focus & Sphere widgets directly to your launcher", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    Text("Pin interactive Timeline + Subjects, Focus Time, Pomodoro, Stopwatch & Sphere widgets directly to your launcher", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.padding(bottom = 8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        Button(
+                            onClick = {
+                                com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.TimelineSubjectsWidgetProvider::class.java)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.weight(1.2f),
+                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
+                        ) {
+                            Text("Timeline+Subj", color = Color(0xFF38BDF8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = {
+                                com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.TotalFocusTimeWidgetProvider::class.java)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1F)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
+                        ) {
+                            Text("Focus Time", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                        }
                         Button(
                             onClick = {
                                 com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.PomodoroWidgetProvider::class.java)
@@ -11299,6 +11435,12 @@ fun SettingsTimerConfigurationPage(
                         ) {
                             Text("Pomodoro", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                         }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Button(
                             onClick = {
                                 com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.TimerStopwatchWidgetProvider::class.java)
@@ -11309,17 +11451,6 @@ fun SettingsTimerConfigurationPage(
                             contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
                         ) {
                             Text("Stopwatch", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        Button(
-                            onClick = {
-                                com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.TotalFocusTimeWidgetProvider::class.java)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1F)),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
-                        ) {
-                            Text("Focus Time", color = Color(0xFF38BDF8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                         Button(
                             onClick = {

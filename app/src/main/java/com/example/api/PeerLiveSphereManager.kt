@@ -287,8 +287,13 @@ object PeerLiveSphereManager {
                             val rawLastUpdated = parseToMs(timerSnapshot.child("Last_Updated").value)
                             val lastUpdated = if (rawLastUpdated > 0L) rawLastUpdated else 0L
                             val isTimerStale = lastUpdated > 0L && (nowMs - lastUpdated) > 12 * 60 * 60 * 1000L
-                            val status = if (isTimerStale && (rawStatus.equals("Focusing", ignoreCase = true) || rawStatus.equals("Running", ignoreCase = true) || rawStatus.equals("Studying", ignoreCase = true))) "Relaxing" else rawStatus
                             val isTimerUpdatedToday = TimeEngine.isUpdatedToday(rawLastUpdated, nowMs)
+                            val isPausedStale = rawStatus.equals("Paused", ignoreCase = true) && (isTimerStale || !isTimerUpdatedToday)
+                            val status = when {
+                                isTimerStale && (rawStatus.equals("Focusing", ignoreCase = true) || rawStatus.equals("Running", ignoreCase = true) || rawStatus.equals("Studying", ignoreCase = true)) -> "Relaxing"
+                                isPausedStale -> "Relaxing"
+                                else -> rawStatus
+                            }
                             val timerRawTodayMs = timerSnapshot.childMs("Todays_Focus_Ms", "todayFocusMs")
                             val todayFocusMsFromTimer = if (isTimerUpdatedToday) timerRawTodayMs else 0L
 
@@ -318,6 +323,9 @@ object PeerLiveSphereManager {
                                     val ts = child.child("timestamp").getValue(Long::class.java) ?: 0L
                                     timelineList.add(TimelineEvent(devId, ev, ts))
                                 }
+                            }
+                            if (isPausedStale) {
+                                timelineList.clear()
                             }
 
                             val baseCompletedTodayMs = todayFocusMsFromTimer

@@ -38,6 +38,7 @@ class MainApplication : Application(), Configuration.Provider {
         super.onCreate()
         instance = this
         com.example.util.AppCrashRollbackManager.initialize(this)
+        com.example.util.NetworkTrafficManager.init(this)
         
         // Execute background non-critical initializations asynchronously to minimize app startup time
         Executors.newSingleThreadExecutor().execute {

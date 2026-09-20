@@ -17,17 +17,31 @@ import java.io.File
 /**
  * GoogleDriveUploadManager
  *
- * Dedicated manager for handling all upload operations to Google Drive across the app,
- * including full app data backups, focus timer data, public media files, and document exports.
+ * Dedicated manager for handling all upload operations, folder organization,
+ * single-folder enforcement, and duplicate cleanup on Google Drive.
+ * Enforces a SINGLE root folder ('LifeOS_AppData') with structured subfolders,
+ * automatically purging old duplicate folders and obsolete backups.
  */
 object GoogleDriveUploadManager {
 
     private const val TAG = "GoogleDriveUpload"
-    private val client = OkHttpClient()
+    const val PRIMARY_VAULT_FOLDER_NAME = "LifeOS_AppData"
+    private val LEGACY_VAULT_FOLDER_NAMES = listOf("LifeOS_Cloud_Vault", "LifeOS_Backup", "LifeOS_Files", "LifeOS_Data")
+
+    private val client by lazy { NetworkTrafficManager.createOkHttpClientBuilder(NetworkTrafficManager.TrafficCategory.CLOUD_BACKUP).build() }
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
+    data class VaultFolders(
+        val rootId: String,
+        val backupsId: String,
+        val focusDataId: String,
+        val taskAttachmentsId: String,
+        val sharedMediaId: String,
+        val generalFilesId: String
+    )
+
     /**
-     * Uploads full application data backup (JSON/ZIP) to Drive AppData folder or Drive root.
+     * Uploads full application data backup (JSON/ZIP) to the single dedicated App_Backups subfolder.
      */
     suspend fun uploadAppDataBackup(
         context: Context,
@@ -39,10 +53,16 @@ object GoogleDriveUploadManager {
             val token = GoogleDriveReadManager.getAccessToken(context, onAuthResolutionRequired)
                 ?: return@withContext Pair(false, "Failed to acquire Google Drive access token.")
 
+            val vault = ensureVaultStructureAndReadme(token)
+            val targetFolderId = vault?.backupsId
+                ?: return@withContext Pair(false, "Could not initialize LifeOS AppData folder in Google Drive.")
+
             val fileName = "app_data_backup.zip"
-            val fileId = GoogleDriveReadManager.findFileId(token, fileName)
-                ?: GoogleDriveWriteManager.createFileMetadata(token, fileName)
-                ?: return@withContext Pair(false, "Could not create backup metadata in Google Drive.")
+            var fileId = findFileInFolder(token, fileName, targetFolderId)
+            if (fileId == null) {
+                fileId = createFileMetadataInFolder(token, fileName, targetFolderId)
+                    ?: return@withContext Pair(false, "Could not create backup metadata in Google Drive.")
+            }
 
             val request = Request.Builder()
                 .url("https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=media")
@@ -52,8 +72,10 @@ object GoogleDriveUploadManager {
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
-                    Log.i(TAG, "Successfully uploaded app data backup to Google Drive.")
-                    Pair(true, "App data uploaded successfully to Google Drive.")
+                    Log.i(TAG, "Successfully uploaded app data backup to Google Drive App_Backups.")
+                    GoogleDriveWriteManager.deleteOlderDuplicateFiles(token, targetFolderId, fileName, keepLatestId = fileId)
+                    GoogleDriveWriteManager.makeFilePublic(token, fileId)
+                    Pair(true, "App data uploaded successfully to Google Drive ($PRIMARY_VAULT_FOLDER_NAME/App_Backups).")
                 } else {
                     val err = response.body?.string() ?: ""
                     Log.e(TAG, "Failed to upload backup content: ${response.code} $err")
@@ -67,7 +89,7 @@ object GoogleDriveUploadManager {
     }
 
     /**
-     * Uploads focus session records to Google Drive.
+     * Uploads focus session records to the single dedicated Focus_Data subfolder.
      */
     suspend fun uploadFocusData(
         context: Context,
@@ -78,10 +100,16 @@ object GoogleDriveUploadManager {
             val token = GoogleDriveReadManager.getAccessToken(context, onAuthResolutionRequired)
                 ?: return@withContext Pair(false, "No Google access token.")
 
+            val vault = ensureVaultStructureAndReadme(token)
+            val targetFolderId = vault?.focusDataId
+                ?: return@withContext Pair(false, "Failed to initialize Focus_Data folder in Google Drive.")
+
             val fileName = "focus_backup.json"
-            val fileId = GoogleDriveReadManager.findFileId(token, fileName)
-                ?: GoogleDriveWriteManager.createFileMetadata(token, fileName)
-                ?: return@withContext Pair(false, "Failed to initialize Drive file metadata.")
+            var fileId = findFileInFolder(token, fileName, targetFolderId)
+            if (fileId == null) {
+                fileId = createFileMetadataInFolder(token, fileName, targetFolderId)
+                    ?: return@withContext Pair(false, "Failed to initialize Drive file metadata.")
+            }
 
             val request = Request.Builder()
                 .url("https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=media")
@@ -91,7 +119,9 @@ object GoogleDriveUploadManager {
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
-                    Pair(true, "Focus data backup uploaded successfully.")
+                    GoogleDriveWriteManager.deleteOlderDuplicateFiles(token, targetFolderId, fileName, keepLatestId = fileId)
+                    GoogleDriveWriteManager.makeFilePublic(token, fileId)
+                    Pair(true, "Focus data backup uploaded successfully ($PRIMARY_VAULT_FOLDER_NAME/Focus_Data).")
                 } else {
                     Pair(false, "Upload failed HTTP ${response.code}")
                 }
@@ -103,7 +133,7 @@ object GoogleDriveUploadManager {
     }
 
     /**
-     * Uploads a public media file directly to Google Drive and sets public read permissions.
+     * Uploads a public media file directly to Google Drive into its designated subfolder and sets public read permissions.
      */
     suspend fun uploadPublicMediaFileDirect(
         context: Context,
@@ -123,6 +153,7 @@ object GoogleDriveUploadManager {
                 "Task_Attachments" -> vault?.taskAttachmentsId
                 "Shared_Media" -> vault?.sharedMediaId
                 "App_Backups" -> vault?.backupsId
+                "Focus_Data" -> vault?.focusDataId
                 else -> vault?.generalFilesId
             }
 
@@ -130,7 +161,7 @@ object GoogleDriveUploadManager {
                 return@withContext uploadPublicMediaFileToFolderDirect(context, token, file, folderId, mimeType)
             }
 
-            // Create Metadata
+            // Fallback Create Metadata in root if vault could not be prepared
             val metaJson = JSONObject().apply {
                 put("name", file.name)
                 put("mimeType", mimeType)
@@ -233,54 +264,339 @@ object GoogleDriveUploadManager {
         }
     }
 
-    data class VaultFolders(
-        val rootId: String,
-        val backupsId: String,
-        val taskAttachmentsId: String,
-        val sharedMediaId: String,
-        val generalFilesId: String
-    )
+    /**
+     * High-level maintenance command to consolidate multiple Drive app folders,
+     * enforce the single 'LifeOS_AppData' root vault, migrate files, and purge obsolete backups.
+     */
+    suspend fun manageAndCleanDriveAppData(
+        context: Context,
+        onAuthResolutionRequired: (Intent) -> Unit = {}
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val token = GoogleDriveReadManager.getAccessToken(context, onAuthResolutionRequired)
+            ?: return@withContext Pair(false, "Authorization required. Please connect your Google Drive.")
 
-    fun ensureVaultStructureAndReadme(token: String): VaultFolders? {
-        val rootId = findOrCreateSharedFolder(token, "LifeOS_Cloud_Vault") ?: return null
-        val backupsId = findOrCreateSubFolderInParent(token, rootId, "App_Backups") ?: rootId
-        val taskAttachmentsId = findOrCreateSubFolderInParent(token, rootId, "Task_Attachments") ?: rootId
-        val sharedMediaId = findOrCreateSubFolderInParent(token, rootId, "Shared_Media") ?: rootId
-        val generalFilesId = findOrCreateSubFolderInParent(token, rootId, "General_Files") ?: rootId
-
-        ensureReadmeFile(token, rootId)
-
-        return VaultFolders(
-            rootId = rootId,
-            backupsId = backupsId,
-            taskAttachmentsId = taskAttachmentsId,
-            sharedMediaId = sharedMediaId,
-            generalFilesId = generalFilesId
-        )
+        try {
+            val vault = consolidateAndCleanDriveAppData(token)
+            if (vault != null) {
+                Pair(
+                    true,
+                    "✅ Google Drive successfully organized!\n- Root Vault: $PRIMARY_VAULT_FOLDER_NAME\n- Subfolders: App_Backups, Focus_Data, Task_Attachments, Shared_Media, General_Files\n- All duplicate and legacy folders purged."
+                )
+            } else {
+                Pair(false, "Failed to organize Drive folders. Please check connection.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during Drive vault cleanup", e)
+            Pair(false, "Cleanup Error: ${e.localizedMessage ?: "Unknown error"}")
+        }
     }
 
-    private fun findOrCreateSubFolderInParent(token: String, parentId: String, subFolderName: String): String? {
+    /**
+     * Ensures exactly ONE root folder ('LifeOS_AppData') and the subfolders exist,
+     * merging contents from duplicates and deleting redundant folders.
+     */
+    fun ensureVaultStructureAndReadme(token: String): VaultFolders? {
+        return consolidateAndCleanDriveAppData(token)
+    }
+
+    /**
+     * Consolidates duplicate root folders and subfolders into a single clean structure.
+     */
+    fun consolidateAndCleanDriveAppData(token: String): VaultFolders? {
         try {
-            val query = "name = '$subFolderName' and '$parentId' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
-            val url = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id)"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("Authorization", "Bearer $token")
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val files = JSONObject(body).getJSONArray("files")
-                    if (files.length() > 0) {
-                        return files.getJSONObject(0).getString("id")
+            // 1. Find all candidate root folders (primary and legacy)
+            val candidateNames = listOf(PRIMARY_VAULT_FOLDER_NAME) + LEGACY_VAULT_FOLDER_NAMES
+            val allFoundRootFolders = mutableListOf<JSONObject>()
+
+            for (name in candidateNames) {
+                val folders = queryFoldersByName(token, name)
+                allFoundRootFolders.addAll(folders)
+            }
+
+            // Pick or create the single primary root folder
+            val primaryFolderId: String
+            if (allFoundRootFolders.isEmpty()) {
+                primaryFolderId = createFolder(token, PRIMARY_VAULT_FOLDER_NAME) ?: return null
+            } else {
+                // Keep the first one found, prefer PRIMARY_VAULT_FOLDER_NAME
+                val best = allFoundRootFolders.find { it.optString("name") == PRIMARY_VAULT_FOLDER_NAME }
+                    ?: allFoundRootFolders.first()
+                primaryFolderId = best.optString("id")
+
+                // Ensure primary folder is named PRIMARY_VAULT_FOLDER_NAME
+                if (best.optString("name") != PRIMARY_VAULT_FOLDER_NAME) {
+                    renameFileOrFolder(token, primaryFolderId, PRIMARY_VAULT_FOLDER_NAME)
+                }
+
+                // Delete all other duplicate root folders after moving any contents
+                for (otherFolder in allFoundRootFolders) {
+                    val otherId = otherFolder.optString("id")
+                    if (otherId != primaryFolderId && otherId.isNotEmpty()) {
+                        Log.i(TAG, "Consolidating duplicate root folder: ${otherFolder.optString("name")} ($otherId)")
+                        migrateAllContentsToFolder(token, sourceFolderId = otherId, destFolderId = primaryFolderId)
+                        deleteGoogleDriveFileDirect(token, otherId)
                     }
                 }
             }
 
+            // 2. Ensure and consolidate subfolders inside the single root
+            val backupsId = findOrCreateSingleSubFolder(token, primaryFolderId, "App_Backups") ?: primaryFolderId
+            val focusDataId = findOrCreateSingleSubFolder(token, primaryFolderId, "Focus_Data") ?: primaryFolderId
+            val taskAttachmentsId = findOrCreateSingleSubFolder(token, primaryFolderId, "Task_Attachments") ?: primaryFolderId
+            val sharedMediaId = findOrCreateSingleSubFolder(token, primaryFolderId, "Shared_Media") ?: primaryFolderId
+            val generalFilesId = findOrCreateSingleSubFolder(token, primaryFolderId, "General_Files") ?: primaryFolderId
+
+            // 3. Purge older duplicate backup archives in App_Backups
+            cleanDuplicateFilesByPattern(token, backupsId, "app_data_backup.zip")
+            cleanDuplicateFilesByPattern(token, backupsId, "lifeos_full_data_backup.zip")
+
+            // 4. Purge older duplicate focus backups in Focus_Data
+            cleanDuplicateFilesByPattern(token, focusDataId, "focus_backup.json")
+
+            // 5. Clean orphaned loose app files in Drive root and move to proper subfolders
+            cleanRootOrphanedAppFiles(token, backupsFolderId = backupsId, focusFolderId = focusDataId)
+
+            // 6. Update README in the single root folder
+            ensureReadmeFile(token, primaryFolderId)
+
+            return VaultFolders(
+                rootId = primaryFolderId,
+                backupsId = backupsId,
+                focusDataId = focusDataId,
+                taskAttachmentsId = taskAttachmentsId,
+                sharedMediaId = sharedMediaId,
+                generalFilesId = generalFilesId
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error consolidating Drive App Data", e)
+            return null
+        }
+    }
+
+    private fun findOrCreateSingleSubFolder(token: String, parentId: String, subFolderName: String): String? {
+        try {
+            val query = "name = '$subFolderName' and '$parentId' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            val url = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id,name)"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+
+            var primarySubFolderId: String? = null
+            val duplicateSubFolderIds = mutableListOf<String>()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val files = JSONObject(body).getJSONArray("files")
+                    for (i in 0 until files.length()) {
+                        val fId = files.getJSONObject(i).getString("id")
+                        if (i == 0) {
+                            primarySubFolderId = fId
+                        } else {
+                            duplicateSubFolderIds.add(fId)
+                        }
+                    }
+                }
+            }
+
+            if (primarySubFolderId == null) {
+                // Create subfolder
+                primarySubFolderId = createFolderInParent(token, subFolderName, parentId)
+            } else if (duplicateSubFolderIds.isNotEmpty()) {
+                // Merge duplicate subfolders into the primary subfolder and delete them
+                for (dupId in duplicateSubFolderIds) {
+                    Log.i(TAG, "Merging duplicate subfolder $subFolderName ($dupId) into $primarySubFolderId")
+                    migrateAllContentsToFolder(token, sourceFolderId = dupId, destFolderId = primarySubFolderId)
+                    deleteGoogleDriveFileDirect(token, dupId)
+                }
+            }
+
+            return primarySubFolderId
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in findOrCreateSingleSubFolder $subFolderName", e)
+            return null
+        }
+    }
+
+    private fun cleanDuplicateFilesByPattern(token: String, folderId: String, fileName: String) {
+        try {
+            val query = "name = '$fileName' and '$folderId' in parents and trashed = false"
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            val url = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val files = JSONObject(body).getJSONArray("files")
+                    // Keep the first (most recent) file, delete the older ones
+                    if (files.length() > 1) {
+                        for (i in 1 until files.length()) {
+                            val oldId = files.getJSONObject(i).getString("id")
+                            Log.i(TAG, "Purging old duplicate file $oldId ($fileName) from folder $folderId")
+                            deleteGoogleDriveFileDirect(token, oldId)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in cleanDuplicateFilesByPattern for $fileName", e)
+        }
+    }
+
+    private fun cleanRootOrphanedAppFiles(token: String, backupsFolderId: String, focusFolderId: String) {
+        try {
+            // Find any loose app_data_backup.zip or focus_backup.json at the root of drive
+            val query = "(name = 'app_data_backup.zip' or name = 'focus_backup.json' or name = 'lifeos_full_data_backup.zip') and 'root' in parents and trashed = false"
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            val url = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id,name,parents)"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val files = JSONObject(body).getJSONArray("files")
+                    for (i in 0 until files.length()) {
+                        val fObj = files.getJSONObject(i)
+                        val id = fObj.getString("id")
+                        val name = fObj.getString("name")
+                        val destFolderId = if (name.contains("focus")) focusFolderId else backupsFolderId
+                        Log.i(TAG, "Relocating orphaned root file $name ($id) to subfolder $destFolderId")
+                        moveFile(token, fileId = id, oldParentId = "root", newParentId = destFolderId)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cleaning root orphaned app files", e)
+        }
+    }
+
+    private fun migrateAllContentsToFolder(token: String, sourceFolderId: String, destFolderId: String) {
+        try {
+            val query = "'$sourceFolderId' in parents and trashed = false"
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            val url = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id,name,mimeType)"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val files = JSONObject(body).getJSONArray("files")
+                    for (i in 0 until files.length()) {
+                        val f = files.getJSONObject(i)
+                        val fileId = f.getString("id")
+                        moveFile(token, fileId = fileId, oldParentId = sourceFolderId, newParentId = destFolderId)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error migrating contents from $sourceFolderId to $destFolderId", e)
+        }
+    }
+
+    private fun moveFile(token: String, fileId: String, oldParentId: String, newParentId: String): Boolean {
+        try {
+            val url = "https://www.googleapis.com/drive/v3/files/$fileId?addParents=$newParentId&removeParents=$oldParentId"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .patch(JSONObject().toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { res ->
+                return res.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error moving file $fileId", e)
+            return false
+        }
+    }
+
+    private fun renameFileOrFolder(token: String, fileId: String, newName: String): Boolean {
+        try {
+            val body = JSONObject().put("name", newName)
+            val request = Request.Builder()
+                .url("https://www.googleapis.com/drive/v3/files/$fileId")
+                .addHeader("Authorization", "Bearer $token")
+                .patch(body.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+            client.newCall(request).execute().use { res ->
+                return res.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error renaming file/folder $fileId to $newName", e)
+            return false
+        }
+    }
+
+    private fun queryFoldersByName(token: String, name: String): List<JSONObject> {
+        val result = mutableListOf<JSONObject>()
+        try {
+            val query = "name = '$name' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+            val url = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id,name,createdTime)"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+
+            client.newCall(request).execute().use { res ->
+                if (res.isSuccessful) {
+                    val body = res.body?.string() ?: ""
+                    val array = JSONObject(body).getJSONArray("files")
+                    for (i in 0 until array.length()) {
+                        result.add(array.getJSONObject(i))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error querying folders by name: $name", e)
+        }
+        return result
+    }
+
+    private fun createFolder(token: String, folderName: String): String? {
+        try {
             val createUrl = "https://www.googleapis.com/drive/v3/files"
             val body = JSONObject().apply {
-                put("name", subFolderName)
+                put("name", folderName)
+                put("mimeType", "application/vnd.google-apps.folder")
+            }
+            val createRequest = Request.Builder()
+                .url(createUrl)
+                .addHeader("Authorization", "Bearer $token")
+                .addHeader("Content-Type", "application/json")
+                .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+            client.newCall(createRequest).execute().use { response ->
+                if (response.isSuccessful) {
+                    val newFolderId = JSONObject(response.body?.string() ?: "").getString("id")
+                    GoogleDriveWriteManager.makeFilePublicAndEditor(token, newFolderId)
+                    return newFolderId
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating folder $folderName", e)
+        }
+        return null
+    }
+
+    private fun createFolderInParent(token: String, folderName: String, parentId: String): String? {
+        try {
+            val createUrl = "https://www.googleapis.com/drive/v3/files"
+            val body = JSONObject().apply {
+                put("name", folderName)
                 put("mimeType", "application/vnd.google-apps.folder")
                 put("parents", org.json.JSONArray().apply { put(parentId) })
             }
@@ -292,13 +608,31 @@ object GoogleDriveUploadManager {
                 .build()
             client.newCall(createRequest).execute().use { response ->
                 if (response.isSuccessful) {
-                    return JSONObject(response.body?.string() ?: "").getString("id")
+                    val newFolderId = JSONObject(response.body?.string() ?: "").getString("id")
+                    GoogleDriveWriteManager.makeFilePublicAndEditor(token, newFolderId)
+                    return newFolderId
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error in findOrCreateSubFolderInParent $subFolderName", e)
+            Log.e(TAG, "Error creating folder $folderName in parent $parentId", e)
         }
         return null
+    }
+
+    fun deleteGoogleDriveFileDirect(token: String, fileId: String): Boolean {
+        return try {
+            val request = Request.Builder()
+                .url("https://www.googleapis.com/drive/v3/files/$fileId")
+                .addHeader("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting Drive file/folder: $fileId", e)
+            false
+        }
     }
 
     private fun ensureReadmeFile(token: String, rootFolderId: String) {
@@ -308,38 +642,34 @@ object GoogleDriveUploadManager {
 
             val readmeContent = """
 ===================================================================
-⚠️ CRITICAL NOTICE: DO NOT DELETE OR MODIFY ANYTHING IN THIS FOLDER ⚠️
+⚠️ OFFICIAL LIFEOS CLOUD DATA VAULT ⚠️
 ===================================================================
 
 WHY IS THIS FOLDER STORED HERE?
-This Google Drive folder serves as the official cloud synchronization vault, media asset storage,
-and disaster recovery backup hub for your LifeOS & Focus App.
+This single designated Google Drive folder ('$PRIMARY_VAULT_FOLDER_NAME') serves as the unified
+cloud synchronization vault, media asset storage, and disaster recovery backup hub for LifeOS.
+All app data is consolidated here to keep your Google Drive clean and uncluttered.
 
-ORDERED FOLDER STRUCTURE & WHAT EACH ITEM REPRESENTS:
+ORGANIZED FOLDER STRUCTURE:
 -------------------------------------------------------------------
 1. README_DO_NOT_DELETE.txt
-   This manifest file explaining the cloud architecture, folder structure, and safety rules.
+   Manifest explaining the cloud architecture, folder structure, and safety rules.
 
 2. App_Backups/
-   Contains the latest encrypted database & app configuration backup package (lifeos_full_data_backup.zip).
-   Only the LATEST backup is preserved; older duplicate backup versions are automatically purged promptly.
+   Contains the latest database & app configuration backup package (app_data_backup.zip).
+   Older duplicate backup versions are automatically purged.
 
-3. Task_Attachments/
-   Stores all photo, video, audio, and document media attached directly to your tasks.
-   Every task with media attachments points directly to these cloud files.
+3. Focus_Data/
+   Contains Pomodoro and focus timer history logs (focus_backup.json).
 
-4. Shared_Media/
-   Stores images, videos, and media files uploaded during peer messaging, journal entries, or shared sessions.
+4. Task_Attachments/
+   Stores photo, video, audio, and document media attached directly to tasks.
 
-5. General_Files/
+5. Shared_Media/
+   Stores images, videos, and media files uploaded during peer messaging or journal reflections.
+
+6. General_Files/
    Stores documents, notes, and user files uploaded through the in-app File Explorer.
-
-CONSEQUENCES OF DELETING OR ALTERING FILES IN THIS FOLDER:
--------------------------------------------------------------------
-❌ Deleting media files will break image, video, and document rendering in your tasks and chats.
-❌ Deleting App_Backups will prevent cross-device synchronization and data restoration.
-❌ Modifying file names manually will corrupt attachment links inside the application.
-❌ Removing this directory forces the app to recreate missing structures and re-sync assets.
 
 ===================================================================
 Managed Automatically by LifeOS Cloud Vault Sync Engine
@@ -365,46 +695,8 @@ Managed Automatically by LifeOS Cloud Vault Sync Engine
     }
 
     fun findOrCreateSharedFolder(token: String, folderName: String): String? {
-        try {
-            val query = "name = '$folderName' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-            val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
-            val url = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&fields=files(id)"
-            val request = Request.Builder()
-                .url(url)
-                .addHeader("Authorization", "Bearer $token")
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val files = JSONObject(body).getJSONArray("files")
-                    if (files.length() > 0) {
-                        return files.getJSONObject(0).getString("id")
-                    }
-                }
-            }
-
-            val createUrl = "https://www.googleapis.com/drive/v3/files"
-            val body = JSONObject().apply {
-                put("name", folderName)
-                put("mimeType", "application/vnd.google-apps.folder")
-            }
-            val createRequest = Request.Builder()
-                .url(createUrl)
-                .addHeader("Authorization", "Bearer $token")
-                .addHeader("Content-Type", "application/json")
-                .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
-                .build()
-            client.newCall(createRequest).execute().use { response ->
-                if (response.isSuccessful) {
-                    val newFolderId = JSONObject(response.body?.string() ?: "").getString("id")
-                    GoogleDriveWriteManager.makeFilePublicAndEditor(token, newFolderId)
-                    return newFolderId
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in findOrCreateSharedFolder $folderName", e)
-        }
-        return null
+        val vault = ensureVaultStructureAndReadme(token)
+        return vault?.rootId
     }
 
     fun findFileInFolder(token: String, name: String, folderId: String): String? {

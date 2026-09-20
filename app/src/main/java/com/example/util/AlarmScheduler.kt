@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
+import com.example.data.Habit
 import com.example.data.Task
 import com.example.receiver.TaskReminderReceiver
 import java.text.SimpleDateFormat
@@ -250,6 +251,32 @@ object AlarmScheduler {
         for (i in 1..30) {
             cancelSpecificAlarm(context, alarmManager, intent, taskId * 100 + i)
         }
+    }
+
+    fun scheduleHabitReminder(context: Context, habit: Habit) {
+        cancelHabitReminder(context, habit.id)
+        if (!habit.isReminderEnabled) return
+
+        val triggerTimeMs = calculateNextNotificationTimeMs(habit.scheduledTime) ?: return
+        val actionData = com.example.util.TaskActionHelper.parseActionData(habit)
+        val habitRequestCode = 50000 + habit.id
+        scheduleExactAlarm(
+            context = context,
+            taskId = habitRequestCode,
+            taskTitle = "Habit: ${habit.name}",
+            taskTime = habit.scheduledTime,
+            taskPriority = "MEDIUM",
+            triggerTimeMs = triggerTimeMs,
+            actionData = actionData
+        )
+        Log.d(TAG, "Scheduled habit reminder for ${habit.name} (id: ${habit.id}) at $triggerTimeMs with action: ${actionData.type}")
+    }
+
+    fun cancelHabitReminder(context: Context, habitId: Int) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val intent = Intent(context, TaskReminderReceiver::class.java)
+        cancelSpecificAlarm(context, alarmManager, intent, 50000 + habitId)
+        Log.d(TAG, "Cancelled habit reminder for habitId: $habitId")
     }
 
     private fun cancelSpecificAlarm(context: Context, alarmManager: AlarmManager, intent: Intent, requestCode: Int) {

@@ -173,6 +173,22 @@ object ModelDownloadManager {
             return
         }
 
+        // Network Connectivity Check via Central NetworkTrafficManager
+        if (!NetworkTrafficManager.isConnected(context)) {
+            val offlineErr = "Device is offline. Connect to Wi-Fi or Mobile Data to download this AI model."
+            _downloadState.value = DownloadProgressState(
+                modelId = model.id,
+                error = offlineErr,
+                statusText = offlineErr,
+                isDownloading = false
+            )
+            try {
+                android.widget.Toast.makeText(context, "⚠️ Device is offline. Connect to Wi-Fi or Mobile Data to download model.", android.widget.Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {}
+            onComplete(false, offlineErr)
+            return
+        }
+
         // Storage Check
         val storageCheck = checkStorageSpace(context, minRequiredGb = model.minStorageGb)
         if (!storageCheck.hasEnoughSpace) {

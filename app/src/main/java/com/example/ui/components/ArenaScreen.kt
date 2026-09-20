@@ -166,9 +166,6 @@ fun ArenaScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     var masteryPeriod by remember { mutableStateOf("TODAY") } // "TODAY", "WEEKLY", "MONTHLY"
     var activeTabSelection by remember { mutableStateOf(0) } // 0 = Arena, 1 = Syllabus Tree
 
-    var showAiCalcDialog by remember { mutableStateOf(false) }
-    var showLogDialog by remember { mutableStateOf(false) }
-
     val myEmail = remember(userEmail, currentUsername) {
         val emailVal = userEmail ?: ""
         if (emailVal.isNotEmpty()) {
@@ -505,81 +502,20 @@ fun ArenaScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     )
                                 }
 
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                // Standard Trophy
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color(0xFFFFB300).copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    // Refresh Button
-                                    IconButton(
-                                        onClick = {
-                                            val targetEmail = email
-                                            coroutineScope.launch(Dispatchers.IO) {
-                                                if (targetEmail.isNotEmpty()) {
-                                                    DevicePresenceManager.syncAndReviseTodayFocusMsIfIdle(context, targetEmail)
-                                                    ArenaLeaderboardEngine.startListening(context, targetEmail, "TODAY")
-                                                    PeerLiveSphereManager.startListeningToFriends(context, targetEmail)
-                                                }
-                                            }
-                                            android.widget.Toast.makeText(context, "Refreshed leaderboard & verified today's focus dates!", android.widget.Toast.LENGTH_SHORT).show()
-                                        },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(Color.White.copy(alpha = 0.1f))
-                                            .testTag("arena_refresh_button")
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = "Refresh Leaderboard",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    // AI Formula Explanation Button
-                                    IconButton(
-                                        onClick = { showAiCalcDialog = true },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(Color(0xFF64B5F6).copy(alpha = 0.15f))
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Info,
-                                            contentDescription = "AI Formula",
-                                            tint = Color(0xFF64B5F6),
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    // Logs Button
-                                    IconButton(
-                                        onClick = { showLogDialog = true },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(Color.White.copy(alpha = 0.1f))
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.List,
-                                            contentDescription = "Logs",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    // Standard Trophy
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(Color(0xFFFFB300).copy(alpha = 0.15f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.EmojiEvents,
-                                            contentDescription = "Arena Trophy",
-                                            tint = Color(0xFFFFB300),
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.EmojiEvents,
+                                        contentDescription = "Arena Trophy",
+                                        tint = Color(0xFFFFB300),
+                                        modifier = Modifier.size(22.dp)
+                                    )
                                 }
                             }
 
@@ -849,139 +785,6 @@ fun ArenaScreen(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 SyllabusTreeScreen(viewModel = viewModel)
             }
         }
-    }
-
-    if (showAiCalcDialog) {
-        AlertDialog(
-            onDismissRequest = { showAiCalcDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = Color(0xFF64B5F6)
-                    )
-                    Text(
-                        text = "AI Formula & Calculations",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-                }
-            },
-            text = {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF131524)),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.2f))
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    text = "🎯 Daily Focus Thresholds",
-                                    color = Color(0xFF64B5F6),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "• 6 Hours: Daily Target.\n" +
-                                           "• 8 Hours: Standard High-Focus Target.",
-                                    color = Color.LightGray,
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showAiCalcDialog = false }) {
-                    Text("Understood", color = Color(0xFF64B5F6), fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = Color(0xFF0E101A)
-        )
-    }
-
-    if (showLogDialog) {
-        val focusLogs = remember(showLogDialog) { com.example.api.FocusLogManager.getLogs(context) }
-        AlertDialog(
-            onDismissRequest = { showLogDialog = false },
-            title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.List,
-                            contentDescription = null,
-                            tint = Color.White
-                        )
-                        Text(
-                            text = "Focus Credit Logs",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            com.example.api.FocusLogManager.clearLogs(context)
-                            showLogDialog = false
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Clear Logs",
-                            tint = Color.Gray
-                        )
-                    }
-                }
-            },
-            text = {
-                Box(modifier = Modifier.heightIn(max = 400.dp)) {
-                    if (focusLogs.isEmpty() || (focusLogs.size == 1 && focusLogs[0].startsWith("No focus log"))) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text("No focus transaction logs yet.", color = Color.Gray, fontSize = 14.sp)
-                        }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            itemsIndexed(focusLogs, key = { idx, _ -> "focus_log_$idx" }) { _, logLine ->
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131524)),
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.1f))
-                                ) {
-                                    Text(
-                                        text = logLine,
-                                        color = Color.LightGray,
-                                        fontSize = 12.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        modifier = Modifier.padding(10.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showLogDialog = false }) {
-                    Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = Color(0xFF0E101A)
-        )
     }
 }
 

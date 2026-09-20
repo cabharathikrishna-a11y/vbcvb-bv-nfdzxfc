@@ -459,6 +459,24 @@ object AppUpdateManager {
 
         _updateStatus.value = UpdateStatus.Checking
         withContext(Dispatchers.IO) {
+            // Check internet connectivity via Central NetworkTrafficManager
+            if (!isNetworkAvailable(context)) {
+                val offlineMsg = "Device is offline. Connect to Wi-Fi or Mobile Data to check for updates."
+                _updateStatus.value = UpdateStatus.Error(offlineMsg)
+                if (manualCheck) {
+                    withContext(Dispatchers.Main) {
+                        try {
+                            android.widget.Toast.makeText(
+                                context,
+                                "⚠️ Device is offline. Connect to Wi-Fi or Mobile Data to check for updates.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        } catch (e: Exception) {}
+                    }
+                }
+                return@withContext
+            }
+
             val errorLogs = mutableListOf<String>()
             try {
                 val packageCode = getCurrentVersionCode(context)

@@ -165,7 +165,9 @@ fun TimerDisplayTelemetryPage(
                         entry.mode.contains(searchQuery, ignoreCase = true) ||
                         entry.status.contains(searchQuery, ignoreCase = true) ||
                         entry.taskTitle.contains(searchQuery, ignoreCase = true) ||
-                        entry.tag.contains(searchQuery, ignoreCase = true)
+                        entry.tag.contains(searchQuery, ignoreCase = true) ||
+                        entry.timerTabTotalFocusTime.contains(searchQuery, ignoreCase = true) ||
+                        entry.friendsFocusTotalTime.contains(searchQuery, ignoreCase = true)
             }
 
             matchesDate && matchesStatus && matchesSearch
@@ -815,69 +817,122 @@ fun TelemetryRecordItemCard(
         border = BorderStroke(0.5.dp, Color(0xFF222228)),
         shape = RoundedCornerShape(8.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 10.dp, vertical = 7.dp)
         ) {
-            // Left: Time
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = record.clockTimeString,
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-
-            // Center: Status Badge & Mode
-            Column(
-                modifier = Modifier.weight(1.4f),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Surface(
-                    color = statusColor.copy(alpha = 0.18f),
-                    shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(0.7.dp, statusColor.copy(alpha = 0.4f))
-                ) {
+                // Left: Time
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = record.status,
-                        color = statusColor,
-                        fontSize = 9.5.sp,
+                        text = record.clockTimeString,
+                        color = Color.White,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        fontFamily = FontFamily.Monospace
                     )
                 }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = record.mode + if (record.taskTitle.isNotEmpty()) " • ${record.taskTitle}" else "",
-                    color = Color.Gray,
-                    fontSize = 9.sp,
-                    maxLines = 1
-                )
+
+                // Center: Status Badge & Mode
+                Column(
+                    modifier = Modifier.weight(1.4f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Surface(
+                        color = statusColor.copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.7.dp, statusColor.copy(alpha = 0.4f))
+                    ) {
+                        Text(
+                            text = record.status,
+                            color = statusColor,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = record.mode + if (record.taskTitle.isNotEmpty()) " • ${record.taskTitle}" else "",
+                        color = Color.Gray,
+                        fontSize = 9.sp,
+                        maxLines = 1
+                    )
+                }
+
+                // Right: Displayed Value in bold digital typography
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        text = "Display",
+                        color = Color.DarkGray,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = record.displayedValue,
+                        color = if (record.status == "FOCUSING") Color(0xFF38BDF8) else Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
             }
 
-            // Right: Displayed Value in bold digital typography
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.End
+            // Sub-row: Total Focused Time (Timer Tab & Friends Focus Details)
+            Spacer(modifier = Modifier.height(6.dp))
+            HorizontalDivider(color = Color(0xFF1C1C22), thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(5.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "Display",
-                    color = Color.DarkGray,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = record.displayedValue,
-                    color = if (record.status == "FOCUSING") Color(0xFF38BDF8) else Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = FontFamily.Monospace
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "⏱️ Tab Total:",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = record.timerTabTotalFocusTime.ifEmpty { "00m 00s" },
+                        color = Color(0xFF38BDF8),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "👥 Friends Total:",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = record.friendsFocusTotalTime.ifEmpty { "00m 00s" },
+                        color = Color(0xFF10B981),
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
             }
         }
     }

@@ -337,6 +337,77 @@ fun GoogleDriveSyncView(
                 }
             }
 
+            // Enforce Single Root Vault & Folder Cleanup Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                border = BorderStroke(1.dp, Color(0xFFF59E0B)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.FolderSpecial, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Single Vault & Folder Cleanup",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Keep Drive clean: 1 Root Folder (LifeOS_AppData) & subfolders",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Scans your Google Drive root, consolidates all legacy/duplicate LifeOS folders into one single 'LifeOS_AppData' master vault, organizes subfolders (App_Backups, Focus_Data, Task_Attachments, Shared_Media, General_Files), and permanently deletes old redundant folders and duplicate backup files.",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSyncing = true
+                                syncMessage = "Consolidating folders and cleaning old copies on Drive..."
+                                addLog("Starting Google Drive Single-Vault Consolidation & Cleanup...")
+                                try {
+                                    val (success, msg) = GoogleDriveSyncManager.manageAndCleanDriveAppData(context)
+                                    if (success) {
+                                        addLog(msg)
+                                        Toast.makeText(context, "Drive Vault Cleaned & Consolidated! 🧹", Toast.LENGTH_LONG).show()
+                                        // Refresh files
+                                        val (_, files) = GoogleDriveSyncManager.listGoogleDriveFiles(context, parentId = null)
+                                        driveFiles = files
+                                    } else {
+                                        addLog("Drive Cleanup Result: $msg")
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    addLog("Cleanup Error: ${e.message}")
+                                } finally {
+                                    isSyncing = false
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.CleaningServices, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Consolidate & Purge Duplicate Folders", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
             // Auto-Sync Configuration Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),

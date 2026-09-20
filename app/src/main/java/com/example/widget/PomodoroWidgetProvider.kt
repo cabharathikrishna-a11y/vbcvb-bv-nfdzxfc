@@ -59,7 +59,9 @@ class PomodoroWidgetProvider : AppWidgetProvider() {
                                 FocusTimerManager.resetStopwatch(context, saveSession = true)
                                 FocusTimerManager.startTimer(context, isResuming = false)
                             } else {
-                                val isPausedOrMidSession = isPaused || FocusTimerManager.accumulatedSessionTimeMs.value > 0L
+                                val isPausedOrMidSession = isPaused || FocusTimerManager.accumulatedSessionTimeMs.value > 0L ||
+                                    (FocusTimerManager.isFocusPhase.value && FocusTimerManager.timerSecondsLeft.value < FocusTimerManager.timerDurationMinutes.value * 60 && FocusTimerManager.timerSecondsLeft.value > 0) ||
+                                    FocusTimerManager.cumulativeSessionFocusSeconds.value > 0
                                 FocusTimerManager.startTimer(context, isResuming = isPausedOrMidSession)
                             }
                         }

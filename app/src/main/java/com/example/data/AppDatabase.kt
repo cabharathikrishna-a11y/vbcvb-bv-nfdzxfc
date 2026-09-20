@@ -47,7 +47,11 @@ data class Habit(
     val monthlyEndDate: Int = 30,
     val orderIndex: Int = 0,
     val scheduledTime: String = "08:00",
-    val isReminderEnabled: Boolean = false
+    val isReminderEnabled: Boolean = false,
+    val actionType: String = "", // "CALL", "SMS", "WHATSAPP", or ""
+    val actionContactName: String = "",
+    val actionContactPhone: String = "",
+    val actionMessage: String = ""
 )
 
 @Entity(tableName = "habit_completions",
@@ -1025,6 +1029,76 @@ val MIGRATION_33_34 = object : Migration(33, 34) {
     }
 }
 
+val MIGRATION_34_35 = object : Migration(34, 35) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        try {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `shopping_lists` (
+                    `id` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `icon` TEXT NOT NULL,
+                    `colorHex` TEXT NOT NULL,
+                    `budget` REAL NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `isArchived` INTEGER NOT NULL,
+                    `orderIndex` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`)
+                )
+                """.trimIndent()
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            database.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `shopping_items` (
+                    `id` TEXT NOT NULL,
+                    `listId` TEXT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `originalTitle` TEXT NOT NULL,
+                    `cost` REAL NOT NULL,
+                    `units` INTEGER NOT NULL,
+                    `imageUrl` TEXT NOT NULL,
+                    `productUrl` TEXT NOT NULL,
+                    `isPurchased` INTEGER NOT NULL,
+                    `category` TEXT NOT NULL,
+                    `notes` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    PRIMARY KEY(`id`),
+                    FOREIGN KEY(`listId`) REFERENCES `shopping_lists`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            database.execSQL("CREATE INDEX IF NOT EXISTS `index_shopping_items_listId` ON `shopping_items` (`listId`)")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
+
+val MIGRATION_35_36 = object : Migration(35, 36) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        try {
+            database.execSQL("ALTER TABLE `habits` ADD COLUMN `actionType` TEXT NOT NULL DEFAULT ''")
+        } catch (e: Exception) {}
+        try {
+            database.execSQL("ALTER TABLE `habits` ADD COLUMN `actionContactName` TEXT NOT NULL DEFAULT ''")
+        } catch (e: Exception) {}
+        try {
+            database.execSQL("ALTER TABLE `habits` ADD COLUMN `actionContactPhone` TEXT NOT NULL DEFAULT ''")
+        } catch (e: Exception) {}
+        try {
+            database.execSQL("ALTER TABLE `habits` ADD COLUMN `actionMessage` TEXT NOT NULL DEFAULT ''")
+        } catch (e: Exception) {}
+    }
+}
+
 val autoMigrations = (13..19).map { startVersion ->
     object : Migration(startVersion, 20) {
         override fun migrate(database: SupportSQLiteDatabase) {
@@ -1063,9 +1137,11 @@ val autoMigrations = (13..19).map { startVersion ->
         LocalHistoryVault::class,
         LocalShieldsVault::class,
         SyllabusCompletionVault::class,
-        com.example.model.ChatMessage::class
+        com.example.model.ChatMessage::class,
+        ShoppingList::class,
+        ShoppingItem::class
     ],
-    version = 34,
+    version = 36,
     exportSchema = true
 )
 @TypeConverters(TimelineConverters::class)
@@ -1093,6 +1169,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun localShieldsVaultDao(): LocalShieldsVaultDao
     abstract fun syllabusCompletionDao(): SyllabusCompletionDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun shoppingDao(): ShoppingDao
 
     companion object {
         @Volatile
@@ -1111,7 +1188,7 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_12_13, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
                         MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27,
-                        MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, *autoMigrations
+                        MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, *autoMigrations
                     )
                     .build()
                     INSTANCE = instance

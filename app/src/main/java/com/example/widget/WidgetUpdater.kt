@@ -39,6 +39,10 @@ object WidgetUpdater {
         WidgetManager.updateTotalFocusTimeWidget(context, isPartialUpdate)
     }
 
+    fun updateTimelineSubjectsWidget(context: Context, isPartialUpdate: Boolean = false) {
+        WidgetManager.updateTimelineSubjectsWidget(context, isPartialUpdate)
+    }
+
     fun formatJournalDateToDdMmYy(dateStr: String, timestamp: Long): String {
         return WidgetManager.formatJournalDateToDdMmYy(dateStr, timestamp)
     }

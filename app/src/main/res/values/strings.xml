@@ -22,6 +22,9 @@
     <string name="widget_name_total_focus">Total Focus Time</string>
     <string name="widget_desc_total_focus">Track your daily focus stats and today\'s total focus time</string>
 
+    <string name="widget_name_timeline_subjects">Timeline &amp; Subjects</string>
+    <string name="widget_desc_timeline_subjects">Daily focus timeline with subject-wise session totals</string>
+
     <string name="widget_name_stopwatch">Stopwatch Timer</string>
     <string name="widget_desc_stopwatch">Interactive stopwatch with start, pause, and log controls</string>
 

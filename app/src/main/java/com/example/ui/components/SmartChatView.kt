@@ -76,21 +76,8 @@ fun SmartChatView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     ModelDownloadManager.cancelDownload(context)
                 }
             )
-        } else if (!isModelReady) {
-            // 2. MODEL DOWNLOAD HERO CARD
-            ModelDownloadHeroScreen(
-                onInitiateDownload = {
-                    val storageCheck = ModelDownloadManager.checkStorageSpace(context, minRequiredGb = 1.3)
-                    if (!storageCheck.hasEnoughSpace) {
-                        storageDeficitGb = storageCheck.deficitGb
-                        showStorageWarningDialog = true
-                    } else {
-                        showSpeedDialog = true
-                    }
-                }
-            )
         } else {
-            // 3. FULL SMART AI CHAT INTERFACE
+            // 2. FULL SMART AI CHAT INTERFACE (100% On-Device Engine)
             ActiveQwenChatScreen(
                 viewModel = viewModel,
                 onShowModelInfo = { showModelInfoSheet = true }
@@ -651,28 +638,33 @@ private fun ActiveQwenChatScreen(
                             .background(Color(0xFF6366F1)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.SmartToy, contentDescription = "AI", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(
+                            imageVector = Icons.Default.SmartToy,
+                            contentDescription = "AI",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "Qwen 2.5 Coder 1.5B",
+                            text = "Deepa AI Assistant",
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
-                            fontSize = 15.sp
+                            fontSize = 14.sp
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF10B981))
+                                    .background(Color(0xFFA855F7))
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "100% OFFLINE GGUF",
-                                fontSize = 11.sp,
-                                color = Color(0xFF10B981),
+                                text = "🛡️ 100% ON-DEVICE INTELLIGENCE",
+                                fontSize = 10.sp,
+                                color = Color(0xFFA855F7),
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -732,7 +724,7 @@ private fun ActiveQwenChatScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Qwen 2.5 Coder is thinking offline...",
+                            text = "Deepa AI is reasoning locally...",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.6f)
                         )
@@ -750,8 +742,9 @@ private fun ActiveQwenChatScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 QuickChip("📋 List tasks") { viewModel.sendMessageToAI("Show my pending tasks") }
-                QuickChip("💰 Audit finances") { viewModel.sendMessageToAI("Audit my finances") }
-                QuickChip("💻 Code Kotlin") { viewModel.sendMessageToAI("Write a Kotlin Compose card example") }
+                QuickChip("💡 Concept") { viewModel.sendMessageToAI("Explain photosynthesis") }
+                QuickChip("💻 Code Kotlin") { viewModel.sendMessageToAI("Write binary search in Kotlin") }
+                QuickChip("😄 Joke") { viewModel.sendMessageToAI("Tell me a funny programming joke") }
             }
         }
 
@@ -770,7 +763,7 @@ private fun ActiveQwenChatScreen(
                 TextField(
                     value = inputText,
                     onValueChange = { inputText = it },
-                    placeholder = { Text("Ask Qwen, code, or execute app actions...", color = Color.White.copy(alpha = 0.4f), fontSize = 14.sp) },
+                    placeholder = { Text("Ask anything, code, or execute app actions...", color = Color.White.copy(alpha = 0.4f), fontSize = 14.sp) },
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(20.dp))
@@ -830,8 +823,9 @@ private fun ChatBubbleItem(
             modifier = Modifier.padding(bottom = 4.dp)
         ) {
             if (!isUser) {
+                val modelLabel = message.modelUsed?.ifBlank { "Deepa AI (On-Device)" } ?: "Deepa AI (On-Device)"
                 Text(
-                    text = "Qwen 2.5 Coder",
+                    text = modelLabel,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF818CF8),
@@ -893,7 +887,9 @@ private fun ChatBubbleItem(
 }
 
 @Composable
-private fun ChatEmptyPlaceholder(onSuggestionSelected: (String) -> Unit) {
+private fun ChatEmptyPlaceholder(
+    onSuggestionSelected: (String) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -908,18 +904,23 @@ private fun ChatEmptyPlaceholder(onSuggestionSelected: (String) -> Unit) {
                 .background(Color(0xFF6366F1).copy(alpha = 0.2f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.SmartToy, contentDescription = "AI", tint = Color(0xFF818CF8), modifier = Modifier.size(32.dp))
+            Icon(
+                imageVector = Icons.Default.SmartToy,
+                contentDescription = "AI",
+                tint = Color(0xFF818CF8),
+                modifier = Modifier.size(32.dp)
+            )
         }
 
         Text(
-            text = "Qwen 2.5 Coder 1.5B (Offline)",
+            text = "Deepa AI (100% On-Device Engine)",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = Color.White
         )
 
         Text(
-            text = "Ask coding questions, write functions, or issue commands to control any tab in Life OS.",
+            text = "Fully private, autonomous on-device intelligence for science, coding, mathematics, focus tracking, and Life OS automations.",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.6f),
             textAlign = TextAlign.Center,
@@ -937,25 +938,26 @@ private fun ChatEmptyPlaceholder(onSuggestionSelected: (String) -> Unit) {
             )
 
             listOf(
-                "📋 Add task study advanced tax regulations tomorrow 6pm",
-                "💻 Write a Kotlin function to reverse a binary tree",
-                "💰 Log expense ₹450 on books",
-                "🎯 Check my habits streak",
-                "⏱️ Start 45m focus session on CA Accounts"
+                "🌿 Explain photosynthesis in detail",
+                "💻 Write binary search algorithm in Kotlin",
+                "🕳️ What is a black hole and how does it form?",
+                "📋 Show my pending tasks",
+                "💰 Log expense ₹250 on books",
+                "😄 Tell me a funny programming joke"
             ).forEach { prompt ->
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSuggestionSelected(prompt.substring(3).trim()) },
+                        .clickable { onSuggestionSelected(prompt.substring(2).trim()) },
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF1A1A22),
+                    color = Color(0xFF1E1E26),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
                 ) {
                     Text(
                         text = prompt,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.padding(12.dp)
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                     )
                 }
             }

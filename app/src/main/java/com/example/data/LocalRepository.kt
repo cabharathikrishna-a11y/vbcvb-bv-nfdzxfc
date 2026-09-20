@@ -50,6 +50,7 @@ class LocalRepository(val db: AppDatabase, val context: android.content.Context)
     private val localActiveSessionDao = db.localActiveSessionDao()
     private val outboxQueueDao = db.outboxQueueDao()
     private val localHistoryVaultDao = db.localHistoryVaultDao()
+    private val shoppingDao = db.shoppingDao()
 
     init {
         val observer = object : InvalidationTracker.Observer(
@@ -58,7 +59,8 @@ class LocalRepository(val db: AppDatabase, val context: android.content.Context)
                 "deadlines", "financial_goals", "contacts", "app_files", "focus_records",
                 "keep_notes", "custom_lists", "family_members", "financial_accounts",
                 "financial_logs", "finance_transactions", "finance_categories", "health_records",
-                "local_active_session", "outbox_queue", "local_history_vault"
+                "local_active_session", "outbox_queue", "local_history_vault",
+                "shopping_lists", "shopping_items"
             )
         ) {
             override fun onInvalidated(tables: Set<String>) {
@@ -549,5 +551,65 @@ class LocalRepository(val db: AppDatabase, val context: android.content.Context)
 
     suspend fun getUnsyncedHistoryVaultRecords(): List<LocalHistoryVault> {
         return localHistoryVaultDao.getUnsyncedRecords()
+    }
+
+    // ==========================================
+    // Shopping Cart Operations
+    // ==========================================
+    val allShoppingLists: Flow<List<ShoppingList>> = shoppingDao.getAllActiveLists()
+    val allShoppingListsWithArchived: Flow<List<ShoppingList>> = shoppingDao.getAllLists()
+
+    fun getItemsForShoppingList(listId: String): Flow<List<ShoppingItem>> =
+        shoppingDao.getItemsForList(listId)
+
+    suspend fun getShoppingListById(listId: String): ShoppingList? =
+        shoppingDao.getListById(listId)
+
+    suspend fun insertShoppingList(list: ShoppingList) = withContext(NonCancellable) {
+        shoppingDao.insertList(list)
+    }
+
+    suspend fun updateShoppingList(list: ShoppingList) = withContext(NonCancellable) {
+        shoppingDao.updateList(list)
+    }
+
+    suspend fun deleteShoppingList(list: ShoppingList) = withContext(NonCancellable) {
+        shoppingDao.deleteList(list)
+    }
+
+    suspend fun deleteShoppingListById(listId: String) = withContext(NonCancellable) {
+        shoppingDao.deleteListById(listId)
+    }
+
+    suspend fun insertShoppingItem(item: ShoppingItem) = withContext(NonCancellable) {
+        shoppingDao.insertItem(item)
+    }
+
+    suspend fun updateShoppingItem(item: ShoppingItem) = withContext(NonCancellable) {
+        shoppingDao.updateItem(item)
+    }
+
+    suspend fun deleteShoppingItem(item: ShoppingItem) = withContext(NonCancellable) {
+        shoppingDao.deleteItem(item)
+    }
+
+    suspend fun deleteShoppingItemById(itemId: String) = withContext(NonCancellable) {
+        shoppingDao.deleteItemById(itemId)
+    }
+
+    suspend fun updateShoppingItemPurchased(itemId: String, isPurchased: Boolean) = withContext(NonCancellable) {
+        shoppingDao.updateItemPurchasedState(itemId, isPurchased)
+    }
+
+    suspend fun updateShoppingItemUnits(itemId: String, units: Int) = withContext(NonCancellable) {
+        shoppingDao.updateItemUnits(itemId, units)
+    }
+
+    suspend fun updateShoppingItemName(itemId: String, name: String) = withContext(NonCancellable) {
+        shoppingDao.updateItemName(itemId, name)
+    }
+
+    suspend fun clearPurchasedItems(listId: String) = withContext(NonCancellable) {
+        shoppingDao.clearPurchasedItems(listId)
     }
 }

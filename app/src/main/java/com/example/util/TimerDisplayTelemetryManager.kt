@@ -33,7 +33,11 @@ data class TimerDisplayTelemetryEntry(
     val displayedValue: String,  // e.g. "00:01", "00:02", "24:59", "00:00", "-00:15"
     val rawSeconds: Int = 0,
     val taskTitle: String = "",
-    val tag: String = ""
+    val tag: String = "",
+    val timerTabTotalFocusTime: String = "00m 00s",
+    val timerTabTotalFocusSeconds: Int = 0,
+    val friendsFocusTotalTime: String = "00m 00s",
+    val friendsFocusTotalSeconds: Int = 0
 )
 
 /**
@@ -131,6 +135,21 @@ object TimerDisplayTelemetryManager {
     }
 
     /**
+     * Formats seconds into clean readable string, e.g. "01h 45m 12s" or "45m 12s".
+     */
+    fun formatSecondsToHms(totalSecs: Int): String {
+        val safeSecs = maxOf(0, totalSecs)
+        val h = safeSecs / 3600
+        val m = (safeSecs % 3600) / 60
+        val s = safeSecs % 60
+        return if (h > 0) {
+            String.format(Locale.US, "%02dh %02dm %02ds", h, m, s)
+        } else {
+            String.format(Locale.US, "%02dm %02ds", m, s)
+        }
+    }
+
+    /**
      * Records a single display telemetry snapshot and ensures 77-day retention.
      */
     @Synchronized
@@ -201,6 +220,13 @@ object TimerDisplayTelemetryManager {
         val taskTitle = FocusTimerManager.attachedTask.value?.title ?: ""
         val tagStr = FocusTimerManager.attachedTag.value
 
+        // Pull unified today's total focus time calculated freshly by TodayTotalFocusTimeManager
+        val todaySnapshot = TodayTotalFocusTimeManager.calculateTodaySnapshot(appContext)
+        val timerTabTotalSecs = todaySnapshot.totalSeconds
+        val timerTabTotalFormatted = todaySnapshot.formattedHms
+        val friendsFocusTotalSecs = todaySnapshot.totalSeconds
+        val friendsFocusTotalFormatted = todaySnapshot.formattedHms
+
         val entry = TimerDisplayTelemetryEntry(
             id = java.util.UUID.randomUUID().toString(),
             timestampMillis = now,
@@ -211,7 +237,11 @@ object TimerDisplayTelemetryManager {
             displayedValue = displayedTime,
             rawSeconds = snapshot?.rawSeconds ?: 0,
             taskTitle = taskTitle,
-            tag = tagStr
+            tag = tagStr,
+            timerTabTotalFocusTime = timerTabTotalFormatted,
+            timerTabTotalFocusSeconds = timerTabTotalSecs,
+            friendsFocusTotalTime = friendsFocusTotalFormatted,
+            friendsFocusTotalSeconds = friendsFocusTotalSecs
         )
 
         val currentList = _telemetryLogs.value.toMutableList()
@@ -223,7 +253,7 @@ object TimerDisplayTelemetryManager {
 
         _telemetryLogs.value = retentionPrunedList
         saveLogsToDisk(appContext, retentionPrunedList)
-        Log.d(TAG, "Recorded telemetry: [$clockTimeStr] Status=$statusString | Mode=$modeString | Display=$displayedTime (Retention: ${retentionPrunedList.size} logs)")
+        Log.d(TAG, "Recorded telemetry: [$clockTimeStr] Status=$statusString | Mode=$modeString | Display=$displayedTime | TimerTabTotal=$timerTabTotalFormatted | FriendsFocusTotal=$friendsFocusTotalFormatted (Retention: ${retentionPrunedList.size} logs)")
     }
 
     /**
@@ -302,7 +332,7 @@ object TimerDisplayTelemetryManager {
                 sb.appendLine("-----------------------------------------------------------------")
                 sb.appendLine(">>> DATE RECORD: $date (${entries.size} records)")
                 sb.appendLine("-----------------------------------------------------------------")
-                sb.appendLine("TIME       | STATUS    | MODE       | DISPLAY | TASK / TAG")
+                sb.appendLine("TIME       | STATUS    | MODE       | DISPLAY | TIMER TAB TOTAL | FRIENDS FOCUS TOTAL | TASK / TAG")
                 sb.appendLine("-----------------------------------------------------------------")
 
                 // Sort chronologically within the date for readable timeline
@@ -319,8 +349,10 @@ object TimerDisplayTelemetryManager {
                     val paddedStatus = item.status.padEnd(9)
                     val paddedMode = item.mode.padEnd(10)
                     val paddedDisplay = item.displayedValue.padEnd(7)
+                    val timerTabTotal = item.timerTabTotalFocusTime.ifEmpty { "00m 00s" }
+                    val friendsFocusTotal = item.friendsFocusTotalTime.ifEmpty { "00m 00s" }
 
-                    sb.appendLine("[$paddedTime] Status: $paddedStatus | Mode: $paddedMode | Display: $paddedDisplay | Task: $taskInfo")
+                    sb.appendLine("[$paddedTime] Status: $paddedStatus | Mode: $paddedMode | Display: $paddedDisplay | Timer Tab: $timerTabTotal | Friends Focus: $friendsFocusTotal | Task: $taskInfo")
                 }
             }
         }

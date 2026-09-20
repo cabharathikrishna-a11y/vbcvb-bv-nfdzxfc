@@ -23,7 +23,7 @@ object GoogleDriveReadManager {
 
     private const val TAG = "GoogleDriveRead"
     private const val DRIVE_SCOPE = "oauth2:https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly"
-    private val client = OkHttpClient()
+    private val client by lazy { NetworkTrafficManager.createOkHttpClientBuilder(NetworkTrafficManager.TrafficCategory.CLOUD_BACKUP).build() }
 
     /**
      * Checks whether the user has signed in and granted the Drive scope.
