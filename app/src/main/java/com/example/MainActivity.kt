@@ -1982,10 +1982,8 @@ class MainActivity : ComponentActivity() {
                                                     showNonEssentialsMenu = false
                                                     if (targetScreen == Screen.INSTAGRAM_WEB_APP) {
                                                         viewModel.setInstagramWebAppEnabled(true)
-                                                        viewModel.setInstagramOverrideOfficialApp(true)
                                                     } else if (targetScreen == Screen.YOUTUBE_WEB_APP) {
                                                         viewModel.setYouTubeWebAppEnabled(true)
-                                                        viewModel.setYouTubeOverrideOfficialApp(true)
                                                     }
                                                     viewModel.navigateTo(targetScreen)
                                                 },
@@ -2260,7 +2258,6 @@ class MainActivity : ComponentActivity() {
             navigateTo.equals("INSTAGRAM_WEB_APP", ignoreCase = true) ||
             action == "com.example.action.OPEN_INSTAGRAM_WEB") {
             viewModel.setInstagramWebAppEnabled(true)
-            viewModel.setInstagramOverrideOfficialApp(true)
             viewModel.navigateTo(Screen.INSTAGRAM_WEB_APP)
             return
         }
@@ -2268,7 +2265,6 @@ class MainActivity : ComponentActivity() {
             navigateTo.equals("YOUTUBE_WEB_APP", ignoreCase = true) ||
             action == "com.example.action.OPEN_YOUTUBE_WEB") {
             viewModel.setYouTubeWebAppEnabled(true)
-            viewModel.setYouTubeOverrideOfficialApp(true)
             viewModel.navigateTo(Screen.YOUTUBE_WEB_APP)
             return
         }

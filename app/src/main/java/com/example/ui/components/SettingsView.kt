@@ -3702,33 +3702,6 @@ fun AppBlocksSettingsSection(viewModel: AppViewModel) {
                         }
                     }
 
-                    // Override Official App
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                            Text("Override Official YouTube App", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                            Text("Automatically intercepts official YouTube app opens and redirects to AntiTube.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
-                        }
-                        Switch(
-                            checked = youtubeOverrideOfficialApp,
-                            onCheckedChange = { checked ->
-                                viewModel.setYouTubeOverrideOfficialApp(checked)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.Black,
-                                checkedTrackColor = Color(0xFFFF0000),
-                                uncheckedThumbColor = Color.Gray,
-                                uncheckedTrackColor = Color.DarkGray
-                            ),
-                            modifier = Modifier.testTag("yt_override_official_switch")
-                        )
-                    }
-
-                    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
-
                     // Block Home Feed
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -7839,10 +7812,30 @@ fun SettingsGeneralSystemPage(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text("Auto-redirect from Official Instagram App", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Auto-redirect from Official Instagram App", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    if (!instagramOverrideOfficialApp) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = Color.DarkGray,
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                "PAUSED OFF",
+                                                color = Color.LightGray,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    "When the native Instagram app is opened on your phone, automatically close it and launch this AntiGram web feature instead.",
+                                    if (instagramOverrideOfficialApp)
+                                        "When the native Instagram app is opened on your phone, automatically close it and launch this AntiGram web feature instead."
+                                    else
+                                        "Function is paused off. Native Instagram app opens normally without redirection.",
                                     color = Color.Gray,
                                     fontSize = 11.sp
                                 )
@@ -8055,36 +8048,7 @@ fun SettingsGeneralSystemPage(
                         HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // 1. Redirect Official App
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text("Auto-redirect from Official YouTube App", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    "When the official YouTube app is opened on your phone, automatically close it and launch AntiTube instead.",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp
-                                )
-                            }
-                            Switch(
-                                checked = youtubeOverrideOfficialApp,
-                                onCheckedChange = { enabled ->
-                                    viewModel.setYouTubeOverrideOfficialApp(enabled)
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = WaterBlue, checkedTrackColor = WaterBlue.copy(alpha = 0.5f)),
-                                modifier = Modifier.testTag("youtube_override_official_app_switch")
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // 2. Block Shorts
+                        // Block Shorts
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -8300,36 +8264,7 @@ fun SettingsGeneralSystemPage(
                         HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // 1. Auto-redirect from Official Spotify App
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text("Auto-redirect from Official Spotify App", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    "When the official Spotify app is opened on your phone, automatically close it and launch AntiSpotify web player instead.",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp
-                                )
-                            }
-                            Switch(
-                                checked = spotifyOverrideOfficialApp,
-                                onCheckedChange = { enabled ->
-                                    viewModel.setSpotifyOverrideOfficialApp(enabled)
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = WaterBlue, checkedTrackColor = WaterBlue.copy(alpha = 0.5f)),
-                                modifier = Modifier.testTag("spotify_override_official_app_switch")
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // 2. Mute Audio Ads
+                        // Mute Audio Ads
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,

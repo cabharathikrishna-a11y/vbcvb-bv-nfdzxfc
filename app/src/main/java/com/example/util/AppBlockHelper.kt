@@ -882,8 +882,8 @@ object AppBlockHelper {
 
     fun shouldOverrideInstagramApp(context: Context): Boolean {
         val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        return prefs.getBoolean("instagram_override_official_app", false) ||
-                (isIgWebAppEnabled(context) && isIgOverrideOfficialApp(context))
+        // Redirection paused off by default; only active if explicitly enabled
+        return prefs.getBoolean("instagram_override_official_app", false)
     }
 
     fun redirectToAntiGramWebApp(context: Context) {
@@ -908,35 +908,20 @@ object AppBlockHelper {
         context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit().putBoolean("youtube_web_app_enabled", enabled).apply()
     }
 
-    fun isYtOverrideOfficialApp(context: Context): Boolean {
-        return context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getBoolean("youtube_override_official_app", false)
-    }
+    fun isYtOverrideOfficialApp(context: Context): Boolean = false
 
     fun setYtOverrideOfficialApp(context: Context, enabled: Boolean) {
-        context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit().putBoolean("youtube_override_official_app", enabled).apply()
+        // Redirection removed for YouTube
+        context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit().putBoolean("youtube_override_official_app", false).apply()
     }
 
     @Volatile
     var isAntiTubeWebAppOpen: Boolean = false
 
-    fun shouldOverrideYouTubeApp(context: Context): Boolean {
-        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        return prefs.getBoolean("youtube_override_official_app", false) ||
-                (isYtWebAppEnabled(context) && isYtOverrideOfficialApp(context))
-    }
+    fun shouldOverrideYouTubeApp(context: Context): Boolean = false
 
     fun redirectToAntiTubeWebApp(context: Context) {
-        try {
-            isAntiTubeWebAppOpen = true
-            val launchIntent = Intent(context, com.example.MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra("OPEN_YOUTUBE_WEB_APP", true)
-                putExtra("NAVIGATE_TO", "YOUTUBE_WEB_APP")
-            }
-            context.startActivity(launchIntent)
-        } catch (e: Exception) {
-            Log.e("AppBlockHelper", "Error redirecting to AntiTube Web App", e)
-        }
+        // Redirection removed for YouTube - no-op
     }
 
     fun isSpotifyWebAppEnabled(context: Context): Boolean {
@@ -947,35 +932,20 @@ object AppBlockHelper {
         context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit().putBoolean("spotify_web_app_enabled", enabled).apply()
     }
 
-    fun isSpotifyOverrideOfficialApp(context: Context): Boolean {
-        return context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getBoolean("spotify_override_official_app", false)
-    }
+    fun isSpotifyOverrideOfficialApp(context: Context): Boolean = false
 
     fun setSpotifyOverrideOfficialApp(context: Context, enabled: Boolean) {
-        context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit().putBoolean("spotify_override_official_app", enabled).apply()
+        // Redirection removed for Spotify
+        context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit().putBoolean("spotify_override_official_app", false).apply()
     }
 
     @Volatile
     var isAntiSpotifyWebAppOpen: Boolean = false
 
-    fun shouldOverrideSpotifyApp(context: Context): Boolean {
-        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        return prefs.getBoolean("spotify_override_official_app", false) ||
-                (isSpotifyWebAppEnabled(context) && isSpotifyOverrideOfficialApp(context))
-    }
+    fun shouldOverrideSpotifyApp(context: Context): Boolean = false
 
     fun redirectToAntiSpotifyWebApp(context: Context) {
-        try {
-            isAntiSpotifyWebAppOpen = true
-            val launchIntent = Intent(context, com.example.MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra("OPEN_SPOTIFY_WEB_APP", true)
-                putExtra("NAVIGATE_TO", "SPOTIFY_WEB_APP")
-            }
-            context.startActivity(launchIntent)
-        } catch (e: Exception) {
-            Log.e("AppBlockHelper", "Error redirecting to AntiSpotify Web App", e)
-        }
+        // Redirection removed for Spotify - no-op
     }
 
     fun isSpotifySelectiveBlockingEnabled(context: Context): Boolean {

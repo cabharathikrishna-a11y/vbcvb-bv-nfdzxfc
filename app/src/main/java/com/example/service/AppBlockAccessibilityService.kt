@@ -23,8 +23,6 @@ class AppBlockAccessibilityService : AccessibilityService() {
     private var consecutiveBlockCount = 0
 
     private var lastIgRedirectTime: Long = 0L
-    private var lastYtRedirectTime: Long = 0L
-    private var lastSpotifyRedirectTime: Long = 0L
 
     private fun applyBlockAction(appName: String, featureName: String) {
         val now = System.currentTimeMillis()
@@ -53,7 +51,7 @@ class AppBlockAccessibilityService : AccessibilityService() {
         try {
             val packageName = event.packageName?.toString() ?: return
 
-            // Check if official Instagram app should be redirected to AntiGram Web App
+            // Check if official Instagram app should be redirected to AntiGram Web App (Paused / Off)
             if (packageName == "com.instagram.android" && AppBlockHelper.shouldOverrideInstagramApp(applicationContext)) {
                 val now = android.os.SystemClock.elapsedRealtime()
                 if (now - lastIgRedirectTime > 1500L) {
@@ -61,30 +59,6 @@ class AppBlockAccessibilityService : AccessibilityService() {
                     Log.d("InstagramBlocker", "Official Instagram app opened. Overriding and launching AntiGram Web App.")
                     performGlobalAction(GLOBAL_ACTION_HOME)
                     AppBlockHelper.redirectToAntiGramWebApp(applicationContext)
-                }
-                return
-            }
-
-            // Check if official YouTube app should be redirected to AntiTube Web App
-            if (packageName == "com.google.android.youtube" && AppBlockHelper.shouldOverrideYouTubeApp(applicationContext)) {
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastYtRedirectTime > 1500L) {
-                    lastYtRedirectTime = now
-                    Log.d("YouTubeBlocker", "Official YouTube app opened. Overriding and launching AntiTube Web App.")
-                    performGlobalAction(GLOBAL_ACTION_HOME)
-                    AppBlockHelper.redirectToAntiTubeWebApp(applicationContext)
-                }
-                return
-            }
-
-            // Check if official Spotify app should be redirected to AntiSpotify Web App
-            if (packageName == "com.spotify.music" && AppBlockHelper.shouldOverrideSpotifyApp(applicationContext)) {
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastSpotifyRedirectTime > 1500L) {
-                    lastSpotifyRedirectTime = now
-                    Log.d("SpotifyBlocker", "Official Spotify app opened. Overriding and launching AntiSpotify Web App.")
-                    performGlobalAction(GLOBAL_ACTION_HOME)
-                    AppBlockHelper.redirectToAntiSpotifyWebApp(applicationContext)
                 }
                 return
             }

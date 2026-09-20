@@ -741,15 +741,11 @@ class AppViewModel(
     }
 
     fun setSpotifyOverrideOfficialApp(enabled: Boolean) {
-        _spotifyOverrideOfficialApp.value = enabled
+        // Redirection removed for Spotify
+        _spotifyOverrideOfficialApp.value = false
         val prefs = getApplication<android.app.Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("spotify_override_official_app", enabled).apply()
-        com.example.util.AppBlockHelper.setSpotifyOverrideOfficialApp(getApplication(), enabled)
-        if (enabled) {
-            _spotifyWebAppEnabled.value = true
-            prefs.edit().putBoolean("spotify_web_app_enabled", true).apply()
-            com.example.util.AppBlockHelper.setSpotifyWebAppEnabled(getApplication(), true)
-        }
+        prefs.edit().putBoolean("spotify_override_official_app", false).apply()
+        com.example.util.AppBlockHelper.setSpotifyOverrideOfficialApp(getApplication(), false)
     }
 
     fun setSpotifyAdMuteEnabled(enabled: Boolean) {
@@ -773,15 +769,11 @@ class AppViewModel(
     }
 
     fun setYouTubeOverrideOfficialApp(enabled: Boolean) {
-        _youtubeOverrideOfficialApp.value = enabled
+        // Redirection removed for YouTube
+        _youtubeOverrideOfficialApp.value = false
         val prefs = getApplication<android.app.Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("youtube_override_official_app", enabled).apply()
-        com.example.util.AppBlockHelper.setYtOverrideOfficialApp(getApplication(), enabled)
-        if (enabled) {
-            _youtubeWebAppEnabled.value = true
-            prefs.edit().putBoolean("youtube_web_app_enabled", true).apply()
-            com.example.util.AppBlockHelper.setYtWebAppEnabled(getApplication(), true)
-        }
+        prefs.edit().putBoolean("youtube_override_official_app", false).apply()
+        com.example.util.AppBlockHelper.setYtOverrideOfficialApp(getApplication(), false)
     }
 
     fun setYouTubeShortsBlocked(blocked: Boolean) {
@@ -11115,11 +11107,14 @@ class AppViewModel(
         _autoFullscreenIdleSeconds.value = prefs.getSafeInt(com.example.util.FocusDisplayManager.KEY_AUTO_FULLSCREEN_IDLE_SECONDS, 10)
         _autoFullscreenZoomAnim.value = prefs.getSafeBoolean(com.example.util.FocusDisplayManager.KEY_AUTO_FULLSCREEN_ZOOM_ANIM, true)
         _spotifyWebAppEnabled.value = prefs.getSafeBoolean("spotify_web_app_enabled", true)
-        _spotifyOverrideOfficialApp.value = prefs.getSafeBoolean("spotify_override_official_app", false)
+        // Auto-redirection: Paused off for Instagram, removed for Spotify and YouTube
+        prefs.edit().putBoolean("instagram_override_official_app", false).apply()
+        _instagramOverrideOfficialApp.value = false
+        prefs.edit().putBoolean("spotify_override_official_app", false).apply()
+        _spotifyOverrideOfficialApp.value = false
         _spotifyAdMuteEnabled.value = com.example.util.AppBlockHelper.isSpotifyAdMuteEnabled(getApplication())
         _spotifyPodcastsBlocked.value = com.example.util.AppBlockHelper.isSpotifyPodcastsBlocked(getApplication())
         _instagramWebAppEnabled.value = prefs.getSafeBoolean("instagram_web_app_enabled", false)
-        _instagramOverrideOfficialApp.value = prefs.getSafeBoolean("instagram_override_official_app", false)
         _instagramFilterNotifications.value = prefs.getSafeBoolean("instagram_filter_notifications", true)
         _instagramReelsBlocked.value = prefs.getSafeBoolean("ig_reels_blocked", true)
         _instagramStoriesBlocked.value = prefs.getSafeBoolean("ig_stories_blocked", false)
@@ -11128,7 +11123,8 @@ class AppViewModel(
         _instagramNotificationsBlocked.value = prefs.getSafeBoolean("ig_notifications_blocked", false)
         _instagramAllowSharedReels.value = prefs.getSafeBoolean("ig_allow_shared_reels", true)
         _youtubeWebAppEnabled.value = prefs.getSafeBoolean("youtube_web_app_enabled", false)
-        _youtubeOverrideOfficialApp.value = prefs.getSafeBoolean("youtube_override_official_app", false)
+        prefs.edit().putBoolean("youtube_override_official_app", false).apply()
+        _youtubeOverrideOfficialApp.value = false
         _youtubeShortsBlocked.value = prefs.getSafeBoolean("yt_shorts_blocked", true)
         _youtubeAllowSubscribedShorts.value = prefs.getSafeBoolean("yt_allow_subscribed_shorts", true)
         _youtubeBlockHomeFeed.value = prefs.getSafeBoolean("yt_block_home_feed", true)

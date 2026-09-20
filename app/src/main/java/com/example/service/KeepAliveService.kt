@@ -337,8 +337,7 @@ class KeepAliveService : Service() {
                 val strictEnabled = strictPrefs.getBoolean("strict_mode_enabled", true)
                 val monitoredAppsCount = com.example.util.AppBlockHelper.getBlockedApps(applicationContext).size
 
-                val isAppOverrideActive = com.example.util.AppBlockHelper.shouldOverrideInstagramApp(applicationContext) ||
-                        com.example.util.AppBlockHelper.shouldOverrideYouTubeApp(applicationContext)
+                val isAppOverrideActive = com.example.util.AppBlockHelper.shouldOverrideInstagramApp(applicationContext)
                 val delayMs = if (isTimerActive || strictEnabled || monitoredAppsCount > 0 || isAppOverrideActive) 1000L else 5000L
                 delay(delayMs)
 
@@ -375,16 +374,6 @@ class KeepAliveService : Service() {
                             Toast.makeText(applicationContext, "Opening AntiGram web app instead of official Instagram... 🛡️", Toast.LENGTH_SHORT).show()
                         }
                         com.example.util.AppBlockHelper.redirectToAntiGramWebApp(applicationContext)
-                        continue
-                    }
-
-                    // Check if official YouTube app is opened while in-app YouTube feature + override setting are enabled
-                    if (foregroundPackage == "com.google.android.youtube" && com.example.util.AppBlockHelper.shouldOverrideYouTubeApp(applicationContext)) {
-                        Log.d("KeepAliveService", "Official YouTube app opened! Overriding and redirecting to AntiTube Web App.")
-                        launch(Dispatchers.Main) {
-                            Toast.makeText(applicationContext, "Opening AntiTube web app instead of official YouTube... 🛡️", Toast.LENGTH_SHORT).show()
-                        }
-                        com.example.util.AppBlockHelper.redirectToAntiTubeWebApp(applicationContext)
                         continue
                     }
 
