@@ -3295,7 +3295,6 @@ fun AppBlocksSettingsSection(viewModel: AppViewModel) {
         // YouTube Advanced Blocker Settings Card
         val spotifyWebAppEnabled by viewModel.spotifyWebAppEnabled.collectAsState()
         val youtubeWebAppEnabled by viewModel.youtubeWebAppEnabled.collectAsState()
-        val youtubeOverrideOfficialApp by viewModel.youtubeOverrideOfficialApp.collectAsState()
         var useSelectiveYt by remember { mutableStateOf(AppBlockHelper.isYtSelectiveBlockingEnabled(context)) }
         var isYtShortsBlocked by remember { mutableStateOf(AppBlockHelper.isYtShortsBlocked(context)) }
         var isYtAllowSubscribedShorts by remember { mutableStateOf(AppBlockHelper.isYtAllowSubscribedShorts(context)) }
@@ -7554,21 +7553,18 @@ fun SettingsGeneralSystemPage(
         val onThisDayNotificationTime by viewModel.onThisDayNotificationTime.collectAsState()
         val onThisDayOnScreenEnabled by viewModel.onThisDayOnScreenEnabled.collectAsState()
         val instagramWebAppEnabled by viewModel.instagramWebAppEnabled.collectAsState()
-        val instagramOverrideOfficialApp by viewModel.instagramOverrideOfficialApp.collectAsState()
         val instagramFilterNotifications by viewModel.instagramFilterNotifications.collectAsState()
         val instagramReelsBlocked by viewModel.instagramReelsBlocked.collectAsState()
         val instagramStoriesBlocked by viewModel.instagramStoriesBlocked.collectAsState()
         val instagramMessagesBlocked by viewModel.instagramMessagesBlocked.collectAsState()
 
         val youtubeWebAppEnabled by viewModel.youtubeWebAppEnabled.collectAsState()
-        val youtubeOverrideOfficialApp by viewModel.youtubeOverrideOfficialApp.collectAsState()
         val youtubeShortsBlocked by viewModel.youtubeShortsBlocked.collectAsState()
         val youtubeAllowSubscribedShorts by viewModel.youtubeAllowSubscribedShorts.collectAsState()
         val youtubeBlockHomeFeed by viewModel.youtubeBlockHomeFeed.collectAsState()
         val youtubeSearchBlocked by viewModel.youtubeSearchBlocked.collectAsState()
         val youtubeCommentsBlocked by viewModel.youtubeCommentsBlocked.collectAsState()
         val spotifyWebAppEnabled by viewModel.spotifyWebAppEnabled.collectAsState()
-        val spotifyOverrideOfficialApp by viewModel.spotifyOverrideOfficialApp.collectAsState()
         val spotifyAdMuteEnabled by viewModel.spotifyAdMuteEnabled.collectAsState()
         val spotifyPodcastsBlocked by viewModel.spotifyPodcastsBlocked.collectAsState()
         val context = LocalContext.current
@@ -7802,54 +7798,6 @@ fun SettingsGeneralSystemPage(
                     }
 
                     if (instagramWebAppEnabled) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Auto-redirect from Official Instagram App", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                    if (!instagramOverrideOfficialApp) {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Surface(
-                                            color = Color.DarkGray,
-                                            shape = RoundedCornerShape(4.dp)
-                                        ) {
-                                            Text(
-                                                "PAUSED OFF",
-                                                color = Color.LightGray,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    if (instagramOverrideOfficialApp)
-                                        "When the native Instagram app is opened on your phone, automatically close it and launch this AntiGram web feature instead."
-                                    else
-                                        "Function is paused off. Native Instagram app opens normally without redirection.",
-                                    color = Color.Gray,
-                                    fontSize = 11.sp
-                                )
-                            }
-                            Switch(
-                                checked = instagramOverrideOfficialApp,
-                                onCheckedChange = { enabled ->
-                                    viewModel.setInstagramOverrideOfficialApp(enabled)
-                                },
-                                colors = SwitchDefaults.colors(checkedThumbColor = WaterBlue, checkedTrackColor = WaterBlue.copy(alpha = 0.5f)),
-                                modifier = Modifier.testTag("instagram_override_official_app_switch")
-                            )
-                        }
-
                         Spacer(modifier = Modifier.height(12.dp))
                         HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         Spacer(modifier = Modifier.height(12.dp))

@@ -337,8 +337,7 @@ class KeepAliveService : Service() {
                 val strictEnabled = strictPrefs.getBoolean("strict_mode_enabled", true)
                 val monitoredAppsCount = com.example.util.AppBlockHelper.getBlockedApps(applicationContext).size
 
-                val isAppOverrideActive = com.example.util.AppBlockHelper.shouldOverrideInstagramApp(applicationContext)
-                val delayMs = if (isTimerActive || strictEnabled || monitoredAppsCount > 0 || isAppOverrideActive) 1000L else 5000L
+                val delayMs = if (isTimerActive || strictEnabled || monitoredAppsCount > 0) 1000L else 5000L
                 delay(delayMs)
 
                 val now = android.os.SystemClock.elapsedRealtime()
@@ -366,16 +365,6 @@ class KeepAliveService : Service() {
                     prevPackage = foregroundPackage
 
                     if (foregroundPackage == packageName) continue
-
-                    // Check if official Instagram app is opened while in-app Instagram feature + override setting are enabled
-                    if (foregroundPackage == "com.instagram.android" && com.example.util.AppBlockHelper.shouldOverrideInstagramApp(applicationContext)) {
-                        Log.d("KeepAliveService", "Official Instagram app opened! Overriding and redirecting to AntiGram Web App.")
-                        launch(Dispatchers.Main) {
-                            Toast.makeText(applicationContext, "Opening AntiGram web app instead of official Instagram... 🛡️", Toast.LENGTH_SHORT).show()
-                        }
-                        com.example.util.AppBlockHelper.redirectToAntiGramWebApp(applicationContext)
-                        continue
-                    }
 
                     val isBreakActive = !FocusTimerManager.isFocusPhase.value
 

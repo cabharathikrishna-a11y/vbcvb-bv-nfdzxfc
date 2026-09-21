@@ -640,13 +640,9 @@ class AppViewModel(
     }
 
     fun setInstagramOverrideOfficialApp(enabled: Boolean) {
-        _instagramOverrideOfficialApp.value = enabled
+        _instagramOverrideOfficialApp.value = false
         val prefs = getApplication<android.app.Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("instagram_override_official_app", enabled).apply()
-        if (enabled) {
-            _instagramWebAppEnabled.value = true
-            prefs.edit().putBoolean("instagram_web_app_enabled", true).apply()
-        }
+        prefs.edit().putBoolean("instagram_override_official_app", false).apply()
     }
 
     fun setInstagramFilterNotifications(enabled: Boolean) {

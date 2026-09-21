@@ -793,9 +793,7 @@ object AppBlockHelper {
         return context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getBoolean("instagram_web_app_enabled", false)
     }
 
-    fun isIgOverrideOfficialApp(context: Context): Boolean {
-        return context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getBoolean("instagram_override_official_app", false)
-    }
+    fun isIgOverrideOfficialApp(context: Context): Boolean = false
 
     fun isIgFilterNotificationsEnabled(context: Context): Boolean {
         return context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getBoolean("instagram_filter_notifications", true)
@@ -880,24 +878,10 @@ object AppBlockHelper {
         return true
     }
 
-    fun shouldOverrideInstagramApp(context: Context): Boolean {
-        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        // Redirection paused off by default; only active if explicitly enabled
-        return prefs.getBoolean("instagram_override_official_app", false)
-    }
+    fun shouldOverrideInstagramApp(context: Context): Boolean = false
 
     fun redirectToAntiGramWebApp(context: Context) {
-        try {
-            isAntiGramWebAppOpen = true
-            val launchIntent = Intent(context, com.example.MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra("OPEN_INSTAGRAM_WEB_APP", true)
-                putExtra("NAVIGATE_TO", "INSTAGRAM_WEB_APP")
-            }
-            context.startActivity(launchIntent)
-        } catch (e: Exception) {
-            Log.e("AppBlockHelper", "Error redirecting to AntiGram Web App", e)
-        }
+        // Redirection removed completely - no-op
     }
 
     fun isYtWebAppEnabled(context: Context): Boolean {

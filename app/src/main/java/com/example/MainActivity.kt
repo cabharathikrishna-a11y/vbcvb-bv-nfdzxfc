@@ -1059,28 +1059,6 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.padding(end = 4.dp)
                                     )
 
-                                    // 4-Window Desktop Quick Launch Button
-                                    Surface(
-                                        onClick = { viewModel.setMultiWindowDesktopMode(true) },
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = Color(0xFF2563EB).copy(alpha = 0.25f),
-                                        border = BorderStroke(1.dp, Color(0xFF3B82F6))
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.GridView,
-                                                contentDescription = "4 Windows Desktop",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Text("4-Window Desktop", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-
                                     navItems.forEach { item ->
                                         val isSelected = currentScreen == item.screen
                                         val iconScale by animateFloatAsState(
@@ -1182,28 +1160,6 @@ class MainActivity : ComponentActivity() {
                                         fontSize = 12.sp,
                                         modifier = Modifier.padding(end = 4.dp)
                                     )
-
-                                    // 4-Window Desktop Quick Launch Button
-                                    Surface(
-                                        onClick = { viewModel.setMultiWindowDesktopMode(true) },
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = Color(0xFF2563EB).copy(alpha = 0.25f),
-                                        border = BorderStroke(1.dp, Color(0xFF3B82F6))
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.GridView,
-                                                contentDescription = "4 Windows Desktop",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Text("4-Window Desktop", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
 
                                     navItems.forEach { item ->
                                         val isSelected = currentScreen == item.screen

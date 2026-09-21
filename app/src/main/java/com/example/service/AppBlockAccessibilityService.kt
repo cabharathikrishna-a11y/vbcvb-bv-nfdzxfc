@@ -22,8 +22,6 @@ class AppBlockAccessibilityService : AccessibilityService() {
     private var lastBlockTime: Long = 0L
     private var consecutiveBlockCount = 0
 
-    private var lastIgRedirectTime: Long = 0L
-
     private fun applyBlockAction(appName: String, featureName: String) {
         val now = System.currentTimeMillis()
         val timeSinceLastBlock = now - lastBlockTime
@@ -50,18 +48,6 @@ class AppBlockAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         try {
             val packageName = event.packageName?.toString() ?: return
-
-            // Check if official Instagram app should be redirected to AntiGram Web App (Paused / Off)
-            if (packageName == "com.instagram.android" && AppBlockHelper.shouldOverrideInstagramApp(applicationContext)) {
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastIgRedirectTime > 1500L) {
-                    lastIgRedirectTime = now
-                    Log.d("InstagramBlocker", "Official Instagram app opened. Overriding and launching AntiGram Web App.")
-                    performGlobalAction(GLOBAL_ACTION_HOME)
-                    AppBlockHelper.redirectToAntiGramWebApp(applicationContext)
-                }
-                return
-            }
 
             // 1. Check general app blocking first
             if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
