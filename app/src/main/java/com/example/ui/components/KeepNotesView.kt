@@ -767,8 +767,17 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search your notes...", color = Color.Gray) },
+                    placeholder = {
+                        Text(
+                            text = "Search your notes...",
+                            color = Color.Gray,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray) },
+                    singleLine = true,
+                    maxLines = 1,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)

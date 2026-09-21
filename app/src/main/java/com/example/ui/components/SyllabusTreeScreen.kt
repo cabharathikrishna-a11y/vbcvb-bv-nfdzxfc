@@ -396,7 +396,15 @@ fun SyllabusTreeScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search chapters or topics...", color = Color.Gray, fontSize = 13.sp) },
+                placeholder = {
+                    Text(
+                        text = "Search chapters or topics...",
+                        color = Color.Gray,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray) },
                 trailingIcon = if (searchQuery.isNotEmpty()) {
                     {
@@ -417,7 +425,8 @@ fun SyllabusTreeScreen(
                     focusedContainerColor = Color(0xFF111113),
                     unfocusedContainerColor = Color(0xFF111113)
                 ),
-                singleLine = true
+                singleLine = true,
+                maxLines = 1
             )
 
             // Filtering chapters & subtopics

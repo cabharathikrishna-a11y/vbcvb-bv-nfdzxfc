@@ -2598,8 +2598,10 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search journal entries...") },
+                            placeholder = { Text("Search journal entries...", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+                            singleLine = true,
+                            maxLines = 1,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
@@ -4218,8 +4220,9 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         .width(300.dp)
                         .padding(end = 12.dp)
                         .shadow(12.dp, RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0F)),
-                    shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
+                    colors = CardDefaults.cardColors(containerColor = Color.Black),
+                    shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
+                    border = BorderStroke(1.dp, Color(0xFF222225))
                 ) {
                     Column(
                         modifier = Modifier

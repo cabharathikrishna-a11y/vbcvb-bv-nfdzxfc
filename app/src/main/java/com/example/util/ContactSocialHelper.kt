@@ -11,8 +11,29 @@ object ContactSocialHelper {
         INSTAGRAM_LINK,
         SNAPCHAT_ID,
         SNAPCHAT_LINK,
+        TWITTER_ID,
+        TWITTER_LINK,
+        TELEGRAM_ID,
+        TELEGRAM_LINK,
+        FACEBOOK_ID,
+        FACEBOOK_LINK,
+        LINKEDIN_ID,
+        LINKEDIN_LINK,
+        YOUTUBE_ID,
+        YOUTUBE_LINK,
         GENERAL_LINK,
         TEXT
+    }
+
+    enum class SocialBrand {
+        INSTAGRAM,
+        SNAPCHAT,
+        TWITTER,
+        TELEGRAM,
+        FACEBOOK,
+        LINKEDIN,
+        YOUTUBE,
+        GENERAL_LINK
     }
 
     data class RecognizedField(
@@ -20,8 +41,22 @@ object ContactSocialHelper {
         val value: String,
         val type: CustomFieldType,
         val actionUrl: String? = null,
-        val displayHandle: String = value
-    )
+        val displayHandle: String = value,
+        val brand: SocialBrand? = when (type) {
+            CustomFieldType.INSTAGRAM_ID, CustomFieldType.INSTAGRAM_LINK -> SocialBrand.INSTAGRAM
+            CustomFieldType.SNAPCHAT_ID, CustomFieldType.SNAPCHAT_LINK -> SocialBrand.SNAPCHAT
+            CustomFieldType.TWITTER_ID, CustomFieldType.TWITTER_LINK -> SocialBrand.TWITTER
+            CustomFieldType.TELEGRAM_ID, CustomFieldType.TELEGRAM_LINK -> SocialBrand.TELEGRAM
+            CustomFieldType.FACEBOOK_ID, CustomFieldType.FACEBOOK_LINK -> SocialBrand.FACEBOOK
+            CustomFieldType.LINKEDIN_ID, CustomFieldType.LINKEDIN_LINK -> SocialBrand.LINKEDIN
+            CustomFieldType.YOUTUBE_ID, CustomFieldType.YOUTUBE_LINK -> SocialBrand.YOUTUBE
+            CustomFieldType.GENERAL_LINK -> SocialBrand.GENERAL_LINK
+            CustomFieldType.TEXT -> null
+        }
+    ) {
+        val normalizedHandle: String
+            get() = displayHandle.lowercase().trim().removePrefix("@").trimEnd('/').substringAfterLast('/')
+    }
 
     /**
      * Parses the stored additionalFieldsJson string safely into a list of key-value pairs.
@@ -54,52 +89,198 @@ object ContactSocialHelper {
     }
 
     /**
-     * Analyzes a key-value pair and classifies it as Instagram, Snapchat, URL, or general Text.
+     * Analyzes a key-value pair and classifies it into social types, web link, or general text.
      */
     fun classifyField(key: String, value: String): RecognizedField {
         val lowerKey = key.lowercase().trim()
         val lowerVal = value.lowercase().trim()
 
-        // 1. Instagram Link recognition
-        if (lowerKey.contains("insta") && (lowerKey.contains("link") || lowerKey.contains("url") || lowerKey.contains("profile") || lowerKey.contains("dp")) ||
+        // 1. Instagram recognition
+        if (lowerKey.contains("insta") || lowerKey == "ig" || lowerKey.contains("instagram") ||
             lowerVal.contains("instagram.com") || lowerVal.contains("instagr.am")
         ) {
+            val isLink = lowerKey.contains("link") || lowerKey.contains("url") || lowerKey.contains("dp") || lowerKey.contains("profile") || lowerVal.contains("instagram.com") || lowerVal.contains("instagr.am")
             val url = formatUrl(value, "https://instagram.com/")
-            val handle = extractHandleFromUrl(url) ?: value
-            return RecognizedField(key, value, CustomFieldType.INSTAGRAM_LINK, url, handle)
+            val handle = extractHandleFromUrl(url) ?: if (value.startsWith("@")) value.trim() else "@${value.trim().removePrefix("@")}"
+            return RecognizedField(
+                key = key,
+                value = value,
+                type = if (isLink) CustomFieldType.INSTAGRAM_LINK else CustomFieldType.INSTAGRAM_ID,
+                actionUrl = url,
+                displayHandle = handle
+            )
         }
 
-        // 2. Instagram ID recognition
-        if (lowerKey.contains("insta") || lowerKey == "ig" || lowerKey.contains("instagram")) {
-            val cleanHandle = value.trim().removePrefix("@")
-            val url = "https://instagram.com/$cleanHandle"
-            return RecognizedField(key, value, CustomFieldType.INSTAGRAM_ID, url, "@$cleanHandle")
-        }
-
-        // 3. Snapchat Link recognition
-        if (lowerKey.contains("snap") && (lowerKey.contains("link") || lowerKey.contains("url") || lowerKey.contains("profile")) ||
-            lowerVal.contains("snapchat.com")
-        ) {
+        // 2. Snapchat recognition
+        if (lowerKey.contains("snap") || lowerKey.contains("snapchat") || lowerVal.contains("snapchat.com")) {
+            val isLink = lowerKey.contains("link") || lowerKey.contains("url") || lowerVal.contains("snapchat.com")
             val url = formatUrl(value, "https://snapchat.com/add/")
+            val handle = extractHandleFromUrl(url) ?: if (value.startsWith("@")) value.trim() else "@${value.trim().removePrefix("@")}"
+            return RecognizedField(
+                key = key,
+                value = value,
+                type = if (isLink) CustomFieldType.SNAPCHAT_LINK else CustomFieldType.SNAPCHAT_ID,
+                actionUrl = url,
+                displayHandle = handle
+            )
+        }
+
+        // 3. Twitter / X recognition
+        if (lowerKey.contains("twitter") || lowerKey == "x" || lowerKey.contains("tweet") || lowerVal.contains("twitter.com") || lowerVal.contains("x.com")) {
+            val isLink = lowerVal.contains("twitter.com") || lowerVal.contains("x.com") || lowerKey.contains("link")
+            val url = formatUrl(value, "https://x.com/")
+            val handle = extractHandleFromUrl(url) ?: if (value.startsWith("@")) value.trim() else "@${value.trim().removePrefix("@")}"
+            return RecognizedField(
+                key = key,
+                value = value,
+                type = if (isLink) CustomFieldType.TWITTER_LINK else CustomFieldType.TWITTER_ID,
+                actionUrl = url,
+                displayHandle = handle
+            )
+        }
+
+        // 4. Telegram recognition
+        if (lowerKey.contains("telegram") || lowerKey == "tg" || lowerVal.contains("t.me")) {
+            val isLink = lowerVal.contains("t.me") || lowerKey.contains("link")
+            val url = formatUrl(value, "https://t.me/")
+            val handle = extractHandleFromUrl(url) ?: if (value.startsWith("@")) value.trim() else "@${value.trim().removePrefix("@")}"
+            return RecognizedField(
+                key = key,
+                value = value,
+                type = if (isLink) CustomFieldType.TELEGRAM_LINK else CustomFieldType.TELEGRAM_ID,
+                actionUrl = url,
+                displayHandle = handle
+            )
+        }
+
+        // 5. Facebook recognition
+        if (lowerKey.contains("facebook") || lowerKey == "fb" || lowerVal.contains("facebook.com")) {
+            val isLink = lowerVal.contains("facebook.com") || lowerKey.contains("link")
+            val url = formatUrl(value, "https://facebook.com/")
             val handle = extractHandleFromUrl(url) ?: value
-            return RecognizedField(key, value, CustomFieldType.SNAPCHAT_LINK, url, handle)
+            return RecognizedField(
+                key = key,
+                value = value,
+                type = if (isLink) CustomFieldType.FACEBOOK_LINK else CustomFieldType.FACEBOOK_ID,
+                actionUrl = url,
+                displayHandle = handle
+            )
         }
 
-        // 4. Snapchat ID recognition
-        if (lowerKey.contains("snap") || lowerKey.contains("snapchat")) {
-            val cleanHandle = value.trim().removePrefix("@")
-            val url = "https://snapchat.com/add/$cleanHandle"
-            return RecognizedField(key, value, CustomFieldType.SNAPCHAT_ID, url, "@$cleanHandle")
+        // 6. LinkedIn recognition
+        if (lowerKey.contains("linkedin") || lowerVal.contains("linkedin.com")) {
+            val isLink = lowerVal.contains("linkedin.com") || lowerKey.contains("link")
+            val url = formatUrl(value, "https://linkedin.com/in/")
+            val handle = extractHandleFromUrl(url) ?: value
+            return RecognizedField(
+                key = key,
+                value = value,
+                type = if (isLink) CustomFieldType.LINKEDIN_LINK else CustomFieldType.LINKEDIN_ID,
+                actionUrl = url,
+                displayHandle = handle
+            )
         }
 
-        // 5. General Web Link
+        // 7. YouTube recognition
+        if (lowerKey.contains("youtube") || lowerKey == "yt" || lowerVal.contains("youtube.com") || lowerVal.contains("youtu.be")) {
+            val url = if (value.startsWith("http")) value else "https://youtube.com/@${value.trim().removePrefix("@")}"
+            return RecognizedField(
+                key = key,
+                value = value,
+                type = CustomFieldType.YOUTUBE_LINK,
+                actionUrl = url,
+                displayHandle = value
+            )
+        }
+
+        // 8. General Web Link
         if (lowerVal.startsWith("http://") || lowerVal.startsWith("https://") || lowerVal.startsWith("www.")) {
             val url = if (lowerVal.startsWith("www.")) "https://$value" else value
             return RecognizedField(key, value, CustomFieldType.GENERAL_LINK, url, value)
         }
 
-        // 6. Generic Text
+        // 9. Generic Text
         return RecognizedField(key, value, CustomFieldType.TEXT, null, value)
+    }
+
+    /**
+     * Deduplicates custom fields so that redundant entries pointing to the same social account
+     * (e.g. "Insta ID: bharath" and "Insta DP link: https://instagram.com/bharath") are merged into a single entry.
+     */
+    fun deduplicateCustomFields(fields: List<Pair<String, String>>): List<RecognizedField> {
+        if (fields.isEmpty()) return emptyList()
+
+        val recognizedList = fields.map { classifyField(it.first, it.second) }
+        val result = mutableListOf<RecognizedField>()
+
+        val socialByBrand = mutableMapOf<SocialBrand, MutableList<RecognizedField>>()
+        val nonSocialFields = mutableListOf<RecognizedField>()
+
+        for (rf in recognizedList) {
+            val brand = rf.brand
+            if (brand != null && brand != SocialBrand.GENERAL_LINK) {
+                socialByBrand.getOrPut(brand) { mutableListOf() }.add(rf)
+            } else if (brand == SocialBrand.GENERAL_LINK) {
+                val normalizedUrl = rf.actionUrl?.trimEnd('/')?.lowercase() ?: rf.value.lowercase()
+                if (result.none { it.actionUrl?.trimEnd('/')?.lowercase() == normalizedUrl }) {
+                    result.add(rf)
+                }
+            } else {
+                if (nonSocialFields.none { it.key.equals(rf.key, ignoreCase = true) && it.value.equals(rf.value, ignoreCase = true) }) {
+                    nonSocialFields.add(rf)
+                }
+            }
+        }
+
+        // For each social brand, deduplicate by normalized handle or merge single account entries
+        for ((brand, brandFields) in socialByBrand) {
+            val handleGroups = mutableMapOf<String, MutableList<RecognizedField>>()
+            for (f in brandFields) {
+                val handleKey = f.normalizedHandle.ifEmpty { "default" }
+                handleGroups.getOrPut(handleKey) { mutableListOf() }.add(f)
+            }
+
+            for ((_, group) in handleGroups) {
+                val bestEntry = group.firstOrNull { it.actionUrl != null && it.displayHandle.startsWith("@") }
+                    ?: group.firstOrNull { it.actionUrl != null }
+                    ?: group.first()
+
+                val brandName = when (brand) {
+                    SocialBrand.INSTAGRAM -> "Instagram"
+                    SocialBrand.SNAPCHAT -> "Snapchat"
+                    SocialBrand.TWITTER -> "Twitter / X"
+                    SocialBrand.TELEGRAM -> "Telegram"
+                    SocialBrand.FACEBOOK -> "Facebook"
+                    SocialBrand.LINKEDIN -> "LinkedIn"
+                    SocialBrand.YOUTUBE -> "YouTube"
+                    SocialBrand.GENERAL_LINK -> bestEntry.key
+                }
+
+                val unified = bestEntry.copy(key = brandName)
+                result.add(unified)
+            }
+        }
+
+        result.addAll(nonSocialFields)
+        return result
+    }
+
+    /**
+     * Returns the list of unique social brands to display as logos beside the folder bubble.
+     * Deduplicated so each platform logo only appears once.
+     */
+    fun getSocialLogosForContact(additionalFieldsJson: String): List<SocialBrand> {
+        if (additionalFieldsJson.isBlank()) return emptyList()
+        val rawFields = parseCustomFields(additionalFieldsJson)
+        val deduplicated = deduplicateCustomFields(rawFields)
+        val brands = mutableListOf<SocialBrand>()
+        for (f in deduplicated) {
+            val b = f.brand ?: continue
+            if (!brands.contains(b)) {
+                brands.add(b)
+            }
+        }
+        return brands
     }
 
     private fun formatUrl(input: String, defaultBaseUrl: String): String {
@@ -107,16 +288,20 @@ object ContactSocialHelper {
         return when {
             trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
             trimmed.startsWith("www.") -> "https://$trimmed"
-            trimmed.contains(".com/") -> "https://$trimmed"
+            trimmed.contains(".com/") || trimmed.contains(".me/") -> "https://$trimmed"
             else -> defaultBaseUrl + trimmed.removePrefix("@")
         }
     }
 
     private fun extractHandleFromUrl(url: String): String? {
         return try {
-            val uri = Uri.parse(url)
-            val path = uri.lastPathSegment
-            if (!path.isNullOrBlank()) "@$path" else null
+            val clean = url.trim().substringBefore('?').substringBefore('#').trimEnd('/')
+            val segment = clean.substringAfterLast('/')
+            if (segment.isNotBlank() && !segment.contains("instagram") && !segment.contains("snapchat") && !segment.contains("facebook") && !segment.contains("twitter") && !segment.contains("linkedin")) {
+                "@$segment"
+            } else {
+                null
+            }
         } catch (e: Exception) {
             null
         }

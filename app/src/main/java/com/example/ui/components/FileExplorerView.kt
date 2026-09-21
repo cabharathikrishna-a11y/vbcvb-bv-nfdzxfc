@@ -1196,37 +1196,13 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
                     }
                 } else {
-                    // Inside a selected folder
-                    Row(
+                    // Inside a selected folder: Full-width view (no half-screen division)
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .fillMaxSize()
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "FILE EXPLORER",
-                                color = Color.Gray,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = if (activeFolder == "Google Drive") {
-                                    if (driveFolderStack.isEmpty()) "📁 Google Drive Root" else "📁 " + driveFolderStack.last().second
-                                } else if (activeFolder == "Friends") {
-                                    if (friendsPathStack.isEmpty()) "📁 Study Group" else "📁 " + friendsPathStack.last().substringBefore(":")
-                                } else {
-                                    "📁 $activeFolder"
-                                },
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                        }
-                                  when (activeFolder) {
-                            "Private / App Data", "Private / Personal", "Shared", "Journal", "Tasks", "Contacts", "Favorites", "General" -> {
+                        when (activeFolder) {
+                            "Private / App Data", "Private / Personal", "Shared", "Journal", "Tasks", "Contacts", "Favorites", "General", "Keep Notes", "Google Notes", "Google Keep" -> {
                                 val googleExplorerFiles = googleDriveFiles.map { driveFile ->
                                     ExplorerFile(
                                         name = driveFile.name,
@@ -1249,6 +1225,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     "Tasks" -> folderTaskFiles
                                     "Contacts" -> folderContactFiles
                                     "Favorites" -> folderFavoriteFiles
+                                    "Keep Notes", "Google Notes", "Google Keep" -> folderGoogleNotesFiles
                                     else -> folderGeneralFiles
                                 }
 
@@ -1256,6 +1233,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     "Private / App Data" -> Triple("Private / App Data", "App data including journal uploads, task files, contacts & DB backups", Color(0xFF81C784))
                                     "Private / Personal" -> Triple("Private / Personal", "User uploads localized to device & personal Google Drive", Color(0xFF64B5F6))
                                     "Shared" -> Triple("Shared", "Files accessible to all users & shared group materials", Color(0xFFBA68C8))
+                                    "Keep Notes", "Google Notes", "Google Keep" -> Triple("Keep Notes", "Synchronized Google Keep & Quick Notes", Color(0xFFFFB74D))
                                     else -> Triple(activeFolder ?: "Folder", "Files stored in this location", WaterBlue)
                                 }
 
@@ -1303,7 +1281,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                                         android.widget.Toast.makeText(context, "Deleted ${file.name}", android.widget.Toast.LENGTH_SHORT).show()
                                     },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
                             "Google Sheets" -> {

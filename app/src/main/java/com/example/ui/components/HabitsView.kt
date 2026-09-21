@@ -637,7 +637,26 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 }
             }
 
-            // Categories Sidebar (Renders on top)
+            // Categories Sidebar Scrim (Dismiss on click outside)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isSidebarExpanded,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            isSidebarExpanded = false
+                        }
+                )
+            }
+
+            // Categories Sidebar (Renders on top with solid black background)
             androidx.compose.animation.AnimatedVisibility(
                 visible = isSidebarExpanded,
                 enter = slideInHorizontally() + fadeIn(),
@@ -648,10 +667,10 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     modifier = Modifier
                         .width(if (isTablet) 240.dp else 218.dp)
                         .fillMaxHeight()
-                        .shadow(8.dp)
+                        .shadow(16.dp)
                         .clickable(enabled = true, onClick = {}),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF101012)),
-                    shape = RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = if (isTablet) 12.dp else 0.dp, bottomEnd = if (isTablet) 12.dp else 0.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black),
+                    shape = RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = if (isTablet) 12.dp else 16.dp, bottomEnd = if (isTablet) 12.dp else 16.dp),
                     border = BorderStroke(1.dp, Color(0xFF2E2E30))
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {

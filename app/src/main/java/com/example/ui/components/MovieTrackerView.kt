@@ -358,7 +358,14 @@ fun MovieTrackerView(
                         onValueChange = { query ->
                             viewModel.searchMoviesOrShows(query)
                         },
-                        placeholder = { Text("Search by name e.g. Inception, Breaking Bad...", color = TextMuted) },
+                        placeholder = {
+                            Text(
+                                text = "Search by name e.g. Inception...",
+                                color = TextMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = GoldAccent) },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
@@ -368,6 +375,7 @@ fun MovieTrackerView(
                             }
                         },
                         singleLine = true,
+                        maxLines = 1,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = GoldAccent,
                             unfocusedBorderColor = TextMuted,

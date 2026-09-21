@@ -627,9 +627,10 @@ fun ChatTabScreen(
                                     value = searchQuery,
                                     onValueChange = { chatViewModel.setSearchQuery(it) },
                                     placeholder = {
-                                        Text("Search keywords or senders...", fontSize = 13.sp, color = TextSecondary)
+                                        Text("Search keywords or senders...", fontSize = 13.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     },
                                     singleLine = true,
+                                    maxLines = 1,
                                     colors = TextFieldDefaults.colors(
                                         focusedContainerColor = Color.Transparent,
                                         unfocusedContainerColor = Color.Transparent,

@@ -8,9 +8,11 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -72,210 +74,235 @@ fun ActivityLogsView(
         }
     }
 
-    Column(
+    LazyColumn(
         modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp)
+            .fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)
     ) {
         // Top Info & Title Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ReceiptLong,
-                        contentDescription = null,
-                        tint = WaterBlue,
-                        modifier = Modifier.size(24.dp)
-                    )
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ReceiptLong,
+                            contentDescription = null,
+                            tint = WaterBlue,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text(
+                            text = "Detailed Activity Logs",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     Text(
-                        text = "Detailed Activity Logs",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "Track uploads, deletions, moves, and copies with sequential File IDs",
+                        color = Color.Gray,
+                        fontSize = 11.sp
                     )
                 }
-                Text(
-                    text = "Track uploads, deletions, moves, and copies with sequential File IDs",
-                    color = Color.Gray,
-                    fontSize = 11.sp
-                )
-            }
 
-            IconButton(
-                onClick = { showClearDialog = true },
-                modifier = Modifier.testTag("clear_logs_btn")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.DeleteSweep,
-                    contentDescription = "Clear Logs",
-                    tint = Color(0xFFEF5350)
-                )
+                IconButton(
+                    onClick = { showClearDialog = true },
+                    modifier = Modifier.testTag("clear_logs_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteSweep,
+                        contentDescription = "Clear Logs",
+                        tint = Color(0xFFEF5350)
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Search Bar
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Search by File ID, name, email, date...", color = Color.Gray, fontSize = 13.sp) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = WaterBlue) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.Gray)
-                    }
-                }
-            },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("logs_search_input"),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = WaterBlue,
-                unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                focusedContainerColor = SurfaceCard,
-                unfocusedContainerColor = SurfaceCard,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
-            ),
-            shape = RoundedCornerShape(12.dp)
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Filter Chips
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val filters = listOf(
-                "ALL" to "All (${logs.size})",
-                "UPLOAD" to "Uploads 📤",
-                "DELETE" to "Deletions 🗑️",
-                "COPY" to "Copies 📋",
-                "MOVE" to "Moves 🚚",
-                "RENAME" to "Renames ✏️"
-            )
-
-            filters.forEach { (key, label) ->
-                val isSelected = selectedFilter == key
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { selectedFilter = key },
-                    label = {
-                        Text(
-                            text = label,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) Color.White else Color.LightGray
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = WaterBlue,
-                        containerColor = SurfaceCard
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = isSelected,
-                        borderColor = Color.White.copy(alpha = 0.15f),
-                        selectedBorderColor = WaterBlue
+        // Search Bar - Strictly 1 line compact
+        item {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = {
+                    Text(
+                        text = "Search by File ID, name, email, date...",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = WaterBlue,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                maxLines = 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .testTag("logs_search_input"),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = WaterBlue,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                    focusedContainerColor = SurfaceCard,
+                    unfocusedContainerColor = SurfaceCard,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                ),
+                shape = RoundedCornerShape(12.dp)
+            )
+        }
+
+        // Filter Chips - Horizontally scrollable so chips are never squished or clipped
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val filters = listOf(
+                    "ALL" to "All (${logs.size})",
+                    "UPLOAD" to "Uploads 📤",
+                    "DELETE" to "Deletions 🗑️",
+                    "COPY" to "Copies 📋",
+                    "MOVE" to "Moves 🚚",
+                    "RENAME" to "Renames ✏️"
                 )
+
+                filters.forEach { (key, label) ->
+                    val isSelected = selectedFilter == key
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedFilter = key },
+                        label = {
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else Color.LightGray,
+                                maxLines = 1
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = WaterBlue,
+                            containerColor = SurfaceCard
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isSelected,
+                            borderColor = Color.White.copy(alpha = 0.15f),
+                            selectedBorderColor = WaterBlue
+                        )
+                    )
+                }
             }
         }
 
         // Summary bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Showing ${filteredLogs.size} logs",
-                fontSize = 11.sp,
-                color = Color.Gray,
-                fontWeight = FontWeight.SemiBold
-            )
+        item {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.clickable {
-                    openGoogleDoc(context, FileActivityLogger.GOOGLE_DOC_URL)
-                }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Description,
-                    contentDescription = null,
-                    tint = WaterBlue,
-                    modifier = Modifier.size(12.dp)
-                )
                 Text(
-                    text = "Google Drive Sync Doc",
-                    fontSize = 10.sp,
-                    color = WaterBlue,
-                    fontWeight = FontWeight.Bold
+                    text = "Showing ${filteredLogs.size} logs",
+                    fontSize = 11.sp,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.SemiBold
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.clickable {
+                        openGoogleDoc(context, FileActivityLogger.GOOGLE_DOC_URL)
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = null,
+                        tint = WaterBlue,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = "Google Drive Sync Doc",
+                        fontSize = 10.sp,
+                        color = WaterBlue,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Log List
+        // Log List or Empty state
         if (filteredLogs.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Inbox,
-                        contentDescription = null,
-                        tint = Color.Gray,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Text(
-                        text = "No activity logs found",
-                        color = Color.Gray,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Upload, move, copy, or delete files to record detailed audit logs.",
-                        color = Color.Gray.copy(alpha = 0.7f),
-                        fontSize = 11.sp
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Inbox,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Text(
+                            text = "No activity logs found",
+                            color = Color.Gray,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Upload, move, copy, or delete files to record detailed audit logs.",
+                            color = Color.Gray.copy(alpha = 0.7f),
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                items(filteredLogs, key = { it.id }) { log ->
-                    ActivityLogCard(log = log, onDocClick = {
-                        openGoogleDoc(context, log.googleDocUrl)
-                    })
-                }
+            items(filteredLogs, key = { it.id }) { log ->
+                ActivityLogCard(log = log, onDocClick = {
+                    openGoogleDoc(context, log.googleDocUrl)
+                })
             }
         }
     }

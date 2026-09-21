@@ -471,7 +471,7 @@ private fun VaultEditorTab(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = onSearchChange,
-                        placeholder = { Text("Search Vault Notes...", fontSize = 12.sp, color = Color(0xFF64748B)) },
+                        placeholder = { Text("Search Vault Notes...", fontSize = 12.sp, color = Color(0xFF64748B), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF818CF8), modifier = Modifier.size(16.dp)) },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
@@ -481,6 +481,7 @@ private fun VaultEditorTab(
                             }
                         },
                         singleLine = true,
+                        maxLines = 1,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Color(0xFF818CF8),
                             unfocusedBorderColor = Color(0xFF334155),
@@ -2749,9 +2750,10 @@ private fun ZoteroResearchTab(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search by title, author, DOI, or citeKey...", fontSize = 11.sp) },
+                placeholder = { Text("Search by title, author, DOI, or citeKey...", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF38BDF8)) },
                 singleLine = true,
+                maxLines = 1,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFFFBBF24),
                     unfocusedBorderColor = Color(0xFF334155),

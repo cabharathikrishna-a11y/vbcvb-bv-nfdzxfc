@@ -1,13 +1,17 @@
 package com.example.ui.components
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -19,9 +23,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -85,7 +91,14 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     inputQuery = it
                     viewModel.setGlobalSearchQuery(it)
                 },
-                placeholder = { Text("Search tasks, habits, journal notebooks...", fontSize = 13.sp) },
+                placeholder = {
+                    Text(
+                        text = "Search tasks, habits, journals...",
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -110,6 +123,7 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     }
                 },
                 singleLine = true,
+                maxLines = 1,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(
                     onSearch = {
@@ -129,92 +143,87 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
                 modifier = Modifier
                     .weight(1f)
-                    .height(64.dp)
-                    .clip(RoundedCornerShape(32.dp))
+                    .height(50.dp)
+                    .clip(RoundedCornerShape(25.dp))
                     .testTag("global_search_input")
             )
         }
 
-        // 2. Filter Category Chips
+        // 2. Filter Category Chips (Scrollable single-line chips to fit all phones cleanly)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .horizontalScroll(rememberScrollState())
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             SearchFilter.values().forEach { filter ->
                 val isSelected = activeFilter == filter
                 val label = filter.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
                 
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = if (isSelected) WaterBlue else Charcoal,
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (isSelected) WaterBlue else Color(0xFF1C1E28),
+                    border = if (!isSelected) BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)) else null,
                     modifier = Modifier
+                        .clip(RoundedCornerShape(18.dp))
                         .clickable { activeFilter = filter }
                         .testTag("search_filter_${filter.name.lowercase()}")
                 ) {
                     Text(
                         text = label,
-                        color = if (isSelected) Color.Black else Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                        color = if (isSelected) Color.Black else Color.White.copy(alpha = 0.9f),
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // 3. Search Results or Empty State or History
         if (inputQuery.trim().isEmpty()) {
-            // Show Search History Logs (Indices Database Cache)
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "RECENT COMPILATIONS INDEX",
-                        color = Color.Gray,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
-                    if (history.isNotEmpty()) {
-                        TextButton(onClick = { viewModel.clearSearchHistory() }) {
-                            Text("Clear logs", color = Color.Red, fontSize = 11.sp)
-                        }
-                    }
-                }
-
-                if (history.isEmpty()) {
-                    Box(
+            if (history.isNotEmpty()) {
+                // Show Search History Logs cleanly below filter chips
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "Query empty hint",
-                                tint = Charcoal,
-                                modifier = Modifier.size(52.dp)
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = WaterBlue,
+                                modifier = Modifier.size(16.dp)
                             )
                             Text(
-                                text = "Start typing some keywords to seek entire Life OS database",
+                                text = "RECENT SEARCHES",
                                 color = Color.Gray,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(horizontal = 40.dp),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                letterSpacing = 0.5.sp
                             )
                         }
+                        TextButton(
+                            onClick = { viewModel.clearSearchHistory() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Text("Clear", color = Color(0xFFFF5252), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
-                } else {
+
                     LazyColumn(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -223,20 +232,21 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Charcoal)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF151824))
+                                    .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
                                     .clickable {
                                         inputQuery = logQuery
                                         viewModel.setGlobalSearchQuery(logQuery)
                                         viewModel.addSearchHistory(logQuery)
                                     }
-                                    .padding(12.dp),
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Refresh,
+                                    imageVector = Icons.Default.History,
                                     contentDescription = "Past query match",
-                                    tint = WaterBlue,
+                                    tint = WaterBlue.copy(alpha = 0.8f),
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -244,14 +254,133 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     text = logQuery,
                                     color = Color.White,
                                     fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Icon(
                                     imageVector = Icons.Default.ArrowForward,
                                     contentDescription = "Run query",
-                                    tint = Color.Gray,
+                                    tint = Color.Gray.copy(alpha = 0.6f),
                                     modifier = Modifier.size(14.dp)
                                 )
+                            }
+                        }
+                    }
+                }
+            } else {
+                // When History is Empty: Perfectly centered modern explore state with glowing futuristic badge & centered clean text
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                    ) {
+                        // Modern futuristic search orb badge (no outdated "i" circle)
+                        Box(
+                            modifier = Modifier
+                                .size(80.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(
+                                            WaterBlue.copy(alpha = 0.30f),
+                                            Color(0xFF1A1F2E),
+                                            Color(0xFF10121A)
+                                        )
+                                    )
+                                )
+                                .border(
+                                    1.5.dp,
+                                    Brush.sweepGradient(
+                                        listOf(
+                                            WaterBlue.copy(alpha = 0.7f),
+                                            Color(0xFF818CF8).copy(alpha = 0.5f),
+                                            WaterBlue.copy(alpha = 0.15f),
+                                            WaterBlue.copy(alpha = 0.7f)
+                                        )
+                                    ),
+                                    CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Search",
+                                    tint = WaterBlue,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFD54F),
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .offset(x = 14.dp, y = (-14).dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Text(
+                            text = "Search Life OS",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Start typing keywords to search across tasks, habits, journals, contacts, finances, and notes",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Interactive quick filter shortcut chips
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            listOf(
+                                "Tasks" to SearchFilter.TASKS,
+                                "Habits" to SearchFilter.HABITS,
+                                "Journals" to SearchFilter.JOURNALS,
+                                "Contacts" to SearchFilter.CONTACTS
+                            ).forEach { (title, filter) ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color(0xFF161824),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            activeFilter = filter
+                                        }
+                                ) {
+                                    Text(
+                                        text = title,
+                                        color = Color(0xFFB0B8C6),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -294,25 +423,82 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "No results matches",
-                                tint = Charcoal,
-                                modifier = Modifier.size(62.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(76.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.radialGradient(
+                                            listOf(
+                                                Color(0xFFFFB74D).copy(alpha = 0.2f),
+                                                Color(0xFF221C16),
+                                                Color(0xFF141210)
+                                            )
+                                        )
+                                    )
+                                    .border(
+                                        1.5.dp,
+                                        Brush.sweepGradient(
+                                            listOf(
+                                                Color(0xFFFFB74D).copy(alpha = 0.6f),
+                                                Color(0xFFFF7043).copy(alpha = 0.4f),
+                                                Color(0xFFFFB74D).copy(alpha = 0.1f),
+                                                Color(0xFFFFB74D).copy(alpha = 0.6f)
+                                            )
+                                        ),
+                                        CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SearchOff,
+                                    contentDescription = "No results",
+                                    tint = Color(0xFFFFB74D),
+                                    modifier = Modifier.size(34.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
                             Text(
-                                text = "No matches indexing across database for \"$inputQuery\"",
-                                color = Color.LightGray,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
+                                text = "No matches found for \"$inputQuery\"",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
                             )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
                             Text(
-                                text = "Check spelling or search for alternative tasks/journals",
+                                text = if (activeFilter != SearchFilter.ALL)
+                                    "No matching results under ${activeFilter.name.lowercase().replaceFirstChar { it.titlecase() }}. Try switching to \"All\" categories or checking spelling."
+                                else
+                                    "Check your spelling or try searching with alternative keywords across tasks, habits, and journals.",
                                 color = Color.Gray,
-                                fontSize = 11.sp
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 16.dp)
                             )
+
+                            if (activeFilter != SearchFilter.ALL) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                OutlinedButton(
+                                    onClick = { activeFilter = SearchFilter.ALL },
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.5f)),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = WaterBlue),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Search All Categories", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
                         }
                     }
                 } else {
@@ -652,62 +838,89 @@ fun ContactSearchItem(contact: Contact, onOpen: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = SurfaceCard),
         shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)),
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpen() }
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.AccountBox,
-                contentDescription = "Contact Info Icon",
-                tint = WaterBlue,
-                modifier = Modifier.size(32.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(WaterBlue.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AccountCircle,
+                    contentDescription = "Contact Info Icon",
+                    tint = WaterBlue,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "${contact.firstName} ${contact.lastName}".trim(),
+                    text = "${contact.firstName} ${contact.lastName}".trim().ifEmpty { "Unnamed Contact" },
                     color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (contact.jobTitle.isNotEmpty()) {
                     Text(
                         text = contact.jobTitle,
                         color = Color.Gray,
-                        fontSize = 11.sp
+                        fontSize = 10.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(modifier = Modifier.height(2.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (contact.phone.isNotEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Phone,
-                                contentDescription = "Phone icon",
-                                tint = Color.Gray,
-                                modifier = Modifier.size(10.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = contact.phone, color = Color.Gray, fontSize = 10.sp)
+                if (contact.phone.isNotEmpty() || contact.email.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (contact.phone.isNotEmpty()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Phone,
+                                    contentDescription = "Phone icon",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = contact.phone,
+                                    color = Color.Gray,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
-                    }
-                    if (contact.email.isNotEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = "Email icon",
-                                tint = Color.Gray,
-                                modifier = Modifier.size(10.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = contact.email, color = Color.Gray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (contact.email.isNotEmpty()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Email,
+                                    contentDescription = "Email icon",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = contact.email,
+                                    color = Color.Gray,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
@@ -715,7 +928,7 @@ fun ContactSearchItem(contact: Contact, onOpen: () -> Unit) {
             Icon(
                 imageVector = Icons.Default.ArrowForward,
                 contentDescription = "Navigate to Contact details page",
-                tint = Color.Gray,
+                tint = Color.Gray.copy(alpha = 0.6f),
                 modifier = Modifier.size(14.dp)
             )
         }

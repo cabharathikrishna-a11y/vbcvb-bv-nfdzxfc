@@ -351,9 +351,6 @@ class MainActivity : ComponentActivity() {
                 var showSocialOnboarding by remember {
                     mutableStateOf(false)
                 }
-                var showNonEssentialsMenu by remember {
-                    mutableStateOf(false)
-                }
                 LaunchedEffect(isLoggedInState) {
                     if (isLoggedInState) {
                         // Request Notification Permission on Android 13+ (API 33)
@@ -963,7 +960,7 @@ class MainActivity : ComponentActivity() {
                                             Screen.OBSIDIAN_ARCHITECTURE -> com.example.ui.components.ObsidianArchitectureView(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.SETTINGS) })
                                             Screen.GOOGLE_DRIVE_SYNC -> com.example.ui.components.GoogleDriveSyncView(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.SETTINGS) })
                                             Screen.MOVIE_TRACKER -> com.example.ui.components.MovieTrackerView(viewModel = viewModel)
-                                            Screen.MULTI_WINDOW_DESKTOP -> com.example.ui.components.MultiWindowDesktopOverlay(viewModel = viewModel, onExit = { viewModel.navigateTo(Screen.DEEPA_AI) })
+                                            Screen.MULTI_WINDOW_DESKTOP -> viewModel.navigateTo(Screen.DEEPA_AI)
                                             Screen.SHOPPING_CART -> com.example.ui.components.ShoppingCartView(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.DEEPA_AI) })
                                         }
                                     }
@@ -973,25 +970,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val isMultiWindowActive by viewModel.isMultiWindowDesktopMode.collectAsState()
-
-                if (isMultiWindowActive || currentScreen == Screen.MULTI_WINDOW_DESKTOP) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black)
-                    ) {
-                        com.example.ui.components.MultiWindowDesktopOverlay(
-                            viewModel = viewModel,
-                            onExit = {
-                                viewModel.setMultiWindowDesktopMode(false)
-                                if (currentScreen == Screen.MULTI_WINDOW_DESKTOP) {
-                                    viewModel.navigateTo(Screen.DEEPA_AI)
-                                }
-                            }
-                        )
-                    }
-                } else if ((currentScreen == Screen.TIMER && isTimerImmersive) || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.SPOTIFY_WEB_APP) {
+                if ((currentScreen == Screen.TIMER && isTimerImmersive) || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.SPOTIFY_WEB_APP) {
                     // Full Screen Immersive Mode: covers all the display, leaving absolutely no side navigation or safe drawer padding!
                     Box(
                         modifier = Modifier
@@ -1334,37 +1313,13 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
 
-                                    // Web Apps & Shortcuts Button
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .bouncyClick { showNonEssentialsMenu = true }
-                                            .padding(vertical = 8.dp)
-                                            .testTag("nav_item_web_apps_shortcuts"),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(height = 36.dp, width = 56.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(if (showNonEssentialsMenu) WaterBlue.copy(alpha = 0.2f) else Color.Transparent),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Apps,
-                                                contentDescription = "Web Apps & Shortcuts",
-                                                tint = if (showNonEssentialsMenu) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                    }
-
                                     Spacer(modifier = Modifier.height(16.dp))
                                 }
                             }
                             }
+
+                            MainScaffoldContent(scaffoldModifier = Modifier.weight(1f).fillMaxHeight())
                         }
-                    } else { // "left" or "vertical" or any other fallback
                         Row(modifier = outerModifier) {
                             if (!isKeyboardVisible && !isFileExplorerF11Active && currentScreen != Screen.LOGIN && currentScreen != Screen.PROFILE_SETUP && currentScreen != Screen.PERMISSION_ONBOARDING && currentScreen != Screen.CALENDAR_OPTIMIZATION_ONBOARDING) {
                             // Left-hand vertical tabs column (Floating Glass Rail)
@@ -1463,31 +1418,6 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 }
                                             }
-                                        }
-                                    }
-
-                                    // Web Apps & Shortcuts Button
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .bouncyClick { showNonEssentialsMenu = true }
-                                            .padding(vertical = 8.dp)
-                                            .testTag("nav_item_web_apps_shortcuts"),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(height = 36.dp, width = 56.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(if (showNonEssentialsMenu) WaterBlue.copy(alpha = 0.2f) else Color.Transparent),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Apps,
-                                                contentDescription = "Web Apps & Shortcuts",
-                                                tint = if (showNonEssentialsMenu) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
-                                                modifier = Modifier.size(20.dp)
-                                            )
                                         }
                                     }
 
@@ -1825,174 +1755,6 @@ class MainActivity : ComponentActivity() {
                             com.example.util.PdfCompressorHelper.dismissGlobalPdf()
                         }
                     )
-                }
-
-                if (showNonEssentialsMenu) {
-                    ModalBottomSheet(
-                        onDismissRequest = { showNonEssentialsMenu = false },
-                        containerColor = Color(0xFF13131A),
-                        contentColor = Color.White,
-                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(CircleShape)
-                                        .background(WaterBlue.copy(alpha = 0.2f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.Apps, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(22.dp))
-                                }
-                                Column {
-                                    Text(
-                                        text = "Web Apps & Shortcuts",
-                                        fontSize = 19.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                    Text(
-                                        text = "Distraction-free web apps with individual home screen shortcuts",
-                                        fontSize = 11.sp,
-                                        color = Color.Gray
-                                    )
-                                }
-                            }
-
-                            // List of strictly Web Apps only
-                            val webAppsList = listOf(
-                                Triple("Instagram Web", "AntiGram distraction-free feed & direct messages", Screen.INSTAGRAM_WEB_APP),
-                                Triple("YouTube Web", "Ad-free background audio streaming", Screen.YOUTUBE_WEB_APP),
-                                Triple("Spotify Web", "Spotify web music & podcast player", Screen.SPOTIFY_WEB_APP)
-                            )
-
-                            webAppsList.forEach { (title, desc, targetScreen) ->
-                                Surface(
-                                    color = Color(0xFF1E1E2D),
-                                    shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(40.dp)
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .background(
-                                                        when (targetScreen) {
-                                                            Screen.INSTAGRAM_WEB_APP -> Color(0xFFE1306C).copy(alpha = 0.2f)
-                                                            Screen.YOUTUBE_WEB_APP -> Color(0xFFFF0000).copy(alpha = 0.2f)
-                                                            else -> Color(0xFF1DB954).copy(alpha = 0.2f)
-                                                        }
-                                                    ),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = when (targetScreen) {
-                                                        Screen.INSTAGRAM_WEB_APP -> Icons.Default.CameraAlt
-                                                        Screen.YOUTUBE_WEB_APP -> Icons.Default.PlayCircleFilled
-                                                        else -> Icons.Default.MusicNote
-                                                    },
-                                                    contentDescription = title,
-                                                    tint = when (targetScreen) {
-                                                        Screen.INSTAGRAM_WEB_APP -> Color(0xFFE1306C)
-                                                        Screen.YOUTUBE_WEB_APP -> Color(0xFFFF4D4D)
-                                                        else -> Color(0xFF1DB954)
-                                                    },
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(title, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 15.sp)
-                                                Text(desc, fontSize = 11.sp, color = Color.LightGray.copy(alpha = 0.7f), lineHeight = 14.sp)
-                                            }
-                                        }
-
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            // Open Web App Button
-                                            Button(
-                                                onClick = {
-                                                    showNonEssentialsMenu = false
-                                                    if (targetScreen == Screen.INSTAGRAM_WEB_APP) {
-                                                        viewModel.setInstagramWebAppEnabled(true)
-                                                    } else if (targetScreen == Screen.YOUTUBE_WEB_APP) {
-                                                        viewModel.setYouTubeWebAppEnabled(true)
-                                                    }
-                                                    viewModel.navigateTo(targetScreen)
-                                                },
-                                                modifier = Modifier.weight(1f),
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = WaterBlue,
-                                                    contentColor = Color.Black
-                                                ),
-                                                shape = RoundedCornerShape(10.dp),
-                                                contentPadding = PaddingValues(vertical = 8.dp)
-                                            ) {
-                                                Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(Modifier.width(6.dp))
-                                                Text("Open App", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                            }
-
-                                            // Pin Shortcut Button
-                                            OutlinedButton(
-                                                onClick = {
-                                                    when (targetScreen) {
-                                                        Screen.INSTAGRAM_WEB_APP -> {
-                                                            com.example.util.ShortcutUtils.createInstagramShortcut(context, forcePinPrompt = true)
-                                                            android.widget.Toast.makeText(context, "Instagram shortcut pinned to Home Screen!", android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
-                                                        Screen.YOUTUBE_WEB_APP -> {
-                                                            com.example.util.ShortcutUtils.createYouTubeShortcut(context, forcePinPrompt = true)
-                                                            android.widget.Toast.makeText(context, "YouTube shortcut pinned to Home Screen!", android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
-                                                        Screen.SPOTIFY_WEB_APP -> {
-                                                            com.example.util.ShortcutUtils.createSpotifyShortcut(context, forcePinPrompt = true)
-                                                            android.widget.Toast.makeText(context, "Spotify shortcut pinned to Home Screen!", android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
-                                                        else -> {}
-                                                    }
-                                                },
-                                                modifier = Modifier.weight(1f),
-                                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                                shape = RoundedCornerShape(10.dp),
-                                                contentPadding = PaddingValues(vertical = 8.dp)
-                                            ) {
-                                                Icon(Icons.Default.PushPin, contentDescription = null, modifier = Modifier.size(16.dp), tint = WaterBlue)
-                                                Spacer(Modifier.width(6.dp))
-                                                Text("Pin Shortcut", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(Modifier.height(16.dp))
-                        }
-                    }
                 }
                 }
             }

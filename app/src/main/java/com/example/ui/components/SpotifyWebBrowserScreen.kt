@@ -1752,8 +1752,10 @@ fun OfflineSpotifyView(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
-            placeholder = { Text("Search offline songs...", color = Color.Gray, fontSize = 13.sp) },
+            placeholder = { Text("Search offline songs...", color = Color.Gray, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray) },
+            singleLine = true,
+            maxLines = 1,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color(0xFF1DB954),
                 unfocusedBorderColor = Color(0xFF282828),
@@ -2016,7 +2018,7 @@ fun SpotifyOnlineSearchView(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchQueryChange,
-            placeholder = { Text("Search songs, artists, albums...", color = Color.Gray, fontSize = 14.sp) },
+            placeholder = { Text("Search songs, artists, albums...", color = Color.Gray, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingIcon = {
                 Icon(Icons.Default.Search, contentDescription = "Search", tint = Color(0xFF1DB954))
             },
@@ -2028,6 +2030,7 @@ fun SpotifyOnlineSearchView(
                 }
             },
             singleLine = true,
+            maxLines = 1,
             shape = RoundedCornerShape(24.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = Color(0xFF222222),

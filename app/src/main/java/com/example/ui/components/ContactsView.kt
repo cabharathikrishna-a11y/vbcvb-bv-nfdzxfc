@@ -37,9 +37,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.example.util.rememberVideoThumbnail
 import com.example.util.rememberPdfFirstPagePreview
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import com.example.data.Contact
 import com.example.ui.AppViewModel
 import com.example.ui.theme.Charcoal
@@ -510,23 +515,32 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 modifier = Modifier
                                                     .size(40.dp)
                                                     .clip(CircleShape)
-                                                    .background(if (!contact.photoUri.isNullOrEmpty()) Color.Transparent else listOf(Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF673AB7), Color(0xFF3F51B5), Color(0xFF2196F3), Color(0xFF03A9F4), Color(0xFF009688), Color(0xFF4CAF50), Color(0xFFFF9800), Color(0xFFFF5722), Color(0xFF795548))[(contact.firstName.firstOrNull()?.code ?: 0) % 11].copy(alpha = 0.8f))
+                                                    .background(listOf(Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF673AB7), Color(0xFF3F51B5), Color(0xFF2196F3), Color(0xFF03A9F4), Color(0xFF009688), Color(0xFF4CAF50), Color(0xFFFF9800), Color(0xFFFF5722), Color(0xFF795548))[(contact.firstName.firstOrNull()?.code ?: 0) % 11].copy(alpha = 0.8f))
                                                     .border(1.dp, WaterBlue.copy(alpha = 0.5f), CircleShape),
                                                 contentAlignment = Alignment.Center
                                             ) {
+                                                Text(
+                                                    text = "${contact.firstName.firstOrNull()?.uppercaseChar() ?: '?'}",
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 15.sp
+                                                )
                                                 if (!contact.photoUri.isNullOrEmpty()) {
+                                                    val imageModel = remember(contact.photoUri) {
+                                                        val uri = contact.photoUri ?: ""
+                                                        val f = File(uri)
+                                                        if (f.exists()) f else uri
+                                                    }
                                                     AsyncImage(
-                                                        model = contact.photoUri,
+                                                        model = ImageRequest.Builder(LocalContext.current)
+                                                            .data(imageModel)
+                                                            .crossfade(true)
+                                                            .memoryCachePolicy(CachePolicy.ENABLED)
+                                                            .diskCachePolicy(CachePolicy.ENABLED)
+                                                            .build(),
                                                         contentDescription = "Profile Photo",
                                                         modifier = Modifier.clip(CircleShape).fillMaxSize(),
                                                         contentScale = ContentScale.Crop
-                                                    )
-                                                } else {
-                                                    Text(
-                                                        text = "${contact.firstName.firstOrNull()?.uppercaseChar() ?: '?'}",
-                                                        color = Color.White,
-                                                        fontWeight = FontWeight.Bold,
-                                                        fontSize = 15.sp
                                                     )
                                                 }
                                             }
@@ -534,95 +548,133 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             Spacer(modifier = Modifier.width(12.dp))
 
                                             Column(modifier = Modifier.weight(1f)) {
+                                                val fullName = remember(contact.firstName, contact.middleName, contact.lastName) {
+                                                    listOf(contact.firstName, contact.middleName, contact.lastName)
+                                                        .filter { it.isNotBlank() }
+                                                        .joinToString(" ")
+                                                        .ifBlank { "Unnamed Contact" }
+                                                }
+                                                // 1. One line name
                                                 Text(
-                                                    text = "${contact.firstName} ${if (contact.middleName.isNotEmpty()) contact.middleName + " " else ""}${contact.lastName}",
+                                                    text = fullName,
                                                     fontWeight = FontWeight.Bold,
                                                     color = Color.White,
-                                                    fontSize = 14.sp
+                                                    fontSize = 14.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    if (contact.folder != "All") {
-                                                        Icon(Icons.Default.Folder, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(10.dp))
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Text(contact.folder, color = WaterBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                    }
-                                                    if (contact.jobTitle.isNotEmpty()) {
-                                                        Text(contact.jobTitle, color = Color.Gray, fontSize = 11.sp, maxLines = 1)
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                    }
-                                                }
 
-                                                // Inline quick social tags (Instagram / Snapchat / DOB)
-                                                val customFields = remember(contact.additionalFieldsJson) {
-                                                    com.example.util.ContactSocialHelper.parseCustomFields(contact.additionalFieldsJson)
-                                                }
-                                                val instaField = customFields.firstOrNull { 
-                                                    val c = com.example.util.ContactSocialHelper.classifyField(it.first, it.second)
-                                                    c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_ID || c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK
-                                                }
-                                                val snapField = customFields.firstOrNull {
-                                                    val c = com.example.util.ContactSocialHelper.classifyField(it.first, it.second)
-                                                    c.type == com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_ID || c.type == com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_LINK
-                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
 
-                                                // If contact has a mobile number, add WhatsApp redirection button above Instagram info
-                                                if (contact.phone.isNotBlank()) {
-                                                    Row(
-                                                        modifier = Modifier.padding(top = 2.dp),
-                                                        verticalAlignment = Alignment.CenterVertically
+                                                // 2. Second line: Bubble design with folder name, and logos side by side beside it
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                ) {
+                                                    // Folder name inside bubble design
+                                                    Surface(
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        color = WaterBlue.copy(alpha = 0.15f),
+                                                        border = BorderStroke(0.5.dp, WaterBlue.copy(alpha = 0.45f))
                                                     ) {
-                                                        Surface(
-                                                            shape = RoundedCornerShape(4.dp),
-                                                            color = Color(0xFF25D366).copy(alpha = 0.16f),
-                                                            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF25D366).copy(alpha = 0.5f)),
-                                                            modifier = Modifier.clickable {
-                                                                com.example.util.ContactSocialHelper.openWhatsApp(context, contact.phone)
+                                                        Text(
+                                                            text = contact.folder.ifBlank { "All" },
+                                                            color = WaterBlue,
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+
+                                                    // 4. Cake icon beside folder if birthday is saved
+                                                    if (contact.dobString.isNotBlank()) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Cake,
+                                                            contentDescription = "Birthday: ${contact.dobString}",
+                                                            tint = Color(0xFFFF80AB),
+                                                            modifier = Modifier.size(15.dp)
+                                                        )
+                                                    }
+
+                                                    // 5. Attached social media logos beside it
+                                                    val socialLogos = remember(contact.additionalFieldsJson) {
+                                                        com.example.util.ContactSocialHelper.getSocialLogosForContact(contact.additionalFieldsJson)
+                                                    }
+                                                    for (brand in socialLogos) {
+                                                        when (brand) {
+                                                            com.example.util.ContactSocialHelper.SocialBrand.INSTAGRAM -> {
+                                                                Image(
+                                                                    painter = painterResource(R.drawable.ic_instagram_shortcut),
+                                                                    contentDescription = "Instagram",
+                                                                    modifier = Modifier.size(15.dp)
+                                                                )
                                                             }
-                                                        ) {
-                                                            Row(
-                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                Text("💬 WhatsApp", color = Color(0xFF25D366), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                            com.example.util.ContactSocialHelper.SocialBrand.SNAPCHAT -> {
+                                                                Image(
+                                                                    painter = painterResource(R.drawable.ic_snapchat_logo),
+                                                                    contentDescription = "Snapchat",
+                                                                    modifier = Modifier.size(15.dp)
+                                                                )
+                                                            }
+                                                            com.example.util.ContactSocialHelper.SocialBrand.YOUTUBE -> {
+                                                                Image(
+                                                                    painter = painterResource(R.drawable.ic_youtube_shortcut),
+                                                                    contentDescription = "YouTube",
+                                                                    modifier = Modifier.size(15.dp)
+                                                                )
+                                                            }
+                                                            com.example.util.ContactSocialHelper.SocialBrand.TWITTER -> {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.AlternateEmail,
+                                                                    contentDescription = "Twitter / X",
+                                                                    tint = Color(0xFF1DA1F2),
+                                                                    modifier = Modifier.size(15.dp)
+                                                                )
+                                                            }
+                                                            com.example.util.ContactSocialHelper.SocialBrand.TELEGRAM -> {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Send,
+                                                                    contentDescription = "Telegram",
+                                                                    tint = Color(0xFF0088CC),
+                                                                    modifier = Modifier.size(14.dp)
+                                                                )
+                                                            }
+                                                            com.example.util.ContactSocialHelper.SocialBrand.FACEBOOK -> {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.ThumbUp,
+                                                                    contentDescription = "Facebook",
+                                                                    tint = Color(0xFF1877F2),
+                                                                    modifier = Modifier.size(14.dp)
+                                                                )
+                                                            }
+                                                            com.example.util.ContactSocialHelper.SocialBrand.LINKEDIN -> {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Work,
+                                                                    contentDescription = "LinkedIn",
+                                                                    tint = Color(0xFF0A66C2),
+                                                                    modifier = Modifier.size(14.dp)
+                                                                )
+                                                            }
+                                                            com.example.util.ContactSocialHelper.SocialBrand.GENERAL_LINK -> {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Link,
+                                                                    contentDescription = "Link",
+                                                                    tint = WaterBlue,
+                                                                    modifier = Modifier.size(15.dp)
+                                                                )
                                                             }
                                                         }
                                                     }
-                                                }
 
-                                                if (instaField != null || snapField != null || contact.dobString.isNotBlank()) {
-                                                    Row(
-                                                        modifier = Modifier.padding(top = 2.dp),
-                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        if (instaField != null) {
-                                                            val classified = com.example.util.ContactSocialHelper.classifyField(instaField.first, instaField.second)
-                                                            Text(
-                                                                text = "📸 ${classified.displayHandle}",
-                                                                color = Color(0xFFFF80AB),
-                                                                fontSize = 10.sp,
-                                                                fontWeight = FontWeight.SemiBold,
-                                                                maxLines = 1
-                                                            )
-                                                        }
-                                                        if (snapField != null) {
-                                                            val classified = com.example.util.ContactSocialHelper.classifyField(snapField.first, snapField.second)
-                                                            Text(
-                                                                text = "👻 ${classified.displayHandle}",
-                                                                color = Color(0xFFFFFC00),
-                                                                fontSize = 10.sp,
-                                                                fontWeight = FontWeight.SemiBold,
-                                                                maxLines = 1
-                                                            )
-                                                        }
-                                                        if (contact.dobString.isNotBlank()) {
-                                                            Text(
-                                                                text = "🎂 ${contact.dobString}",
-                                                                color = Color.LightGray,
-                                                                fontSize = 10.sp
-                                                            )
-                                                        }
+                                                    // 6. WhatsApp logo at last if phone number attached
+                                                    if (contact.phone.isNotBlank()) {
+                                                        Image(
+                                                            painter = painterResource(R.drawable.ic_whatsapp_logo),
+                                                            contentDescription = "WhatsApp: ${contact.phone}",
+                                                            modifier = Modifier.size(15.dp)
+                                                        )
                                                     }
                                                 }
                                             }
@@ -686,10 +738,8 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                                         customFieldsList.clear()
                                         if (contact.additionalFieldsJson.isNotEmpty()) {
-                                            contact.additionalFieldsJson.split(";").forEach { pair ->
-                                                val parts = pair.split(":")
-                                                if (parts.size == 2) customFieldsList.add(parts[0] to parts[1])
-                                            }
+                                            val parsed = com.example.util.ContactSocialHelper.parseCustomFields(contact.additionalFieldsJson)
+                                            customFieldsList.addAll(parsed)
                                         }
 
                                         customDatesList.clear()
@@ -733,23 +783,32 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         modifier = Modifier
                                             .size(64.dp)
                                             .clip(CircleShape)
-                                            .background(if (!contact.photoUri.isNullOrEmpty()) Color.Transparent else listOf(Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF673AB7), Color(0xFF3F51B5), Color(0xFF2196F3), Color(0xFF03A9F4), Color(0xFF009688), Color(0xFF4CAF50), Color(0xFFFF9800), Color(0xFFFF5722), Color(0xFF795548))[(contact.firstName.firstOrNull()?.code ?: 0) % 11].copy(alpha = 0.8f))
+                                            .background(listOf(Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF673AB7), Color(0xFF3F51B5), Color(0xFF2196F3), Color(0xFF03A9F4), Color(0xFF009688), Color(0xFF4CAF50), Color(0xFFFF9800), Color(0xFFFF5722), Color(0xFF795548))[(contact.firstName.firstOrNull()?.code ?: 0) % 11].copy(alpha = 0.8f))
                                             .border(2.dp, WaterBlue, CircleShape),
                                         contentAlignment = Alignment.Center
                                     ) {
+                                        Text(
+                                            text = "${contact.firstName.firstOrNull()?.uppercaseChar() ?: '?'}",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 24.sp
+                                        )
                                         if (!contact.photoUri.isNullOrEmpty()) {
+                                            val imageModel = remember(contact.photoUri) {
+                                                val uri = contact.photoUri ?: ""
+                                                val f = File(uri)
+                                                if (f.exists()) f else uri
+                                            }
                                             AsyncImage(
-                                                model = contact.photoUri,
+                                                model = ImageRequest.Builder(LocalContext.current)
+                                                    .data(imageModel)
+                                                    .crossfade(true)
+                                                    .memoryCachePolicy(CachePolicy.ENABLED)
+                                                    .diskCachePolicy(CachePolicy.ENABLED)
+                                                    .build(),
                                                 contentDescription = "Profile Photo",
                                                 modifier = Modifier.clip(CircleShape).fillMaxSize(),
                                                 contentScale = ContentScale.Crop
-                                            )
-                                        } else {
-                                            Text(
-                                                text = "${contact.firstName.firstOrNull()?.uppercaseChar() ?: '?'}",
-                                                color = Color.White,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 24.sp
                                             )
                                         }
                                     }
@@ -822,11 +881,11 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             }
 
                             if (contact.additionalFieldsJson.isNotEmpty()) {
-                                val customFields = com.example.util.ContactSocialHelper.parseCustomFields(contact.additionalFieldsJson)
-                                val hasInstagramField = customFields.any { (k, v) ->
-                                    val c = com.example.util.ContactSocialHelper.classifyField(k, v)
-                                    c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_ID ||
-                                    c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK
+                                val rawCustomFields = com.example.util.ContactSocialHelper.parseCustomFields(contact.additionalFieldsJson)
+                                val deduplicatedFields = com.example.util.ContactSocialHelper.deduplicateCustomFields(rawCustomFields)
+                                val hasInstagramField = deduplicatedFields.any {
+                                    it.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_ID ||
+                                    it.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK
                                 }
 
                                 if (!hasInstagramField && contact.phone.isNotBlank()) {
@@ -836,18 +895,16 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 }
 
                                 var renderedWaAboveInsta = false
-                                customFields.forEach { (k, v) ->
-                                    val c = com.example.util.ContactSocialHelper.classifyField(k, v)
-                                    val isInsta = c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_ID ||
-                                                  c.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK
+                                deduplicatedFields.forEach { recognized ->
+                                    val isInsta = recognized.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_ID ||
+                                                  recognized.type == com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK
                                     val showWaAboveThis = isInsta && !renderedWaAboveInsta && contact.phone.isNotBlank()
                                     if (showWaAboveThis) {
                                         renderedWaAboveInsta = true
                                     }
                                     item {
                                         ContactCustomFieldRow(
-                                            key = k,
-                                            value = v,
+                                            recognized = recognized,
                                             phoneNumber = if (showWaAboveThis) contact.phone else null
                                         )
                                     }
@@ -1231,10 +1288,10 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     modifier = Modifier
                         .width(220.dp)
                         .fillMaxHeight()
-                        .shadow(elevation = 16.dp, shape = RoundedCornerShape(12.dp))
-                        .border(1.dp, Color(0xFF2E2E30), RoundedCornerShape(12.dp)),
-                    colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f)),
-                    shape = RoundedCornerShape(12.dp)
+                        .shadow(elevation = 16.dp, shape = RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 16.dp, bottomEnd = 16.dp))
+                        .border(1.dp, Color(0xFF2E2E30), RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 16.dp, bottomEnd = 16.dp)),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black),
+                    shape = RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 16.dp, bottomEnd = 16.dp)
                 ) {
                     Column(
                         modifier = Modifier
@@ -1436,8 +1493,14 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             contentAlignment = Alignment.Center
                         ) {
                             if (selectedAvatar.isNotEmpty()) {
+                                val imageModel = remember(selectedAvatar) {
+                                    if (selectedAvatar.startsWith("/")) File(selectedAvatar) else selectedAvatar
+                                }
                                 AsyncImage(
-                                    model = selectedAvatar,
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(imageModel)
+                                        .crossfade(true)
+                                        .build(),
                                     contentDescription = "Profile Pic Selector",
                                     modifier = Modifier.clip(CircleShape).fillMaxSize(),
                                     contentScale = ContentScale.Crop
@@ -1759,6 +1822,16 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK -> "📸 Instagram Link"
                                             com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_ID -> "👻 Snapchat ID"
                                             com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_LINK -> "👻 Snapchat Link"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.TWITTER_ID -> "🐦 Twitter / X Handle"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.TWITTER_LINK -> "🐦 Twitter / X Link"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.TELEGRAM_ID -> "✈️ Telegram Handle"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.TELEGRAM_LINK -> "✈️ Telegram Link"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.FACEBOOK_ID -> "👥 Facebook Profile"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.FACEBOOK_LINK -> "👥 Facebook Link"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.LINKEDIN_ID -> "💼 LinkedIn Profile"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.LINKEDIN_LINK -> "💼 LinkedIn Link"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.YOUTUBE_ID -> "▶️ YouTube Channel"
+                                            com.example.util.ContactSocialHelper.CustomFieldType.YOUTUBE_LINK -> "▶️ YouTube Link"
                                             com.example.util.ContactSocialHelper.CustomFieldType.GENERAL_LINK -> "🔗 Web Link"
                                             com.example.util.ContactSocialHelper.CustomFieldType.TEXT -> "📝 Custom Field"
                                         }
@@ -1769,6 +1842,16 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_LINK -> Color(0xFFFF80AB)
                                                 com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_ID,
                                                 com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_LINK -> Color(0xFFFFFC00)
+                                                com.example.util.ContactSocialHelper.CustomFieldType.TWITTER_ID,
+                                                com.example.util.ContactSocialHelper.CustomFieldType.TWITTER_LINK -> Color(0xFF1DA1F2)
+                                                com.example.util.ContactSocialHelper.CustomFieldType.TELEGRAM_ID,
+                                                com.example.util.ContactSocialHelper.CustomFieldType.TELEGRAM_LINK -> Color(0xFF0088CC)
+                                                com.example.util.ContactSocialHelper.CustomFieldType.FACEBOOK_ID,
+                                                com.example.util.ContactSocialHelper.CustomFieldType.FACEBOOK_LINK -> Color(0xFF1877F2)
+                                                com.example.util.ContactSocialHelper.CustomFieldType.LINKEDIN_ID,
+                                                com.example.util.ContactSocialHelper.CustomFieldType.LINKEDIN_LINK -> Color(0xFF0A66C2)
+                                                com.example.util.ContactSocialHelper.CustomFieldType.YOUTUBE_ID,
+                                                com.example.util.ContactSocialHelper.CustomFieldType.YOUTUBE_LINK -> Color(0xFFFF5252)
                                                 else -> WaterBlue
                                             },
                                             fontSize = 10.sp,
@@ -1990,10 +2073,8 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                             customFieldsList.clear()
                             if (c.additionalFieldsJson.isNotEmpty()) {
-                                c.additionalFieldsJson.split(";").forEach { pair ->
-                                    val parts = pair.split(":")
-                                    if (parts.size == 2) customFieldsList.add(parts[0] to parts[1])
-                                }
+                                val parsed = com.example.util.ContactSocialHelper.parseCustomFields(c.additionalFieldsJson)
+                                customFieldsList.addAll(parsed)
                             }
 
                             customDatesList.clear()
@@ -2094,10 +2175,20 @@ fun ContactDetailRow(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
 
 @Composable
 fun ContactCustomFieldRow(key: String, value: String, phoneNumber: String? = null) {
-    val context = LocalContext.current
     val recognized = remember(key, value) {
         com.example.util.ContactSocialHelper.classifyField(key, value)
     }
+    ContactCustomFieldRow(recognized = recognized, phoneNumber = phoneNumber)
+}
+
+@Composable
+fun ContactCustomFieldRow(
+    recognized: com.example.util.ContactSocialHelper.RecognizedField,
+    phoneNumber: String? = null
+) {
+    val context = LocalContext.current
+    val key = recognized.key
+    val value = recognized.value
 
     when (recognized.type) {
         com.example.util.ContactSocialHelper.CustomFieldType.INSTAGRAM_ID,
@@ -2121,54 +2212,54 @@ fun ContactCustomFieldRow(key: String, value: String, phoneNumber: String? = nul
                     shape = RoundedCornerShape(10.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE1306C).copy(alpha = 0.4f))
                 ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Instagram",
-                        tint = Color(0xFFFF4081),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "INSTAGRAM (${key})",
-                            color = Color(0xFFFF80AB),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = recognized.displayHandle,
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Button(
-                        onClick = {
-                            com.example.util.ContactSocialHelper.openInstagram(
-                                context,
-                                recognized.actionUrl ?: value
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFE1306C),
-                            contentColor = Color.White
-                        ),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp),
-                        shape = RoundedCornerShape(6.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Image(
+                            painter = painterResource(R.drawable.ic_instagram_shortcut),
+                            contentDescription = "Instagram",
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            val headerLabel = if (key.equals("Instagram", ignoreCase = true)) "INSTAGRAM" else "INSTAGRAM ($key)"
+                            Text(
+                                text = headerLabel,
+                                color = Color(0xFFFF80AB),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = recognized.displayHandle,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                com.example.util.ContactSocialHelper.openInstagram(
+                                    context,
+                                    recognized.actionUrl ?: value
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFE1306C),
+                                contentColor = Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
-            }
             }
         }
         com.example.util.ContactSocialHelper.CustomFieldType.SNAPCHAT_ID,
@@ -2193,16 +2284,16 @@ fun ContactCustomFieldRow(key: String, value: String, phoneNumber: String? = nul
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Face,
+                    Image(
+                        painter = painterResource(R.drawable.ic_snapchat_logo),
                         contentDescription = "Snapchat",
-                        tint = Color(0xFFFFFC00),
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
+                        val headerLabel = if (key.equals("Snapchat", ignoreCase = true)) "SNAPCHAT" else "SNAPCHAT ($key)"
                         Text(
-                            text = "SNAPCHAT (${key})",
+                            text = headerLabel,
                             color = Color(0xFFFFFC00),
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold
@@ -2232,6 +2323,330 @@ fun ContactCustomFieldRow(key: String, value: String, phoneNumber: String? = nul
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        com.example.util.ContactSocialHelper.CustomFieldType.TWITTER_ID,
+        com.example.util.ContactSocialHelper.CustomFieldType.TWITTER_LINK -> {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable {
+                        com.example.util.ContactSocialHelper.openWebUrl(
+                            context,
+                            recognized.actionUrl ?: value
+                        )
+                    },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1DA1F2).copy(alpha = 0.12f)),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1DA1F2).copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AlternateEmail,
+                        contentDescription = "Twitter / X",
+                        tint = Color(0xFF1DA1F2),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "TWITTER / X",
+                            color = Color(0xFF1DA1F2),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = recognized.displayHandle,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            com.example.util.ContactSocialHelper.openWebUrl(
+                                context,
+                                recognized.actionUrl ?: value
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1DA1F2),
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        com.example.util.ContactSocialHelper.CustomFieldType.TELEGRAM_ID,
+        com.example.util.ContactSocialHelper.CustomFieldType.TELEGRAM_LINK -> {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable {
+                        com.example.util.ContactSocialHelper.openWebUrl(
+                            context,
+                            recognized.actionUrl ?: value
+                        )
+                    },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0088CC).copy(alpha = 0.12f)),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0088CC).copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Send,
+                        contentDescription = "Telegram",
+                        tint = Color(0xFF0088CC),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "TELEGRAM",
+                            color = Color(0xFF0088CC),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = recognized.displayHandle,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            com.example.util.ContactSocialHelper.openWebUrl(
+                                context,
+                                recognized.actionUrl ?: value
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF0088CC),
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        com.example.util.ContactSocialHelper.CustomFieldType.FACEBOOK_ID,
+        com.example.util.ContactSocialHelper.CustomFieldType.FACEBOOK_LINK -> {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable {
+                        com.example.util.ContactSocialHelper.openWebUrl(
+                            context,
+                            recognized.actionUrl ?: value
+                        )
+                    },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1877F2).copy(alpha = 0.12f)),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1877F2).copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ThumbUp,
+                        contentDescription = "Facebook",
+                        tint = Color(0xFF1877F2),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "FACEBOOK",
+                            color = Color(0xFF1877F2),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = recognized.displayHandle,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            com.example.util.ContactSocialHelper.openWebUrl(
+                                context,
+                                recognized.actionUrl ?: value
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1877F2),
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        com.example.util.ContactSocialHelper.CustomFieldType.LINKEDIN_ID,
+        com.example.util.ContactSocialHelper.CustomFieldType.LINKEDIN_LINK -> {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable {
+                        com.example.util.ContactSocialHelper.openWebUrl(
+                            context,
+                            recognized.actionUrl ?: value
+                        )
+                    },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0A66C2).copy(alpha = 0.12f)),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0A66C2).copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Work,
+                        contentDescription = "LinkedIn",
+                        tint = Color(0xFF0A66C2),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "LINKEDIN",
+                            color = Color(0xFF0A66C2),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = recognized.displayHandle,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            com.example.util.ContactSocialHelper.openWebUrl(
+                                context,
+                                recognized.actionUrl ?: value
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF0A66C2),
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        com.example.util.ContactSocialHelper.CustomFieldType.YOUTUBE_ID,
+        com.example.util.ContactSocialHelper.CustomFieldType.YOUTUBE_LINK -> {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable {
+                        com.example.util.ContactSocialHelper.openWebUrl(
+                            context,
+                            recognized.actionUrl ?: value
+                        )
+                    },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFF0000).copy(alpha = 0.12f)),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF0000).copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_youtube_shortcut),
+                        contentDescription = "YouTube",
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "YOUTUBE",
+                            color = Color(0xFFFF5252),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = recognized.displayHandle,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            com.example.util.ContactSocialHelper.openWebUrl(
+                                context,
+                                recognized.actionUrl ?: value
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFF0000),
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text("Watch", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

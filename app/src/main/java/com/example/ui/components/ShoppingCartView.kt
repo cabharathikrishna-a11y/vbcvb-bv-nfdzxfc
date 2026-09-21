@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -29,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -227,54 +229,84 @@ fun ShoppingCartView(
                 }
             }
 
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(shoppingLists, key = { it.id }) { list ->
-                    val isSelected = list.id == activeList?.id
-                    val borderColor = if (isSelected) CyanAccent else CardBorder
-                    val bgColor = if (isSelected) CyanAccent.copy(alpha = 0.15f) else CardBg
-
-                    Surface(
-                        onClick = { viewModel.selectShoppingList(list.id) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = bgColor,
-                        border = BorderStroke(1.dp, borderColor),
-                        modifier = Modifier
-                            .animateContentSize()
-                            .testTag("shopping_list_tab_${list.id}")
+            if (shoppingLists.isEmpty()) {
+                Surface(
+                    onClick = { showCreateListDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    color = CardBg,
+                    border = BorderStroke(1.dp, CardBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        Icon(
+                            Icons.Default.AddCircleOutline,
+                            contentDescription = null,
+                            tint = CyanAccent,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "No custom lists yet. Tap to create one!",
+                            color = TextMuted,
+                            fontSize = 12.5.sp
+                        )
+                    }
+                }
+            } else {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(shoppingLists, key = { it.id }) { list ->
+                        val isSelected = list.id == activeList?.id
+                        val borderColor = if (isSelected) CyanAccent else CardBorder
+                        val bgColor = if (isSelected) CyanAccent.copy(alpha = 0.15f) else CardBg
+
+                        Surface(
+                            onClick = { viewModel.selectShoppingList(list.id) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = bgColor,
+                            border = BorderStroke(1.dp, borderColor),
+                            modifier = Modifier
+                                .animateContentSize()
+                                .testTag("shopping_list_tab_${list.id}")
                         ) {
-                            Text(text = list.icon, fontSize = 16.sp)
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = list.name,
-                                color = if (isSelected) Color.White else Color.LightGray,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 14.sp
-                            )
-                            if (isSelected) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Text(text = list.icon, fontSize = 16.sp)
                                 Spacer(Modifier.width(6.dp))
-                                IconButton(
-                                    onClick = {
-                                        listToEdit = list
-                                        showEditListDialog = true
-                                    },
-                                    modifier = Modifier.size(20.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.MoreVert,
-                                        contentDescription = "Edit List",
-                                        tint = TextMuted,
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                                Text(
+                                    text = list.name,
+                                    color = if (isSelected) Color.White else Color.LightGray,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 14.sp
+                                )
+                                if (isSelected) {
+                                    Spacer(Modifier.width(6.dp))
+                                    IconButton(
+                                        onClick = {
+                                            listToEdit = list
+                                            showEditListDialog = true
+                                        },
+                                        modifier = Modifier.size(20.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.MoreVert,
+                                            contentDescription = "Edit List",
+                                            tint = TextMuted,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -301,73 +333,181 @@ fun ShoppingCartView(
 
             Spacer(Modifier.height(10.dp))
 
-            // 3. Search and Filter Chips
+            // 3. Full-Width Search Bar
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = CardBg,
+                border = BorderStroke(1.dp, if (searchQuery.isNotEmpty()) CyanAccent else CardBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .testTag("shopping_search_field")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        tint = if (searchQuery.isNotEmpty()) CyanAccent else TextMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Search items, notes, or categories...",
+                                fontSize = 13.5.sp,
+                                color = TextMuted
+                            )
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                color = Color.White,
+                                fontSize = 13.5.sp
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Clear,
+                                contentDescription = "Clear search",
+                                tint = TextMuted,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Dedicated Filter Chips Row (Scrollable, never squeezed)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search items...", fontSize = 13.sp, color = TextMuted) },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            tint = TextMuted,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    Icons.Default.Clear,
-                                    contentDescription = "Clear",
-                                    tint = TextMuted,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = CardBg,
-                        unfocusedContainerColor = CardBg,
-                        focusedBorderColor = CyanAccent,
-                        unfocusedBorderColor = CardBorder,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("shopping_search_field")
-                )
-
-                // Filter Buttons
-                FilterChip(
-                    selected = currentFilter == ShoppingTabFilter.ALL,
+                // All Chip
+                val isAllSelected = currentFilter == ShoppingTabFilter.ALL
+                Surface(
                     onClick = { currentFilter = ShoppingTabFilter.ALL },
-                    label = { Text("All (${items.size})", fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = CyanAccent.copy(alpha = 0.2f),
-                        selectedLabelColor = CyanAccent
-                    )
-                )
-                FilterChip(
-                    selected = currentFilter == ShoppingTabFilter.TO_BUY,
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isAllSelected) CyanAccent.copy(alpha = 0.2f) else CardBg,
+                    border = BorderStroke(1.dp, if (isAllSelected) CyanAccent else CardBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "All",
+                            color = if (isAllSelected) CyanAccent else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(if (isAllSelected) CyanAccent else Color.White.copy(alpha = 0.1f))
+                                .padding(horizontal = 6.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "${items.size}",
+                                color = if (isAllSelected) Color.Black else Color.LightGray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // To Buy Chip
+                val isToBuySelected = currentFilter == ShoppingTabFilter.TO_BUY
+                val toBuyCount = items.count { !it.isPurchased }
+                Surface(
                     onClick = { currentFilter = ShoppingTabFilter.TO_BUY },
-                    label = { Text("To Buy (${items.count { !it.isPurchased }})", fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = AmazonOrange.copy(alpha = 0.2f),
-                        selectedLabelColor = AmazonOrange
-                    )
-                )
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isToBuySelected) AmazonOrange.copy(alpha = 0.2f) else CardBg,
+                    border = BorderStroke(1.dp, if (isToBuySelected) AmazonOrange else CardBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "To Buy",
+                            color = if (isToBuySelected) AmazonOrange else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = if (isToBuySelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(if (isToBuySelected) AmazonOrange else Color.White.copy(alpha = 0.1f))
+                                .padding(horizontal = 6.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "$toBuyCount",
+                                color = if (isToBuySelected) Color.Black else Color.LightGray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // In Cart / Purchased Chip
+                val isInCartSelected = currentFilter == ShoppingTabFilter.IN_CART
+                val inCartCount = items.count { it.isPurchased }
+                Surface(
+                    onClick = { currentFilter = ShoppingTabFilter.IN_CART },
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isInCartSelected) GreenAccent.copy(alpha = 0.2f) else CardBg,
+                    border = BorderStroke(1.dp, if (isInCartSelected) GreenAccent else CardBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "Purchased",
+                            color = if (isInCartSelected) GreenAccent else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = if (isInCartSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(if (isInCartSelected) GreenAccent else Color.White.copy(alpha = 0.1f))
+                                .padding(horizontal = 6.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "$inCartCount",
+                                color = if (isInCartSelected) Color.Black else Color.LightGray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -377,54 +517,324 @@ fun ShoppingCartView(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(24.dp),
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(text = "🛒", fontSize = 48.sp)
-                        Text(
-                            text = if (items.isEmpty()) "Your list is empty" else "No matching items",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = if (items.isEmpty())
-                                "Add an item manually with name and cost, or paste any Amazon product link to import it automatically!"
-                            else "Try clearing your search query or switching filters.",
-                            color = TextMuted,
-                            fontSize = 13.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 24.dp)
-                        )
-                        if (items.isEmpty()) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.padding(top = 8.dp)
+                    if (items.isEmpty()) {
+                        // Engaging high-converting modern empty state
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Glowing Hero Cart Icon Orb
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.radialGradient(
+                                            listOf(
+                                                AmazonOrange.copy(alpha = 0.35f),
+                                                CyanAccent.copy(alpha = 0.15f),
+                                                Color(0xFF141522)
+                                            )
+                                        )
+                                    )
+                                    .border(
+                                        1.5.dp,
+                                        Brush.sweepGradient(
+                                            listOf(
+                                                AmazonOrange,
+                                                CyanAccent,
+                                                AmazonOrange.copy(alpha = 0.3f),
+                                                AmazonOrange
+                                            )
+                                        ),
+                                        CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Button(
-                                    onClick = { showAmazonLinkDialog = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AmazonOrange),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.testTag("empty_state_paste_amazon_button")
+                                Icon(
+                                    imageVector = Icons.Default.ShoppingCart,
+                                    contentDescription = null,
+                                    tint = AmazonOrange,
+                                    modifier = Modifier.size(38.dp)
+                                )
+                            }
+
+                            // Catchy Header & Subtitle
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "Your Smart Cart is Ready",
+                                    color = Color.White,
+                                    fontSize = 19.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                Text(
+                                    text = "Track budgets, estimate totals, and auto-import Amazon products with live pricing.",
+                                    color = TextMuted,
+                                    fontSize = 13.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    lineHeight = 18.sp,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+                            }
+
+                            Spacer(Modifier.height(2.dp))
+
+                            // Action Card 1: Paste Amazon Link (Hero Primary Action)
+                            Surface(
+                                onClick = { showAmazonLinkDialog = true },
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color(0xFF1C1610),
+                                border = BorderStroke(1.dp, AmazonOrange.copy(alpha = 0.6f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("empty_state_paste_amazon_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                listOf(
+                                                    AmazonOrange.copy(alpha = 0.12f),
+                                                    Color.Transparent
+                                                )
+                                            )
+                                        )
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Link, contentDescription = null, tint = Color.Black)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Paste Amazon Link", color = Color.Black, fontWeight = FontWeight.Bold)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(AmazonOrange),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Link,
+                                            contentDescription = null,
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "Paste Amazon Link",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.5.sp
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(AmazonOrange.copy(alpha = 0.2f))
+                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                                            ) {
+                                                Text(
+                                                    text = "AUTO",
+                                                    color = AmazonOrange,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            }
+                                        }
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            text = "Auto-fetches item title, price & photo",
+                                            color = Color(0xFFFFB74D),
+                                            fontSize = 11.5.sp
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.OpenInNew,
+                                        contentDescription = null,
+                                        tint = AmazonOrange,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
-                                OutlinedButton(
-                                    onClick = { showAddManualDialog = true },
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = BorderStroke(1.dp, CyanAccent),
-                                    modifier = Modifier.testTag("empty_state_manual_add_button")
+                            }
+
+                            // Action Card 2: Add Item Manually (Secondary Action)
+                            Surface(
+                                onClick = { showAddManualDialog = true },
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color(0xFF101720),
+                                border = BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("empty_state_manual_add_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                listOf(
+                                                    CyanAccent.copy(alpha = 0.12f),
+                                                    Color.Transparent
+                                                )
+                                            )
+                                        )
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, tint = CyanAccent)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Add Manually", color = CyanAccent)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(CyanAccent.copy(alpha = 0.2f))
+                                            .border(1.dp, CyanAccent, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Add,
+                                            contentDescription = null,
+                                            tint = CyanAccent,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Add Item Manually",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.5.sp
+                                        )
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            text = "Custom title, cost, quantity & category",
+                                            color = CyanAccent.copy(alpha = 0.85f),
+                                            fontSize = 11.5.sp
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Default.ArrowForward,
+                                        contentDescription = null,
+                                        tint = CyanAccent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
+                            }
+
+                            Spacer(Modifier.height(2.dp))
+
+                            // Features highlight footer
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(CardBg)
+                                    .border(1.dp, CardBorder, RoundedCornerShape(20.dp))
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.AccountBalanceWallet,
+                                        contentDescription = null,
+                                        tint = GreenAccent,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Text("Budgeting", color = TextMuted, fontSize = 11.sp)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(3.dp)
+                                        .clip(CircleShape)
+                                        .background(TextMuted)
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Bolt,
+                                        contentDescription = null,
+                                        tint = AmazonOrange,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Text("Instant Sync", color = TextMuted, fontSize = 11.sp)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(3.dp)
+                                        .clip(CircleShape)
+                                        .background(TextMuted)
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = CyanAccent,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Text("Checklist", color = TextMuted, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    } else {
+                        // Filter / search yielded 0 items
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(CardBg)
+                                    .border(1.dp, CardBorder, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.SearchOff,
+                                    contentDescription = null,
+                                    tint = TextMuted,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                            Text(
+                                text = "No items match your filter",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = if (searchQuery.isNotEmpty())
+                                    "No items found matching \"$searchQuery\"."
+                                else "No items currently match the selected filter.",
+                                color = TextMuted,
+                                fontSize = 13.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Button(
+                                onClick = {
+                                    searchQuery = ""
+                                    currentFilter = ShoppingTabFilter.ALL
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Reset Filters", color = Color.White, fontSize = 12.sp)
                             }
                         }
                     }
@@ -543,18 +953,17 @@ fun ShoppingCartView(
             activeListId = activeList?.id ?: "",
             onDismiss = { showAddManualDialog = false },
             onAdd = { name, cost, units, category, notes, imageUrl ->
-                activeList?.let {
-                    viewModel.addShoppingItem(
-                        listId = it.id,
-                        name = name,
-                        cost = cost,
-                        units = units,
-                        imageUrl = imageUrl,
-                        category = category,
-                        notes = notes
-                    )
-                }
+                viewModel.addShoppingItem(
+                    listId = activeList?.id ?: "",
+                    name = name,
+                    cost = cost,
+                    units = units,
+                    imageUrl = imageUrl,
+                    category = category,
+                    notes = notes
+                )
                 showAddManualDialog = false
+                Toast.makeText(context, "Item added to cart!", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -572,20 +981,18 @@ fun ShoppingCartView(
                 showAmazonLinkDialog = false
             },
             onAddProduct = { displayName, cost, units, imageUrl, productUrl, category ->
-                activeList?.let {
-                    viewModel.addShoppingItem(
-                        listId = it.id,
-                        name = displayName,
-                        cost = cost,
-                        units = units,
-                        imageUrl = imageUrl,
-                        productUrl = productUrl,
-                        category = category
-                    )
-                }
+                viewModel.addShoppingItem(
+                    listId = activeList?.id ?: "",
+                    name = displayName,
+                    cost = cost,
+                    units = units,
+                    imageUrl = imageUrl,
+                    productUrl = productUrl,
+                    category = category
+                )
                 viewModel.clearParsedAmazonProduct()
                 showAmazonLinkDialog = false
-                Toast.makeText(context, "Added to ${activeList?.name}!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Added to cart!", Toast.LENGTH_SHORT).show()
             }
         )
     }

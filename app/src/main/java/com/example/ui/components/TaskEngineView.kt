@@ -342,8 +342,9 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     modifier = Modifier
                         .width(220.dp)
                         .fillMaxHeight(),
-                    colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f)),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = CardDefaults.cardColors(containerColor = Color.Black),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color(0xFF222225))
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Row(
@@ -945,8 +946,20 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             tint = Color.Gray.copy(alpha = 0.4f)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text("No objectives found here!", color = Color.White, fontWeight = FontWeight.Bold)
-                        Text("Create a new task scheduled for this list parameters.", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                        Text(
+                            text = "No tasks found",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            text = "Tap + to add one",
+                            color = Color.Gray,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                 }
             } else {
@@ -1570,9 +1583,10 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .width(220.dp)
                     .fillMaxHeight()
-                    .shadow(elevation = 16.dp, shape = RoundedCornerShape(12.dp)),
-                colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f)),
-                shape = RoundedCornerShape(12.dp)
+                    .shadow(elevation = 16.dp, shape = RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 16.dp, bottomEnd = 16.dp)),
+                colors = CardDefaults.cardColors(containerColor = Color.Black),
+                shape = RoundedCornerShape(topStart = 0.dp, bottomStart = 0.dp, topEnd = 16.dp, bottomEnd = 16.dp),
+                border = BorderStroke(1.dp, Color(0xFF222225))
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Row(
@@ -8981,8 +8995,9 @@ fun TaskActionConfigDialog(
                                 OutlinedTextField(
                                     value = contactSearchQuery,
                                     onValueChange = { contactSearchQuery = it },
-                                    placeholder = { Text("Search app contacts...", fontSize = 12.sp) },
+                                    placeholder = { Text("Search app contacts...", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                     singleLine = true,
+                                    maxLines = 1,
                                     modifier = Modifier.fillMaxWidth().height(48.dp),
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedBorderColor = Color(0xFF2E6FF3),

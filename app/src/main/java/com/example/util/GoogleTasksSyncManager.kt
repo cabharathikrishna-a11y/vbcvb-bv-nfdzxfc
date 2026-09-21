@@ -32,9 +32,13 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -1520,7 +1524,10 @@ object GoogleContactsSyncManager {
     private const val TAG = "GoogleContactsSync"
     private const val CONTACTS_SCOPE = "oauth2:https://www.googleapis.com/auth/contacts"
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     suspend fun getAccessToken(
@@ -1569,9 +1576,9 @@ object GoogleContactsSyncManager {
     /**
      * Performs a full 2-way sync:
      * 1. Pulls contacts from Google Contacts and updates/creates them locally.
-     * 2. Pushes local contacts that are new or updated to Google Contacts.
-     * 3. Syncs custom fields (Instagram ID/Link, Snapchat ID/Link, general text fields) & DOB for existing and new contacts.
-     * 4. Downloads profile pictures for instant local display and uploads local photos to Google Contacts.
+     * 2. Checks whether contact profile photos have changed or not. If unchanged, keeps the local
+     *    file immediately (0ms). If changed or new, downloads concurrently with fast pooled connections.
+     * 3. Pushes local contacts that are new or updated to Google Contacts without re-uploading cached photos.
      */
     suspend fun syncContacts(
         context: Context,
@@ -1593,6 +1600,9 @@ object GoogleContactsSyncManager {
             val googleContacts = fetchGoogleConnections(token, groupMap)
             val googleIdToConnection = googleContacts.associateBy { it.resourceName }
 
+            // Fast, parallel, smart photo sync with change detection
+            val localPhotoMap = syncGoogleContactPhotos(context, token, googleContacts)
+
             // Track if any new folders were fetched
             val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             val currentFolders = prefs.getSafeStringSet("contact_folders_set", emptySet())?.toMutableSet() ?: mutableSetOf()
@@ -1604,8 +1614,7 @@ object GoogleContactsSyncManager {
                     foldersChanged = true
                 }
 
-                // Download and cache profile photo locally for instant offline loading
-                val localPhotoPath = cacheContactPhotoLocally(context, gContact.resourceName, gContact.photoUrl)
+                val localPhotoPath = localPhotoMap[gContact.resourceName]
 
                 // Try to find matching local contact by googleContactId or fallback to names
                 val matchedLocal = localContacts.find { it.googleContactId == gContact.resourceName }
@@ -1616,8 +1625,13 @@ object GoogleContactsSyncManager {
                     }
 
                 if (matchedLocal != null) {
-                    // Update existing local contact (including updated DOB, custom fields, photo, etc.)
                     val mergedCustomFields = mergeCustomFields(matchedLocal.additionalFieldsJson, gContact.additionalFieldsJson)
+                    val resolvedPhoto = if (!localPhotoPath.isNullOrEmpty()) {
+                        localPhotoPath
+                    } else {
+                        matchedLocal.photoUri
+                    }
+
                     val updated = matchedLocal.copy(
                         firstName = if (gContact.firstName.isNotEmpty()) gContact.firstName else matchedLocal.firstName,
                         middleName = if (gContact.middleName.isNotEmpty()) gContact.middleName else matchedLocal.middleName,
@@ -1627,7 +1641,7 @@ object GoogleContactsSyncManager {
                         address = if (gContact.address.isNotEmpty()) gContact.address else matchedLocal.address,
                         jobTitle = if (gContact.jobTitle.isNotEmpty()) gContact.jobTitle else matchedLocal.jobTitle,
                         dobString = if (gContact.dobString.isNotEmpty()) gContact.dobString else matchedLocal.dobString,
-                        photoUri = if (!localPhotoPath.isNullOrEmpty()) localPhotoPath else matchedLocal.photoUri,
+                        photoUri = resolvedPhoto,
                         anniversaryString = if (gContact.anniversaryString.isNotEmpty()) gContact.anniversaryString else matchedLocal.anniversaryString,
                         additionalFieldsJson = mergedCustomFields,
                         additionalDatesJson = if (gContact.additionalDatesJson.isNotEmpty()) gContact.additionalDatesJson else matchedLocal.additionalDatesJson,
@@ -1664,6 +1678,7 @@ object GoogleContactsSyncManager {
             // ---- STEP 2: PUSH TO GOOGLE ----
             // Re-fetch local contacts after Pull updates
             val currentLocalContacts = contactDao.getAllContacts().first()
+            val photoMetaPrefs = context.getSharedPreferences("google_contacts_photos_meta", Context.MODE_PRIVATE)
 
             for (local in currentLocalContacts) {
                 // Determine target group resource name if folder is set
@@ -1683,10 +1698,8 @@ object GoogleContactsSyncManager {
                 }
 
                 if (local.googleContactId != null) {
-                    // It was already synced. Let's see if it still exists on Google
                     val existsOnGoogle = googleIdToConnection.containsKey(local.googleContactId)
                     if (existsOnGoogle) {
-                        // Let's update Google if local info is different (including DOB, custom fields, photo)
                         val gContact = googleIdToConnection[local.googleContactId]!!
                         val fieldsChanged = local.firstName != gContact.firstName ||
                             local.middleName != gContact.middleName ||
@@ -1705,9 +1718,16 @@ object GoogleContactsSyncManager {
                             updateGoogleContact(token, local, targetGroupResourceName)
                         }
 
-                        // Check and push profile photo if local has photo
-                        if (!local.photoUri.isNullOrEmpty() && (gContact.photoUrl.isNullOrEmpty() || local.photoUri.startsWith("/"))) {
-                            uploadGoogleContactPhoto(context, token, local.googleContactId, local.photoUri)
+                        // Only push photo if user picked a new local custom photo (not a cached photo from Google)
+                        val isGoogleCached = local.photoUri?.let { it.contains("g_avatar_") || it.contains("g_contact_") } ?: false
+                        if (!local.photoUri.isNullOrEmpty() && !isGoogleCached) {
+                            val lastPushed = photoMetaPrefs.getString("uploaded_${local.googleContactId}", null)
+                            if (lastPushed != local.photoUri) {
+                                val uploaded = uploadGoogleContactPhoto(context, token, local.googleContactId, local.photoUri)
+                                if (uploaded) {
+                                    photoMetaPrefs.edit().putString("uploaded_${local.googleContactId}", local.photoUri).apply()
+                                }
+                            }
                         }
                     } else {
                         // It was deleted on Google, so we can clear the googleContactId
@@ -1720,9 +1740,13 @@ object GoogleContactsSyncManager {
                         val updatedLocal = local.copy(googleContactId = newGoogleId)
                         contactDao.updateContact(updatedLocal)
 
-                        // If local contact has a profile pic, upload it to Google Contacts!
-                        if (!local.photoUri.isNullOrEmpty()) {
-                            uploadGoogleContactPhoto(context, token, newGoogleId, local.photoUri)
+                        // If user picked a local photo, upload to Google Contacts
+                        val isGoogleCached = local.photoUri?.let { it.contains("g_avatar_") || it.contains("g_contact_") } ?: false
+                        if (!local.photoUri.isNullOrEmpty() && !isGoogleCached) {
+                            val uploaded = uploadGoogleContactPhoto(context, token, newGoogleId, local.photoUri)
+                            if (uploaded) {
+                                photoMetaPrefs.edit().putString("uploaded_$newGoogleId", local.photoUri).apply()
+                            }
                         }
                     }
                 }
@@ -1743,28 +1767,165 @@ object GoogleContactsSyncManager {
         }
     }
 
-    private fun cacheContactPhotoLocally(context: Context, resourceName: String, photoUrl: String?): String? {
-        if (photoUrl.isNullOrBlank()) return null
-        return try {
-            val safeName = resourceName.replace("/", "_").replace(":", "_")
+    /**
+     * Efficient, change-aware contact photo synchronization:
+     * - Checks if the contact's photo has changed by comparing current photoUrl with cached metadata.
+     * - If unchanged and local file exists, keeps the cached file immediately (0ms).
+     * - If changed or new, downloads concurrently using up to 8 pooled HTTP/2 workers.
+     * - Caches permanently in internal app storage for instant offline and ongoing display.
+     */
+    private suspend fun syncGoogleContactPhotos(
+        context: Context,
+        token: String?,
+        googleContacts: List<GoogleContactDetails>
+    ): Map<String, String?> = withContext(Dispatchers.IO) {
+        val photoPrefs = context.getSharedPreferences("google_contacts_photos_meta", Context.MODE_PRIVATE)
+        val photoMap = mutableMapOf<String, String?>()
+        val toDownload = mutableListOf<Triple<String, String, java.io.File>>()
+
+        for (gContact in googleContacts) {
+            val resName = gContact.resourceName
+            val photoUrl = gContact.photoUrl
+            val safeName = resName.replace("/", "_").replace(":", "_")
             val destFile = com.example.util.InternalStorageManager.getFile(
                 context,
                 com.example.util.InternalStorageManager.Category.CONTACTS,
                 "g_avatar_${safeName}.jpg"
             )
-            if (destFile.exists() && destFile.length() > 0) {
-                return destFile.absolutePath
-            }
-            val photoBytes = SystemContactSyncHelper.getContactPhotoBytes(context, photoUrl)
-            if (photoBytes != null && photoBytes.isNotEmpty()) {
-                destFile.writeBytes(photoBytes)
-                destFile.absolutePath
+
+            val fileExists = destFile.exists() && destFile.length() > 0
+            val lastSavedUrl = photoPrefs.getString("url_$safeName", null)
+
+            if (!photoUrl.isNullOrBlank()) {
+                if (fileExists && lastSavedUrl == photoUrl) {
+                    // Image HAS NOT CHANGED: Keep existing local file always without re-downloading!
+                    photoMap[resName] = destFile.absolutePath
+                } else {
+                    // Image IS NEW or HAS CHANGED: Queue for parallel download
+                    toDownload.add(Triple(resName, photoUrl, destFile))
+                }
             } else {
-                photoUrl
+                // No photo URL from Google: Preserve existing local file if already loaded
+                if (fileExists) {
+                    photoMap[resName] = destFile.absolutePath
+                } else {
+                    photoMap[resName] = null
+                }
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed caching contact photo locally for $resourceName", e)
-            photoUrl
+        }
+
+        if (toDownload.isNotEmpty()) {
+            val semaphore = Semaphore(8)
+            val deferreds = toDownload.map { (resName, photoUrl, destFile) ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        val safeName = resName.replace("/", "_").replace(":", "_")
+                        val bytes = downloadContactPhotoBytes(client, photoUrl, token)
+                        if (bytes != null && bytes.isNotEmpty()) {
+                            try {
+                                destFile.parentFile?.mkdirs()
+                                destFile.writeBytes(bytes)
+                                photoPrefs.edit().putString("url_$safeName", photoUrl).apply()
+                                resName to destFile.absolutePath
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed writing cached photo for $resName: ${e.message}")
+                                resName to (if (destFile.exists() && destFile.length() > 0) destFile.absolutePath else photoUrl)
+                            }
+                        } else {
+                            // If download fails temporarily, preserve existing file so it always shows
+                            resName to (if (destFile.exists() && destFile.length() > 0) destFile.absolutePath else photoUrl)
+                        }
+                    }
+                }
+            }
+            val results = deferreds.awaitAll()
+            for ((resName, path) in results) {
+                photoMap[resName] = path
+            }
+        }
+
+        photoMap
+    }
+
+    private suspend fun downloadContactPhotoBytes(
+        client: OkHttpClient,
+        photoUrl: String,
+        token: String?
+    ): ByteArray? = withContext(Dispatchers.IO) {
+        if (photoUrl.isBlank()) return@withContext null
+
+        val urlsToTry = mutableListOf<String>()
+        val highRes = getHighResPhotoUrl(photoUrl, 256)
+        if (highRes != photoUrl) {
+            urlsToTry.add(highRes)
+        }
+        urlsToTry.add(photoUrl)
+
+        for (url in urlsToTry) {
+            // 1. Unauthenticated request first (best for Google CDN / googleusercontent / ggpht)
+            try {
+                val req = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36")
+                    .header("Accept", "image/webp,image/png,image/jpeg,image/*;q=0.9,*/*;q=0.8")
+                    .build()
+
+                client.newCall(req).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val bytes = response.body?.bytes()
+                        if (bytes != null && bytes.isNotEmpty()) {
+                            return@withContext bytes
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Unauthenticated photo download: ${e.message}")
+            }
+
+            // 2. Authenticated request fallback (for people.googleapis.com)
+            if (!token.isNullOrBlank()) {
+                try {
+                    val authReq = Request.Builder()
+                        .url(url)
+                        .header("Authorization", "Bearer $token")
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36")
+                        .header("Accept", "image/webp,image/png,image/jpeg,image/*;q=0.9,*/*;q=0.8")
+                        .build()
+
+                    client.newCall(authReq).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val bytes = response.body?.bytes()
+                            if (bytes != null && bytes.isNotEmpty()) {
+                                return@withContext bytes
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Authenticated photo download: ${e.message}")
+                }
+            }
+        }
+
+        null
+    }
+
+    private fun getHighResPhotoUrl(originalUrl: String, targetSize: Int = 256): String {
+        return try {
+            val trimmed = originalUrl.trim()
+            if (trimmed.contains("googleusercontent.com") || trimmed.contains("ggpht.com")) {
+                val regex = Regex("=s\\d+(-c)?")
+                if (regex.containsMatchIn(trimmed)) {
+                    trimmed.replace(regex, "=s$targetSize-c")
+                } else if (trimmed.contains("?")) {
+                    "$trimmed&sz=$targetSize"
+                } else {
+                    "$trimmed=s$targetSize-c"
+                }
+            } else {
+                trimmed
+            }
+        } catch (_: Exception) {
+            originalUrl
         }
     }
 
@@ -1961,11 +2122,34 @@ object GoogleContactsSyncManager {
                     }
                 }
 
-                // 4. Photo parsing (always extract the URL if present)
+                // 4. Photo parsing - prioritize custom non-default user photo and high resolution
                 var photoUrl: String? = null
                 val photos = conn.optJSONArray("photos")
                 if (photos != null && photos.length() > 0) {
-                    photoUrl = photos.getJSONObject(0).optString("url")
+                    // First try to find a user-provided photo (not marked default)
+                    for (p in 0 until photos.length()) {
+                        val pObj = photos.optJSONObject(p) ?: continue
+                        val isDefault = pObj.optBoolean("default", false)
+                        val rawUrl = pObj.optString("url", "").trim()
+                        if (rawUrl.isNotEmpty() && !isDefault) {
+                            photoUrl = rawUrl
+                            break
+                        }
+                    }
+                    // If no explicit non-default photo, accept any valid photo URL that is not a placeholder silhouette
+                    if (photoUrl.isNullOrEmpty()) {
+                        for (p in 0 until photos.length()) {
+                            val pObj = photos.optJSONObject(p) ?: continue
+                            val rawUrl = pObj.optString("url", "").trim()
+                            if (rawUrl.isNotEmpty() && !rawUrl.contains("default_user") && !rawUrl.contains("silhouette")) {
+                                photoUrl = rawUrl
+                                break
+                            }
+                        }
+                    }
+                }
+                if (!photoUrl.isNullOrEmpty()) {
+                    photoUrl = getHighResPhotoUrl(photoUrl, 256)
                 }
 
                 // 6. Address parsing
@@ -2394,6 +2578,51 @@ object GoogleContactsSyncManager {
                             put("formattedType", key.ifEmpty { "Snapchat" })
                         })
                     }
+                    com.example.util.ContactSocialHelper.CustomFieldType.TWITTER_ID,
+                    com.example.util.ContactSocialHelper.CustomFieldType.TWITTER_LINK -> {
+                        val targetUrl = recognized.actionUrl ?: value
+                        urlsArray.put(JSONObject().apply {
+                            put("value", targetUrl)
+                            put("type", "custom")
+                            put("formattedType", key.ifEmpty { "Twitter" })
+                        })
+                    }
+                    com.example.util.ContactSocialHelper.CustomFieldType.TELEGRAM_ID,
+                    com.example.util.ContactSocialHelper.CustomFieldType.TELEGRAM_LINK -> {
+                        val targetUrl = recognized.actionUrl ?: value
+                        urlsArray.put(JSONObject().apply {
+                            put("value", targetUrl)
+                            put("type", "custom")
+                            put("formattedType", key.ifEmpty { "Telegram" })
+                        })
+                    }
+                    com.example.util.ContactSocialHelper.CustomFieldType.FACEBOOK_ID,
+                    com.example.util.ContactSocialHelper.CustomFieldType.FACEBOOK_LINK -> {
+                        val targetUrl = recognized.actionUrl ?: value
+                        urlsArray.put(JSONObject().apply {
+                            put("value", targetUrl)
+                            put("type", "custom")
+                            put("formattedType", key.ifEmpty { "Facebook" })
+                        })
+                    }
+                    com.example.util.ContactSocialHelper.CustomFieldType.LINKEDIN_ID,
+                    com.example.util.ContactSocialHelper.CustomFieldType.LINKEDIN_LINK -> {
+                        val targetUrl = recognized.actionUrl ?: value
+                        urlsArray.put(JSONObject().apply {
+                            put("value", targetUrl)
+                            put("type", "custom")
+                            put("formattedType", key.ifEmpty { "LinkedIn" })
+                        })
+                    }
+                    com.example.util.ContactSocialHelper.CustomFieldType.YOUTUBE_ID,
+                    com.example.util.ContactSocialHelper.CustomFieldType.YOUTUBE_LINK -> {
+                        val targetUrl = recognized.actionUrl ?: value
+                        urlsArray.put(JSONObject().apply {
+                            put("value", targetUrl)
+                            put("type", "custom")
+                            put("formattedType", key.ifEmpty { "YouTube" })
+                        })
+                    }
                     com.example.util.ContactSocialHelper.CustomFieldType.GENERAL_LINK -> {
                         urlsArray.put(JSONObject().apply {
                             put("value", recognized.actionUrl ?: value)
@@ -2724,7 +2953,7 @@ object SystemContactSyncHelper {
             if (photoUriStr.startsWith("http")) {
                 // Check local cache first to prevent redundant downloading
                 val cacheFile = java.io.File(context.cacheDir, "contact_photo_${photoUriStr.hashCode()}.jpg")
-                if (cacheFile.exists()) {
+                if (cacheFile.exists() && cacheFile.length() > 0) {
                     return cacheFile.readBytes()
                 }
 
@@ -2732,22 +2961,27 @@ object SystemContactSyncHelper {
                 try {
                     val url = java.net.URL(photoUriStr)
                     connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 10000
                     connection.doInput = true
                     connection.connect()
-                    val input = connection.inputStream
-                    val bytes = input.readBytes()
-                    input.close()
+                    if (connection.responseCode in 200..299) {
+                        val input = connection.inputStream
+                        val bytes = input.readBytes()
+                        input.close()
 
-                    if (bytes.isNotEmpty()) {
-                        cacheFile.writeBytes(bytes)
+                        if (bytes.isNotEmpty()) {
+                            cacheFile.writeBytes(bytes)
+                        }
+                        return bytes
                     }
-                    return bytes
                 } finally {
                     connection?.disconnect()
                 }
             } else {
                 val file = java.io.File(photoUriStr)
-                if (file.exists()) {
+                if (file.exists() && file.length() > 0) {
                     return file.readBytes()
                 }
                 val uri = Uri.parse(photoUriStr)

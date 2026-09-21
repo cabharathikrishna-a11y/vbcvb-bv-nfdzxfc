@@ -1659,7 +1659,7 @@ fun TaskSelectionDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
-                    placeholder = { Text("Search task lists...", color = Color.Gray, fontSize = 13.sp) },
+                    placeholder = { Text("Search task lists...", color = Color.Gray, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.LightGray) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
@@ -1670,6 +1670,7 @@ fun TaskSelectionDialog(
                         unfocusedContainerColor = Color(0xFF0F0F0F)
                     ),
                     singleLine = true,
+                    maxLines = 1,
                     shape = RoundedCornerShape(8.dp)
                 )
 
