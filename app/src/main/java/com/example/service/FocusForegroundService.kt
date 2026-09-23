@@ -46,53 +46,82 @@ class FocusForegroundService : Service() {
     }
 
     private fun startForegroundSafe(notificationId: Int, notification: Notification) {
-        val typeSpecialUse = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
-        val typeDataSync = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
-        try {
-            ServiceCompat.startForeground(
-                this,
-                notificationId,
-                notification,
-                if (Build.VERSION.SDK_INT >= 34) typeSpecialUse else 0
-            )
-        } catch (e: Exception) {
-            Log.e("FocusForegroundService", "Failed to start FGS with type specialUse, falling back to dataSync...", e)
+        if (Build.VERSION.SDK_INT >= 34) {
+            val typeSpecialUse = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            val typeDataSync = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             try {
-                ServiceCompat.startForeground(
-                    this,
-                    notificationId,
-                    notification,
-                    if (Build.VERSION.SDK_INT >= 34) typeDataSync else 0
-                )
-            } catch (e2: Exception) {
-                Log.e("FocusForegroundService", "Failed to start FGS with type dataSync, falling back to generic...", e2)
-                try {
-                    ServiceCompat.startForeground(this, notificationId, notification, 0)
-                } catch (e3: Exception) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e3 is android.app.ForegroundServiceStartNotAllowedException) {
-                        Log.w("FocusForegroundService", "Foreground service start not allowed from background", e3)
-                    } else {
-                        Log.e("FocusForegroundService", "Failed to start foreground service", e3)
-                    }
-                }
+                ServiceCompat.startForeground(this, notificationId, notification, typeSpecialUse or typeDataSync)
+                return
+            } catch (e: Throwable) {
+                Log.w(TAG, "startForeground with specialUse|dataSync failed: ${e.message}")
             }
+            try {
+                ServiceCompat.startForeground(this, notificationId, notification, typeSpecialUse)
+                return
+            } catch (e: Throwable) {
+                Log.w(TAG, "startForeground with specialUse failed: ${e.message}")
+            }
+            try {
+                ServiceCompat.startForeground(this, notificationId, notification, typeDataSync)
+                return
+            } catch (e: Throwable) {
+                Log.w(TAG, "startForeground with dataSync failed: ${e.message}")
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val typeDataSync = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            try {
+                ServiceCompat.startForeground(this, notificationId, notification, typeDataSync)
+                return
+            } catch (e: Throwable) {
+                Log.w(TAG, "startForeground with dataSync on API < 34 failed: ${e.message}")
+            }
+        }
+
+        try {
+            ServiceCompat.startForeground(this, notificationId, notification, 0)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Generic startForeground fallback failed: ${e.message}", e)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
+        createNotificationChannel()
+        startForegroundSafe(NOTIFICATION_ID, buildNotification("Focus Session", "Initializing...", false))
+
         if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
             Log.d(TAG, "FocusForegroundService onCreate aborted: User is not logged in.")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error stopping foreground: ${e.message}")
+            }
             stopSelf()
             return
         }
-        instance = this
-        createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForegroundSafe(NOTIFICATION_ID, buildNotification("Focus Session", "Initializing...", false))
+
         if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
             Log.d(TAG, "FocusForegroundService onStartCommand aborted: User is not logged in.")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error stopping foreground: ${e.message}")
+            }
             stopSelf()
             return START_NOT_STICKY
         }
@@ -101,8 +130,6 @@ class FocusForegroundService : Service() {
             handleNotificationAction(action)
             return START_STICKY
         }
-
-        startForegroundSafe(NOTIFICATION_ID, buildNotification("Focus Session", "Initializing...", false))
 
         serviceScope.launch {
             combine(

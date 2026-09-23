@@ -1,5 +1,6 @@
 package com.example.service
 
+import com.example.R
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -120,25 +121,68 @@ class KeepAliveService : Service() {
         }
     }
 
+    private fun ensureNotificationChannel() {
+        try {
+            LiveTimerNotificationManager.createNotificationChannel(this)
+        } catch (e: Throwable) {
+            Log.e("KeepAliveService", "Failed to create notification channel: ${e.message}", e)
+        }
+    }
+
+    private fun createFastBootstrapNotification(): Notification {
+        return NotificationCompat.Builder(this, LiveTimerNotificationManager.CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Focus Session")
+            .setContentText("Focus background daemon active")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
+    }
+
     override fun onCreate() {
         super.onCreate()
         
+        // 1. ABSOLUTE FIRST PRIORITY: Instantly start foreground with a minimal safe notification
+        // This unconditionally satisfies the Android OS contract within microseconds and prevents
+        // ForegroundServiceDidNotStartInTimeException under all startup, restart, and login conditions.
+        ensureNotificationChannel()
+        val bootstrapNotification = createFastBootstrapNotification()
+        startForegroundSafe(NOTIFICATION_ID, bootstrapNotification)
+
+        // 2. Safely verify authentication status; if unauthenticated, gracefully terminate foreground
         if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
-            Log.d("KeepAliveService", "KeepAliveService onCreate aborted: User is not logged in.")
+            Log.d("KeepAliveService", "KeepAliveService onCreate: User is not logged in. Cleanly stopping.")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Throwable) {
+                Log.e("KeepAliveService", "Error stopping foreground on unauthenticated: ${e.message}")
+            }
             stopSelf()
             return
         }
 
-        // 1. INSTANTLY satisfy the Android OS requirement
-        LiveTimerNotificationManager.createNotificationChannel(this)
-        com.example.util.LiveTimerDisplayRelay.start(this)
-        com.example.util.FocusDisplayManager.init(this)
-        com.example.util.NetworkTrafficManager.init(this)
-        val initialNotification = LiveTimerNotificationManager.buildNotification(this)
+        // 3. Initialize background display relays safely
         try {
-            startForegroundSafe(NOTIFICATION_ID, initialNotification)
-        } catch (e: Exception) {
-            Log.e("KeepAliveService", "Failed to start service in foreground in onCreate: ${e.message}", e)
+            com.example.util.LiveTimerDisplayRelay.start(this)
+            com.example.util.FocusDisplayManager.init(this)
+            com.example.util.NetworkTrafficManager.init(this)
+        } catch (e: Throwable) {
+            Log.e("KeepAliveService", "Error initializing display relays: ${e.message}", e)
+        }
+
+        // 4. Update with rich notification safely
+        try {
+            val richNotification = LiveTimerNotificationManager.buildNotification(this)
+            startForegroundSafe(NOTIFICATION_ID, richNotification)
+        } catch (e: Throwable) {
+            Log.e("KeepAliveService", "Failed to update with rich notification in onCreate: ${e.message}", e)
         }
 
         // Dynamically manage WakeLock: only hold it when a timer or stopwatch is actively running
@@ -248,50 +292,74 @@ class KeepAliveService : Service() {
     }
 
     private fun startForegroundSafe(notificationId: Int, notification: Notification) {
-        val typeSpecialUse = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
-        val typeDataSync = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
-        try {
-            ServiceCompat.startForeground(
-                this,
-                notificationId,
-                notification,
-                if (Build.VERSION.SDK_INT >= 34) typeSpecialUse else 0
-            )
-        } catch (e: Exception) {
-            Log.e("KeepAliveService", "Failed to start FGS with type specialUse, falling back to dataSync...", e)
+        if (Build.VERSION.SDK_INT >= 34) {
+            val typeSpecialUse = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            val typeDataSync = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            
+            // 1. Try manifest combination: specialUse | dataSync
             try {
-                ServiceCompat.startForeground(
-                    this,
-                    notificationId,
-                    notification,
-                    if (Build.VERSION.SDK_INT >= 34) typeDataSync else 0
-                )
-            } catch (e2: Exception) {
-                Log.e("KeepAliveService", "Failed to start FGS with type dataSync, falling back to generic...", e2)
-                try {
-                    ServiceCompat.startForeground(this, notificationId, notification, 0)
-                } catch (e3: Exception) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e3 is android.app.ForegroundServiceStartNotAllowedException) {
-                        Log.w("KeepAliveService", "Foreground service start not allowed from background", e3)
-                    } else {
-                        Log.e("KeepAliveService", "Failed to start foreground service", e3)
-                    }
-                    stopSelf()
-                }
+                ServiceCompat.startForeground(this, notificationId, notification, typeSpecialUse or typeDataSync)
+                return
+            } catch (e: Throwable) {
+                Log.w("KeepAliveService", "startForeground with specialUse|dataSync failed: ${e.message}")
             }
+
+            // 2. Try specialUse alone
+            try {
+                ServiceCompat.startForeground(this, notificationId, notification, typeSpecialUse)
+                return
+            } catch (e: Throwable) {
+                Log.w("KeepAliveService", "startForeground with specialUse failed: ${e.message}")
+            }
+
+            // 3. Try dataSync alone
+            try {
+                ServiceCompat.startForeground(this, notificationId, notification, typeDataSync)
+                return
+            } catch (e: Throwable) {
+                Log.w("KeepAliveService", "startForeground with dataSync failed: ${e.message}")
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val typeDataSync = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            try {
+                ServiceCompat.startForeground(this, notificationId, notification, typeDataSync)
+                return
+            } catch (e: Throwable) {
+                Log.w("KeepAliveService", "startForeground with dataSync on API < 34 failed: ${e.message}")
+            }
+        }
+
+        // 4. Generic fallback for API < 29 or if typed startForeground failed
+        try {
+            ServiceCompat.startForeground(this, notificationId, notification, 0)
+        } catch (e: Throwable) {
+            Log.e("KeepAliveService", "Generic startForeground fallback failed: ${e.message}", e)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Guarantee startForeground was called
+        ensureNotificationChannel()
+        val bootstrapNotification = createFastBootstrapNotification()
+        startForegroundSafe(NOTIFICATION_ID, bootstrapNotification)
+
         if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
-            Log.d("KeepAliveService", "KeepAliveService onStartCommand aborted: User is not logged in.")
+            Log.d("KeepAliveService", "KeepAliveService onStartCommand: User is not logged in. Cleanly stopping.")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Throwable) {
+                Log.e("KeepAliveService", "Error stopping foreground on unauthenticated: ${e.message}")
+            }
             stopSelf()
             return START_NOT_STICKY
         }
-        try {
-            // Guarantee that startForeground is called instantly using a safe, up-to-date notification
-            LiveTimerNotificationManager.createNotificationChannel(this)
 
+        try {
             val action = intent?.action
             Log.d("KeepAliveService", "KeepAliveService started with action: $action")
             
@@ -304,15 +372,9 @@ class KeepAliveService : Service() {
             startForegroundSafe(NOTIFICATION_ID, notification)
         } catch (e: Exception) {
             Log.e("KeepAliveService", "Error in onStartCommand: ${e.message}", e)
-            try {
-                val fallbackNotification = LiveTimerNotificationManager.buildNotification(this)
-                startForegroundSafe(NOTIFICATION_ID, fallbackNotification)
-            } catch (inner: Exception) {
-                Log.e("KeepAliveService", "Fallback startForeground failed: ${inner.message}", inner)
-            }
         }
         
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

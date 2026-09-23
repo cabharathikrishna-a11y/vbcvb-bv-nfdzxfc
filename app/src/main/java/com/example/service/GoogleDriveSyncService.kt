@@ -115,6 +115,28 @@ class GoogleDriveSyncService : Service() {
     override fun onCreate() {
         super.onCreate()
         GoogleDriveSyncNotificationHelper.createNotificationChannel(this)
+        val initialNotif = GoogleDriveSyncNotificationHelper.buildNotification(
+            context = this,
+            title = "Google Drive Sync",
+            message = "Preparing background synchronization...",
+            progress = 0,
+            indeterminate = true,
+            isFinished = false
+        )
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    GoogleDriveSyncNotificationHelper.NOTIFICATION_ID,
+                    initialNotif,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(GoogleDriveSyncNotificationHelper.NOTIFICATION_ID, initialNotif)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting initial foreground service in onCreate: ${e.message}", e)
+        }
+
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
             wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LifeOS:GDriveSyncWakeLock")?.apply {
@@ -129,6 +151,16 @@ class GoogleDriveSyncService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
             Log.d(TAG, "GoogleDriveSyncService onStartCommand aborted: User is not logged in.")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error stopping foreground: ${e.message}")
+            }
             stopSelf()
             return START_NOT_STICKY
         }
