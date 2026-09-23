@@ -25,6 +25,37 @@ object GoogleDriveWriteManager {
     private val client by lazy { NetworkTrafficManager.createOkHttpClientBuilder(NetworkTrafficManager.TrafficCategory.CLOUD_BACKUP).build() }
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
+    class ProgressRequestBody(
+        private val file: java.io.File,
+        private val contentType: okhttp3.MediaType?,
+        private val onProgress: (bytesSent: Long, totalBytes: Long, percent: Int) -> Unit
+    ) : okhttp3.RequestBody() {
+        override fun contentType(): okhttp3.MediaType? = contentType
+        override fun contentLength(): Long = file.length()
+
+        override fun writeTo(sink: okio.BufferedSink) {
+            val totalBytes = file.length()
+            if (totalBytes <= 0) return
+            var bytesSent = 0L
+            val buffer = ByteArray(8192)
+            var lastPercent = -1
+
+            file.inputStream().use { inputStream ->
+                var read: Int
+                while (inputStream.read(buffer).also { read = it } != -1) {
+                    sink.write(buffer, 0, read)
+                    sink.flush()
+                    bytesSent += read
+                    val percent = ((bytesSent * 100) / totalBytes).toInt().coerceIn(0, 100)
+                    if (percent != lastPercent) {
+                        lastPercent = percent
+                        onProgress(bytesSent, totalBytes, percent)
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Creates new file metadata in Google Drive AppData / Root.
      */
@@ -518,10 +549,16 @@ object GoogleDriveWriteManager {
         context: Context,
         onAuthResolutionRequired: (Intent) -> Unit = {}
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Backup", "Preparing", 5, "Preparing Google Drive connection...")
         val token = GoogleDriveReadManager.getAccessToken(context, onAuthResolutionRequired)
-            ?: return@withContext Pair(false, "Authorization required. Please connect your Google Drive.")
+        if (token == null) {
+            val msg = "Authorization required. Please connect your Google Drive."
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Backup", "Failed", 0, msg, isFinished = true, isError = true)
+            return@withContext Pair(false, msg)
+        }
 
         try {
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Backup", "Reading", 25, "Reading local focus timer and pomodoro history...")
             val localRecords = FocusTimerManager.loadFocusRecords(context)
             val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             val totalMinutes = prefs.getSafeInt("total_focus_minutes", 0)
@@ -534,6 +571,7 @@ object GoogleDriveWriteManager {
                 put("today_pomos_count", pomosCount)
             }
 
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Backup", "Connecting", 50, "Locating Google Drive Focus vault...")
             val vault = GoogleDriveUploadManager.ensureVaultStructureAndReadme(token)
             val targetFolderId = vault?.focusDataId
             val fileName = "focus_backup.json"
@@ -542,10 +580,13 @@ object GoogleDriveWriteManager {
             if (fileId == null) {
                 fileId = if (targetFolderId != null) GoogleDriveUploadManager.createFileMetadataInFolder(token, fileName, targetFolderId) else createFileMetadata(token, fileName)
                 if (fileId == null) {
-                    return@withContext Pair(false, "Failed to initialize backup slot on Google Drive.")
+                    val msg = "Failed to initialize backup slot on Google Drive."
+                    GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Backup", "Failed", 0, msg, isFinished = true, isError = true)
+                    return@withContext Pair(false, msg)
                 }
             }
 
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Backup", "Sending", 75, "Sending focus records to Google Drive...")
             val request = Request.Builder()
                 .url("https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=media")
                 .addHeader("Authorization", "Bearer $token")
@@ -560,14 +601,20 @@ object GoogleDriveWriteManager {
                     }
                     makeFilePublic(token, fileId)
                     prefs.edit().putLong("gd_focus_last_sync_timestamp", System.currentTimeMillis()).apply()
-                    Pair(true, "Successfully backed up focus data to Google Drive (${GoogleDriveUploadManager.PRIMARY_VAULT_FOLDER_NAME}/Focus_Data).")
+                    val successMsg = "Successfully backed up focus data to Google Drive (${GoogleDriveUploadManager.PRIMARY_VAULT_FOLDER_NAME}/Focus_Data)."
+                    GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Backup", "Completed", 100, successMsg, isFinished = true)
+                    Pair(true, successMsg)
                 } else {
-                    Pair(false, "Failed to upload focus backup to Google Drive.")
+                    val errMsg = "Failed to upload focus backup to Google Drive."
+                    GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Backup", "Failed", 0, errMsg, isFinished = true, isError = true)
+                    Pair(false, errMsg)
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error backing up focus data", e)
-            Pair(false, "Backup Error: ${e.localizedMessage ?: "Unknown error"}")
+            val errMsg = "Backup Error: ${e.localizedMessage ?: "Unknown error"}"
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Backup", "Failed", 0, errMsg, isFinished = true, isError = true)
+            Pair(false, errMsg)
         }
     }
 
@@ -579,10 +626,16 @@ object GoogleDriveWriteManager {
         database: com.example.data.AppDatabase,
         onAuthResolutionRequired: (Intent) -> Unit = {}
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Preparing", 5, "Preparing Google Drive connection...")
         val token = GoogleDriveReadManager.getAccessToken(context, onAuthResolutionRequired)
-            ?: return@withContext Pair(false, "Authorization required. Please connect your Google Drive.")
+        if (token == null) {
+            val msg = "Authorization required. Please connect your Google Drive."
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Failed", 0, msg, isFinished = true, isError = true)
+            return@withContext Pair(false, msg)
+        }
 
         try {
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Reading & Compressing", 15, "Reading local database, tasks, journals, finances & files...")
             val tempFile = java.io.File(context.cacheDir, "temp_app_data_backup.zip")
             if (tempFile.exists()) tempFile.delete()
 
@@ -592,9 +645,12 @@ object GoogleDriveWriteManager {
 
             if (!exportSuccess) {
                 if (tempFile.exists()) tempFile.delete()
-                return@withContext Pair(false, "Failed to compile backup package locally.")
+                val msg = "Failed to compile backup package locally."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Failed", 0, msg, isFinished = true, isError = true)
+                return@withContext Pair(false, msg)
             }
 
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Connecting", 45, "Locating LifeOS AppData folder in Google Drive...")
             val vault = GoogleDriveUploadManager.ensureVaultStructureAndReadme(token)
             val targetFolderId = vault?.backupsId
 
@@ -604,11 +660,27 @@ object GoogleDriveWriteManager {
                 fileId = if (targetFolderId != null) GoogleDriveUploadManager.createFileMetadataInFolder(token, fileName, targetFolderId) else createFileMetadata(token, fileName)
                 if (fileId == null) {
                     tempFile.delete()
-                    return@withContext Pair(false, "Failed to initialize backup slot in Google Drive.")
+                    val msg = "Failed to initialize backup slot in Google Drive."
+                    GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Failed", 0, msg, isFinished = true, isError = true)
+                    return@withContext Pair(false, msg)
                 }
             }
 
-            val requestBody = tempFile.asRequestBody("application/zip".toMediaType())
+            val totalFileSize = tempFile.length()
+            val formattedTotal = android.text.format.Formatter.formatFileSize(context, totalFileSize)
+
+            val requestBody = ProgressRequestBody(tempFile, "application/zip".toMediaType()) { bytesSent, total, percent ->
+                val calculatedOverall = 50 + (percent * 42 / 100)
+                val sentFormatted = android.text.format.Formatter.formatFileSize(context, bytesSent)
+                GoogleDriveSyncProgressTracker.updateProgress(
+                    context,
+                    "Cloud Backup",
+                    "Sending",
+                    calculatedOverall,
+                    "Sending backup package to Google Drive ($percent% | $sentFormatted of $formattedTotal)..."
+                )
+            }
+
             val url = "https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=media"
             val request = Request.Builder()
                 .url(url)
@@ -629,19 +701,26 @@ object GoogleDriveWriteManager {
             tempFile.delete()
 
             if (uploadSuccess) {
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Finalizing", 95, "Cleaning duplicate files & updating permissions...")
                 if (targetFolderId != null) {
                     deleteOlderDuplicateFiles(token, targetFolderId, fileName, keepLatestId = fileId)
                 }
                 makeFilePublic(token, fileId)
                 val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 prefs.edit().putLong("gd_all_last_sync_timestamp", System.currentTimeMillis()).apply()
-                Pair(true, "Successfully backed up all app data and files to Google Drive (${GoogleDriveUploadManager.PRIMARY_VAULT_FOLDER_NAME}/App_Backups).")
+                val successMsg = "Successfully backed up all app data ($formattedTotal) to Google Drive (${GoogleDriveUploadManager.PRIMARY_VAULT_FOLDER_NAME}/App_Backups)."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Completed", 100, successMsg, isFinished = true)
+                Pair(true, successMsg)
             } else {
-                Pair(false, "Failed to upload backup package to Google Drive.")
+                val errMsg = "Failed to upload backup package to Google Drive."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Failed", 0, errMsg, isFinished = true, isError = true)
+                Pair(false, errMsg)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error backing up all app data", e)
-            Pair(false, "Backup Error: ${e.localizedMessage ?: "Unknown error"}")
+            val errMsg = "Backup Error: ${e.localizedMessage ?: "Unknown error"}"
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Failed", 0, errMsg, isFinished = true, isError = true)
+            Pair(false, errMsg)
         }
     }
 
@@ -653,10 +732,16 @@ object GoogleDriveWriteManager {
         database: com.example.data.AppDatabase,
         onAuthResolutionRequired: (Intent) -> Unit = {}
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Preparing", 5, "Connecting to Google Drive...")
         val token = GoogleDriveReadManager.getAccessToken(context, onAuthResolutionRequired)
-            ?: return@withContext Pair(false, "Authorization required. Please connect your Google Drive.")
+        if (token == null) {
+            val msg = "Authorization required. Please connect your Google Drive."
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Failed", 0, msg, isFinished = true, isError = true)
+            return@withContext Pair(false, msg)
+        }
 
         try {
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Reading", 25, "Reading local Google Keep notes...")
             val keepNoteDao = database.keepNoteDao()
             val localNotes = keepNoteDao.getAllKeepNotesDirect()
 
@@ -665,6 +750,7 @@ object GoogleDriveWriteManager {
             val remoteNotes = mutableListOf<com.example.data.KeepNote>()
 
             if (fileId != null) {
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Downloading", 50, "Downloading remote notes from Google Drive...")
                 val cloudContent = GoogleDriveReadManager.downloadBackupFileContent(token, fileId)
                 if (!cloudContent.isNullOrBlank()) {
                     val jsonArray = JSONArray(cloudContent)
@@ -687,16 +773,25 @@ object GoogleDriveWriteManager {
             } else {
                 fileId = createFileMetadata(token, fileName)
                 if (fileId == null) {
-                    return@withContext Pair(false, "Failed to initialize Google Keep Notes space in Google Drive.")
+                    val msg = "Failed to initialize Google Keep Notes space in Google Drive."
+                    GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Failed", 0, msg, isFinished = true, isError = true)
+                    return@withContext Pair(false, msg)
                 }
             }
 
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Merging", 70, "Merging notes and resolving edits...")
             val mergedMap = mutableMapOf<String, com.example.data.KeepNote>()
             for (note in localNotes) {
+                if (DeletedKeepNoteLogHelper.isNoteDeletedLocally(context, note.title, note.content)) {
+                    continue
+                }
                 val signature = "${note.title.trim()}|${note.content.trim()}"
                 mergedMap[signature] = note
             }
             for (remote in remoteNotes) {
+                if (DeletedKeepNoteLogHelper.isNoteDeletedLocally(context, remote.title, remote.content)) {
+                    continue
+                }
                 val signature = "${remote.title.trim()}|${remote.content.trim()}"
                 val existing = mergedMap[signature]
                 if (existing == null || remote.timestamp > existing.timestamp) {
@@ -720,6 +815,7 @@ object GoogleDriveWriteManager {
                 uploadArray.put(obj)
             }
 
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Sending", 85, "Uploading updated notes to Google Drive...")
             val contentStr = uploadArray.toString()
 
             val request = Request.Builder()
@@ -731,7 +827,9 @@ object GoogleDriveWriteManager {
 
             val uploadSuccess = client.newCall(request).execute().use { it.isSuccessful }
             if (!uploadSuccess) {
-                return@withContext Pair(false, "Failed to write synchronized notes back to Google Drive.")
+                val msg = "Failed to write synchronized notes back to Google Drive."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Failed", 0, msg, isFinished = true, isError = true)
+                return@withContext Pair(false, msg)
             }
 
             keepNoteDao.clearAllKeepNotes()
@@ -739,10 +837,107 @@ object GoogleDriveWriteManager {
                 keepNoteDao.insertKeepNote(note.copy(isSynced = true))
             }
 
-            Pair(true, "Successfully merged and synchronized ${mergedList.size} notes!")
+            val successMsg = "Successfully merged and synchronized ${mergedList.size} notes!"
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Completed", 100, successMsg, isFinished = true)
+            Pair(true, successMsg)
         } catch (e: Exception) {
-            Log.e(TAG, "Error syncing Google Keep notes", e)
-            Pair(false, "Sync Error: ${e.localizedMessage ?: "Unknown error"}")
+            Log.e(TAG, "Error syncing Keep notes", e)
+            val errMsg = "Sync Error: ${e.localizedMessage ?: "Unknown error"}"
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Keep Notes Sync", "Failed", 0, errMsg, isFinished = true, isError = true)
+            Pair(false, errMsg)
+        }
+    }
+
+    /**
+     * Backs up and syncs application settings to Google Drive.
+     */
+    suspend fun backupAppSettingsToDrive(
+        context: Context,
+        onAuthResolutionRequired: (Intent) -> Unit = {}
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val token = GoogleDriveReadManager.getAccessToken(context, onAuthResolutionRequired)
+        if (token == null) {
+            val msg = "Google Drive authorization required to sync settings."
+            return@withContext Pair(false, msg)
+        }
+
+        try {
+            val appPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).all
+            val appSettings = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE).all
+            val countdownPrefs = context.getSharedPreferences("countdown_settings_prefs", Context.MODE_PRIVATE).all
+            val strictPrefs = context.getSharedPreferences("strict_mode_prefs", Context.MODE_PRIVATE).all
+            val calendarPrefs = context.getSharedPreferences("app_calendar_prefs", Context.MODE_PRIVATE).all
+
+            fun mapToJson(map: Map<String, *>?): JSONObject {
+                val json = JSONObject()
+                map?.forEach { (k, v) ->
+                    when (v) {
+                        is Boolean -> json.put(k, v)
+                        is Int -> json.put(k, v)
+                        is Long -> json.put(k, v)
+                        is Float -> json.put(k, v.toDouble())
+                        is Double -> json.put(k, v)
+                        is String -> json.put(k, v)
+                        null -> {}
+                        else -> json.put(k, v.toString())
+                    }
+                }
+                return json
+            }
+
+            val settingsJson = JSONObject().apply {
+                put("timestamp", System.currentTimeMillis())
+                put("version", 1)
+                put("app_prefs", mapToJson(appPrefs))
+                put("app_settings", mapToJson(appSettings))
+                put("countdown_settings_prefs", mapToJson(countdownPrefs))
+                put("strict_mode_prefs", mapToJson(strictPrefs))
+                put("app_calendar_prefs", mapToJson(calendarPrefs))
+            }
+
+            val vault = GoogleDriveUploadManager.ensureVaultStructureAndReadme(token)
+            val targetFolderId = vault?.backupsId
+            val fileName = "app_settings_sync.json"
+
+            var fileId = if (targetFolderId != null) {
+                GoogleDriveUploadManager.findFileInFolder(token, fileName, targetFolderId)
+            } else {
+                GoogleDriveReadManager.findFileId(token, fileName)
+            }
+
+            if (fileId == null) {
+                fileId = if (targetFolderId != null) {
+                    GoogleDriveUploadManager.createFileMetadataInFolder(token, fileName, targetFolderId)
+                } else {
+                    createFileMetadata(token, fileName)
+                }
+                if (fileId == null) {
+                    return@withContext Pair(false, "Failed to initialize settings file in Google Drive.")
+                }
+            }
+
+            val request = Request.Builder()
+                .url("https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=media")
+                .addHeader("Authorization", "Bearer $token")
+                .addHeader("Content-Type", "application/json")
+                .patch(settingsJson.toString().toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+
+            client.newCall(request).execute().use { res ->
+                if (res.isSuccessful) {
+                    makeFilePublic(token, fileId)
+                    val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                    prefs.edit().putLong("gd_settings_last_sync_timestamp", System.currentTimeMillis()).apply()
+                    Log.i(TAG, "Successfully synced settings to Google Drive: $fileName")
+                    Pair(true, "Settings successfully saved and synced with Google Drive.")
+                } else {
+                    Log.e(TAG, "Failed to upload settings to Google Drive: ${res.code}")
+                    Pair(false, "Failed to upload settings to Google Drive (HTTP ${res.code})")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing settings to Drive", e)
+            Pair(false, "Drive Sync Error: ${e.localizedMessage ?: "Unknown error"}")
         }
     }
 }

@@ -167,10 +167,50 @@ object WidgetManager {
         }
     }
 
+    fun hasCountdownWidgets(context: Context): Boolean {
+        return try {
+            val appWidgetManager = AppWidgetManager.getInstance(context) ?: return false
+            val thisWidget = ComponentName(context, CountdownWidgetProvider::class.java)
+            appWidgetManager.getAppWidgetIds(thisWidget).isNotEmpty()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     fun hasTimelineSubjectsWidgets(context: Context): Boolean {
         return try {
             val appWidgetManager = AppWidgetManager.getInstance(context) ?: return false
             val thisWidget = ComponentName(context, TimelineSubjectsWidgetProvider::class.java)
+            appWidgetManager.getAppWidgetIds(thisWidget).isNotEmpty()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun hasTasksWidgets(context: Context): Boolean {
+        return try {
+            val appWidgetManager = AppWidgetManager.getInstance(context) ?: return false
+            val thisWidget = ComponentName(context, TasksWidgetProvider::class.java)
+            appWidgetManager.getAppWidgetIds(thisWidget).isNotEmpty()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun hasHabitsWidgets(context: Context): Boolean {
+        return try {
+            val appWidgetManager = AppWidgetManager.getInstance(context) ?: return false
+            val thisWidget = ComponentName(context, HabitsWidgetProvider::class.java)
+            appWidgetManager.getAppWidgetIds(thisWidget).isNotEmpty()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun hasSingleHabitWidgets(context: Context): Boolean {
+        return try {
+            val appWidgetManager = AppWidgetManager.getInstance(context) ?: return false
+            val thisWidget = ComponentName(context, SingleHabitWidgetProvider::class.java)
             appWidgetManager.getAppWidgetIds(thisWidget).isNotEmpty()
         } catch (_: Throwable) {
             false
@@ -212,7 +252,7 @@ object WidgetManager {
         return prefs.getString("widget_glass_style", "black_glass") ?: "black_glass"
     }
 
-    private fun getBackgroundDrawableRes(context: Context): Int {
+    fun getBackgroundDrawableRes(context: Context): Int {
         val glassStyle = fetchWidgetGlassStyle(context)
         return if (glassStyle == "clear_glass") R.drawable.widget_background_clear_glass else R.drawable.widget_background_black_glass
     }
@@ -426,6 +466,9 @@ object WidgetManager {
      * Debounced update for all active widgets registered in the system.
      */
     fun updateAllWidgets(context: Context) {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+            return
+        }
         val now = SystemClock.elapsedRealtime()
         if (now - lastUpdateAllTime.get() < 300L) {
             return
@@ -441,9 +484,65 @@ object WidgetManager {
                 if (hasTotalFocusWidgets(context)) updateTotalFocusTimeWidget(context)
                 if (hasTimelineSubjectsWidgets(context)) updateTimelineSubjectsWidget(context)
                 if (hasPhotoShowerWidgets(context)) updatePhotoShowerWidget(context)
+                if (hasCountdownWidgets(context)) updateCountdownWidget(context)
+                if (hasTasksWidgets(context)) updateTasksWidget(context)
+                if (hasHabitsWidgets(context)) updateHabitsWidget(context)
+                if (hasSingleHabitWidgets(context)) updateSingleHabitWidget(context)
                 com.example.util.AppShortcutHelper.publishDynamicShortcuts(context)
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating all widgets: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * Updates the Tasks Home Screen Widget
+     */
+    fun updateTasksWidget(context: Context) {
+        widgetScope.launch(Dispatchers.IO) {
+            try {
+                TasksWidgetProvider.updateAllTasksWidgets(context)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating tasks widget: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * Updates the Today's Habits Home Screen Widget
+     */
+    fun updateHabitsWidget(context: Context) {
+        widgetScope.launch(Dispatchers.IO) {
+            try {
+                HabitsWidgetProvider.updateAllHabitsWidgets(context)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating habits widget: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * Updates the Individual Habit Home Screen Widget
+     */
+    fun updateSingleHabitWidget(context: Context) {
+        widgetScope.launch(Dispatchers.IO) {
+            try {
+                SingleHabitWidgetProvider.updateAllSingleHabitWidgets(context)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating single habit widget: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * Updates the Countdowns & Anniversaries Home Screen Widget
+     */
+    fun updateCountdownWidget(context: Context) {
+        widgetScope.launch(Dispatchers.IO) {
+            try {
+                CountdownWidgetProvider.updateAllCountdownWidgets(context)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating countdown widget: ${e.message}", e)
             }
         }
     }

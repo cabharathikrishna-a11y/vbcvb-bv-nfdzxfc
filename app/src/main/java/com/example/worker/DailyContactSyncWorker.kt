@@ -23,6 +23,10 @@ class DailyContactSyncWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(applicationContext)) {
+            Log.d(TAG, "DailyContactSyncWorker aborted: User is not logged in.")
+            return Result.success()
+        }
         Log.d(TAG, "DailyContactSyncWorker: Starting daily automated 2-way sync with Google Contacts...")
         return try {
             val result = GoogleContactsSyncManager.syncContacts(applicationContext) {
@@ -50,6 +54,10 @@ class DailyContactSyncWorker(
          */
         fun scheduleDailySync(context: Context) {
             try {
+                if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                    Log.d(TAG, "Suppressed daily sync schedule: User is not logged in.")
+                    return
+                }
                 val constraints = Constraints.Builder()
                     .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()

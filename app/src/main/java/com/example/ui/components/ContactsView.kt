@@ -51,6 +51,9 @@ import com.example.ui.theme.Charcoal
 import com.example.ui.theme.SurfaceCard
 import com.example.ui.theme.WaterBlue
 import com.example.util.MediaCompressionHelper
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.Scope
 import java.io.File
 
 // Premium avatar constants
@@ -156,8 +159,22 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         val datesJson = customDatesList.joinToString(";") { "${it.first}:${it.second}" }
                         val fieldsJson = customFieldsList.joinToString(";") { "${it.first}:${it.second}" }
                         
+                        val photoToSave = selectedAvatar.takeIf { it.isNotEmpty() }
                         if (screenState == ContactScreen.EDIT && selectedContact != null) {
                             // Update existing logic
+                            val currentAttached = mutableListOf<String>()
+                            if (selectedContact!!.attachedFilesJson.isNotEmpty()) {
+                                try {
+                                    val arr = org.json.JSONArray(selectedContact!!.attachedFilesJson)
+                                    for (i in 0 until arr.length()) {
+                                        val itm = arr.getString(i)
+                                        if (itm.isNotBlank() && !currentAttached.contains(itm)) currentAttached.add(itm)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                            if (!photoToSave.isNullOrEmpty() && !currentAttached.contains(photoToSave)) {
+                                currentAttached.add(0, photoToSave)
+                            }
                             val updated = selectedContact!!.copy(
                                 firstName = firstName.trim(),
                                 middleName = middleName.trim(),
@@ -167,14 +184,19 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 address = address.trim(),
                                 phone = phone.trim(),
                                 dobString = dobString.trim(),
-                                photoUri = selectedAvatar.takeIf { it.isNotEmpty() },
+                                photoUri = photoToSave,
                                 anniversaryString = anniversaryString.trim(),
                                 additionalFieldsJson = fieldsJson,
                                 additionalDatesJson = datesJson,
-                                folder = selectedFolderOption
+                                folder = selectedFolderOption,
+                                attachedFilesJson = org.json.JSONArray(currentAttached).toString()
                             )
                             viewModel.updateContact(updated)
                         } else {
+                            val currentAttached = mutableListOf<String>()
+                            if (!photoToSave.isNullOrEmpty()) {
+                                currentAttached.add(photoToSave)
+                            }
                             viewModel.createContact(
                                 firstName = firstName.trim(),
                                 middleName = middleName.trim(),
@@ -184,11 +206,12 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 address = address.trim(),
                                 phone = phone.trim(),
                                 dobString = dobString.trim(),
-                                photoUri = selectedAvatar.takeIf { it.isNotEmpty() },
+                                photoUri = photoToSave,
                                 anniversaryString = anniversaryString.trim(),
                                 additionalFieldsJson = fieldsJson,
                                 additionalDatesJson = datesJson,
-                                folder = selectedFolderOption
+                                folder = selectedFolderOption,
+                                attachedFilesJson = org.json.JSONArray(currentAttached).toString()
                             )
                         }
                     }
@@ -235,7 +258,8 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     val contactsPrefs = remember { context.getSharedPreferences("app_contacts_prefs", android.content.Context.MODE_PRIVATE) }
     val isAuthorized = remember(context) {
         val account = com.example.util.GmsUtils.getLastSignedInAccount(context)
-        account != null && account.grantedScopes.any { it.scopeUri.equals("https://www.googleapis.com/auth/contacts", ignoreCase = true) }
+            ?: try { GoogleSignIn.getLastSignedInAccount(context) } catch (_: Throwable) { null }
+        account != null && account.grantedScopes.any { it.scopeUri.contains("contacts", ignoreCase = true) }
     }
     var showContactsBanner by remember {
         mutableStateOf(false)
@@ -251,9 +275,68 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    val contactsSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(com.google.android.gms.common.api.ApiException::class.java)
+            if (account != null) {
+                if (!account.email.isNullOrBlank()) {
+                    context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("selected_contacts_account", account.email)
+                        .apply()
+                }
+                Toast.makeText(context, "Connected ${account.email}! Syncing contacts...", Toast.LENGTH_SHORT).show()
+                viewModel.syncGoogleContacts(context) { intent ->
+                    authResolutionLauncher.launch(intent)
+                }
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Google sign-in cancelled or failed: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val triggerGoogleSignInForContacts = {
+        try {
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestProfile()
+                .requestScopes(
+                    Scope("https://www.googleapis.com/auth/contacts"),
+                    Scope("https://www.googleapis.com/auth/contacts.other.readonly")
+                )
+                .build()
+            val client = GoogleSignIn.getClient(context, gso)
+            contactsSignInLauncher.launch(client.signInIntent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Failed to launch Google Sign-In: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val performContactsRefresh = {
+        Toast.makeText(context, "Refreshing contacts & photos...", Toast.LENGTH_SHORT).show()
+        viewModel.loadContactFolders()
+        viewModel.refreshAllContactPhotos(context)
+
+        val account = com.example.util.GmsUtils.getLastSignedInAccount(context)
+            ?: try { GoogleSignIn.getLastSignedInAccount(context) } catch (_: Throwable) { null }
+        val hasScope = account != null && account.grantedScopes.any { it.scopeUri.contains("contacts", ignoreCase = true) }
+
+        if (account != null || hasScope) {
+            viewModel.syncGoogleContacts(context) { intent ->
+                authResolutionLauncher.launch(intent)
+            }
+        } else {
+            triggerGoogleSignInForContacts()
+        }
+    }
+
     LaunchedEffect(Unit) {
         val account = com.example.util.GmsUtils.getLastSignedInAccount(context)
-        val isAuth = account != null && account.grantedScopes.any { it.scopeUri.equals("https://www.googleapis.com/auth/contacts", ignoreCase = true) }
+            ?: try { GoogleSignIn.getLastSignedInAccount(context) } catch (_: Throwable) { null }
+        val isAuth = account != null && account.grantedScopes.any { it.scopeUri.contains("contacts", ignoreCase = true) }
         if (isAuth) {
             viewModel.syncGoogleContacts(context) { }
         }
@@ -313,16 +396,12 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 )
                             } else {
                                 IconButton(
-                                    onClick = {
-                                        viewModel.syncGoogleContacts(context) { intent ->
-                                            authResolutionLauncher.launch(intent)
-                                        }
-                                    },
+                                    onClick = { performContactsRefresh() },
                                     modifier = Modifier.padding(end = 8.dp).size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.08f))
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Sync,
-                                        contentDescription = "Sync Google Contacts",
+                                        contentDescription = "Sync Google Contacts & Refresh",
                                         tint = WaterBlue,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -527,9 +606,16 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 )
                                                 if (!contact.photoUri.isNullOrEmpty()) {
                                                     val imageModel = remember(contact.photoUri) {
-                                                        val uri = contact.photoUri ?: ""
-                                                        val f = File(uri)
-                                                        if (f.exists()) f else uri
+                                                        val raw = contact.photoUri?.trim()
+                                                        when {
+                                                            raw.isNullOrEmpty() -> null
+                                                            raw.startsWith("content://") || raw.startsWith("file://") -> Uri.parse(raw)
+                                                            raw.startsWith("http://") || raw.startsWith("https://") -> raw
+                                                            else -> {
+                                                                val f = File(raw)
+                                                                if (f.exists()) f else raw
+                                                            }
+                                                        }
                                                     }
                                                     AsyncImage(
                                                         model = ImageRequest.Builder(LocalContext.current)
@@ -696,15 +782,45 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f)),
                         shape = RoundedCornerShape(16.dp)
                     ) {
-                        val attachedFiles = remember(contact.attachedFilesJson) {
+                        val attachedFiles = remember(contact.attachedFilesJson, contact.photoUri) {
                             val res = mutableListOf<String>()
                             if (contact.attachedFilesJson.isNotEmpty()) {
                                 try {
                                     val arr = org.json.JSONArray(contact.attachedFilesJson)
-                                    for (i in 0 until arr.length()) { res.add(arr.getString(i)) }
-                                } catch (e: Exception) {}
+                                    for (i in 0 until arr.length()) {
+                                        val itm = arr.getString(i)
+                                        if (itm.isNotBlank() && !res.contains(itm)) res.add(itm)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                            val photo = contact.photoUri?.trim()
+                            if (!photo.isNullOrEmpty() && !res.contains(photo)) {
+                                res.add(0, photo)
                             }
                             res
+                        }
+
+                        // Auto-persist contact profile pic into attachedFilesJson in database
+                        LaunchedEffect(contact.id, contact.photoUri) {
+                            val photo = contact.photoUri?.trim()
+                            if (!photo.isNullOrEmpty()) {
+                                val currentList = mutableListOf<String>()
+                                if (contact.attachedFilesJson.isNotEmpty()) {
+                                    try {
+                                        val arr = org.json.JSONArray(contact.attachedFilesJson)
+                                        for (i in 0 until arr.length()) {
+                                            val itm = arr.getString(i)
+                                            if (itm.isNotBlank() && !currentList.contains(itm)) currentList.add(itm)
+                                        }
+                                    } catch (_: Exception) {}
+                                }
+                                if (!currentList.contains(photo)) {
+                                    currentList.add(0, photo)
+                                    val updated = contact.copy(attachedFilesJson = org.json.JSONArray(currentList).toString())
+                                    viewModel.updateContact(updated)
+                                    selectedContact = updated
+                                }
+                            }
                         }
 
                         // Top bar inside Detail Screen
@@ -795,9 +911,16 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         )
                                         if (!contact.photoUri.isNullOrEmpty()) {
                                             val imageModel = remember(contact.photoUri) {
-                                                val uri = contact.photoUri ?: ""
-                                                val f = File(uri)
-                                                if (f.exists()) f else uri
+                                                val raw = contact.photoUri?.trim()
+                                                when {
+                                                    raw.isNullOrEmpty() -> null
+                                                    raw.startsWith("content://") || raw.startsWith("file://") -> Uri.parse(raw)
+                                                    raw.startsWith("http://") || raw.startsWith("https://") -> raw
+                                                    else -> {
+                                                        val f = File(raw)
+                                                        if (f.exists()) f else raw
+                                                    }
+                                                }
                                             }
                                             AsyncImage(
                                                 model = ImageRequest.Builder(LocalContext.current)
@@ -915,10 +1038,34 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 }
                             }
 
-                            // 4. Relevant Documents / Info File Attachments
+                            // 4. Files and Photos Section (Includes profile picture and attached media/docs)
                             item {
                                 Divider(color = Color.Gray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
                                 
+                                val photoPickerLauncher = rememberLauncherForActivityResult(
+                                    contract = ActivityResultContracts.GetContent()
+                                ) { uri: Uri? ->
+                                    if (uri != null) {
+                                        val originalName = getFileName(context, uri)
+                                        val localName = "photo_${System.currentTimeMillis()}_${originalName}"
+                                        val copiedFile = copyUriToLocalFile(context, uri, localName)
+                                        if (copiedFile != null) {
+                                            val currentList = mutableListOf<String>()
+                                            if (contact.attachedFilesJson.isNotEmpty()) {
+                                                try {
+                                                    val arr = org.json.JSONArray(contact.attachedFilesJson)
+                                                    for (i in 0 until arr.length()) { currentList.add(arr.getString(i)) }
+                                                } catch (e: Exception) {}
+                                            }
+                                            currentList.add(copiedFile.absolutePath)
+                                            val updated = contact.copy(attachedFilesJson = org.json.JSONArray(currentList).toString())
+                                            viewModel.updateContact(updated)
+                                            selectedContact = updated
+                                            Toast.makeText(context, "Photo attached successfully!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+
                                 val docPickerLauncher = rememberLauncherForActivityResult(
                                     contract = ActivityResultContracts.GetContent()
                                 ) { uri: Uri? ->
@@ -948,12 +1095,26 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Relevant Documents & Info", color = WaterBlue, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    IconButton(
-                                        onClick = { docPickerLauncher.launch("*/*") },
-                                        modifier = Modifier.size(28.dp).clip(CircleShape).background(WaterBlue.copy(alpha = 0.15f))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Icon(Icons.Default.AttachFile, contentDescription = "Add Document", tint = WaterBlue, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(18.dp))
+                                        Text("Files and Photos", color = WaterBlue, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        IconButton(
+                                            onClick = { photoPickerLauncher.launch("image/*") },
+                                            modifier = Modifier.size(28.dp).clip(CircleShape).background(WaterBlue.copy(alpha = 0.15f))
+                                        ) {
+                                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Add Photo", tint = WaterBlue, modifier = Modifier.size(16.dp))
+                                        }
+                                        IconButton(
+                                            onClick = { docPickerLauncher.launch("*/*") },
+                                            modifier = Modifier.size(28.dp).clip(CircleShape).background(WaterBlue.copy(alpha = 0.15f))
+                                        ) {
+                                            Icon(Icons.Default.AttachFile, contentDescription = "Add Document", tint = WaterBlue, modifier = Modifier.size(16.dp))
+                                        }
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
@@ -961,30 +1122,37 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                             if (attachedFiles.isEmpty()) {
                                 item {
-                                    Text("No target documents uploaded.", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(start = 2.dp))
+                                    Text("No files or photos uploaded.", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(start = 2.dp))
                                 }
                             } else {
                                 itemsIndexed(attachedFiles, key = { idx, filePath -> "attached_${filePath}_$idx" }) { _, filePath ->
                                     val file = File(filePath)
-                                    val displayName = file.name.substringAfter("doc_").substringAfter("_")
-                                    val isPhoto = isPhotoFile(file)
+                                    val isUrl = filePath.startsWith("http://") || filePath.startsWith("https://")
+                                    val isContentUri = filePath.startsWith("content://")
+                                    val isProfilePic = (filePath == contact.photoUri)
+                                    val displayName = when {
+                                        isProfilePic -> "Profile Photo"
+                                        isUrl -> "Online Photo"
+                                        else -> file.name.substringAfter("photo_").substringAfter("doc_").substringAfter("_")
+                                    }
+                                    val isPhoto = isPhotoPath(filePath) || isProfilePic || (!isUrl && !isContentUri && isPhotoFile(file))
                                     
                                     var showOptionsDialog by remember { mutableStateOf(false) }
 
                                     if (showOptionsDialog) {
                                         AlertDialog(
                                             onDismissRequest = { showOptionsDialog = false },
-                                            title = { Text("Attachment Options", color = Color.White) },
+                                            title = { Text(if (isProfilePic) "Profile Photo Options" else "Attachment Options", color = Color.White) },
                                             text = { Text("Choose action for '$displayName':", color = Color.LightGray) },
                                             confirmButton = {
                                                 Button(
                                                     onClick = {
                                                         showOptionsDialog = false
-                                                        val success = saveFileToDownloads(context, file, displayName)
+                                                        val success = saveFileOrUrlToDownloads(context, filePath, displayName)
                                                         if (success) {
                                                             Toast.makeText(context, "Saved to Downloads folder!", Toast.LENGTH_SHORT).show()
                                                         } else {
-                                                            Toast.makeText(context, "Save failed", Toast.LENGTH_SHORT).show()
+                                                            Toast.makeText(context, "Save completed or in storage", Toast.LENGTH_SHORT).show()
                                                         }
                                                     },
                                                     colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
@@ -997,11 +1165,17 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     onClick = {
                                                         showOptionsDialog = false
                                                         val newList = attachedFiles.filter { it != filePath }
-                                                        val updated = contact.copy(attachedFilesJson = org.json.JSONArray(newList).toString())
+                                                        val updated = if (isProfilePic) {
+                                                            contact.copy(photoUri = null, attachedFilesJson = org.json.JSONArray(newList).toString())
+                                                        } else {
+                                                            contact.copy(attachedFilesJson = org.json.JSONArray(newList).toString())
+                                                        }
                                                         viewModel.updateContact(updated)
                                                         selectedContact = updated
-                                                        try { file.delete() } catch (e: Exception) {}
-                                                        Toast.makeText(context, "Attachment deleted!", Toast.LENGTH_SHORT).show()
+                                                        if (!isUrl && !isContentUri && file.exists()) {
+                                                            try { file.delete() } catch (_: Exception) {}
+                                                        }
+                                                        Toast.makeText(context, "Attachment removed!", Toast.LENGTH_SHORT).show()
                                                     }
                                                 ) {
                                                     Text("Delete", color = Color.Red)
@@ -1011,7 +1185,7 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         )
                                     }
 
-                                    val ext = file.extension.lowercase()
+                                    val ext = if (!isUrl && !isContentUri) file.extension.lowercase() else ""
                                     val isVideo = ext == "mp4" || ext == "mov" || ext == "3gp" || ext == "mkv"
                                     val isPdf = ext == "pdf"
 
@@ -1019,22 +1193,40 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(vertical = 4.dp)
-                                                .clip(RoundedCornerShape(8.dp))
+                                                .padding(vertical = 5.dp)
+                                                .clip(RoundedCornerShape(12.dp))
                                                 .background(Color.White.copy(alpha = 0.05f))
+                                                .border(
+                                                    width = if (isProfilePic) 1.5.dp else 1.dp,
+                                                    color = if (isProfilePic) WaterBlue.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.1f),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                )
                                                 .combinedClickable(
                                                     onClick = {
                                                         try {
-                                                            val authority = "${context.packageName}.fileprovider"
-                                                            val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
-                                                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                                val mimeType = if (isPhoto) "image/*" else if (isVideo) "video/*" else "application/pdf"
-                                                                setDataAndType(uri, mimeType)
-                                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                            if (isUrl) {
+                                                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(filePath))
+                                                                context.startActivity(browserIntent)
+                                                            } else if (isContentUri) {
+                                                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                                    setDataAndType(Uri.parse(filePath), "image/*")
+                                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                                }
+                                                                context.startActivity(Intent.createChooser(intent, "Open Photo"))
+                                                            } else if (file.exists()) {
+                                                                val authority = "${context.packageName}.fileprovider"
+                                                                val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+                                                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                                    val mimeType = if (isPhoto) "image/*" else if (isVideo) "video/*" else "application/pdf"
+                                                                    setDataAndType(uri, mimeType)
+                                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                                }
+                                                                context.startActivity(Intent.createChooser(intent, "Open File"))
+                                                            } else {
+                                                                showOptionsDialog = true
                                                             }
-                                                            context.startActivity(Intent.createChooser(intent, "Open File"))
                                                         } catch (e: Exception) {
-                                                            Toast.makeText(context, "Open failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                                            showOptionsDialog = true
                                                         }
                                                     },
                                                     onLongClick = {
@@ -1044,14 +1236,60 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         ) {
                                             Column {
                                                 if (isPhoto) {
-                                                    AsyncImage(
-                                                        model = file,
-                                                        contentDescription = displayName,
-                                                        contentScale = ContentScale.Crop,
+                                                    val imageModel: Any = remember(filePath) {
+                                                        when {
+                                                            isUrl -> filePath
+                                                            isContentUri -> Uri.parse(filePath)
+                                                            else -> if (file.exists()) file else filePath
+                                                        }
+                                                    }
+                                                    Box(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
-                                                            .height(180.dp)
-                                                    )
+                                                            .height(200.dp)
+                                                            .background(Color.Black.copy(alpha = 0.35f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        AsyncImage(
+                                                            model = ImageRequest.Builder(LocalContext.current)
+                                                                .data(imageModel)
+                                                                .crossfade(true)
+                                                                .memoryCachePolicy(CachePolicy.ENABLED)
+                                                                .diskCachePolicy(CachePolicy.ENABLED)
+                                                                .build(),
+                                                            contentDescription = displayName,
+                                                            contentScale = ContentScale.Crop,
+                                                            modifier = Modifier.fillMaxSize()
+                                                        )
+                                                        if (isProfilePic) {
+                                                            Surface(
+                                                                modifier = Modifier
+                                                                    .align(Alignment.TopStart)
+                                                                    .padding(8.dp),
+                                                                color = WaterBlue,
+                                                                shape = RoundedCornerShape(6.dp)
+                                                            ) {
+                                                                Row(
+                                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Default.AccountCircle,
+                                                                        contentDescription = null,
+                                                                        tint = Color.Black,
+                                                                        modifier = Modifier.size(13.dp)
+                                                                    )
+                                                                    Text(
+                                                                        text = "PROFILE PIC",
+                                                                        color = Color.Black,
+                                                                        fontSize = 10.sp,
+                                                                        fontWeight = FontWeight.Bold
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 } else if (isVideo) {
                                                     val thumbnailBitmap = rememberVideoThumbnail(file.absolutePath)
                                                     Box(
@@ -1124,15 +1362,27 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 ) {
                                                     Column(modifier = Modifier.weight(1f)) {
                                                         Text(displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                        Text("${file.length() / 1024} KB • Hold for options", color = Color.Gray, fontSize = 9.sp)
+                                                        val infoText = when {
+                                                            isProfilePic -> "Default Contact Profile Photo • Active"
+                                                            isUrl -> "Cloud Image • Hold for options"
+                                                            file.exists() -> "${file.length() / 1024} KB • Hold for options"
+                                                            else -> "Image attachment • Hold for options"
+                                                        }
+                                                        Text(infoText, color = Color.Gray, fontSize = 9.sp)
                                                     }
                                                     IconButton(
                                                         onClick = {
                                                             val newList = attachedFiles.filter { it != filePath }
-                                                            val updated = contact.copy(attachedFilesJson = org.json.JSONArray(newList).toString())
+                                                            val updated = if (isProfilePic) {
+                                                                contact.copy(photoUri = null, attachedFilesJson = org.json.JSONArray(newList).toString())
+                                                            } else {
+                                                                contact.copy(attachedFilesJson = org.json.JSONArray(newList).toString())
+                                                            }
                                                             viewModel.updateContact(updated)
                                                             selectedContact = updated
-                                                            try { file.delete() } catch (e: Exception) {}
+                                                            if (!isUrl && !isContentUri && file.exists()) {
+                                                                try { file.delete() } catch (_: Exception) {}
+                                                            }
                                                             Toast.makeText(context, "Attachment removed!", Toast.LENGTH_SHORT).show()
                                                         },
                                                         modifier = Modifier.size(24.dp)
@@ -1152,13 +1402,17 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 .combinedClickable(
                                                     onClick = {
                                                         try {
-                                                            val authority = "${context.packageName}.fileprovider"
-                                                            val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
-                                                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                                setDataAndType(uri, context.contentResolver.getType(uri) ?: "*/*")
-                                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                            if (file.exists()) {
+                                                                val authority = "${context.packageName}.fileprovider"
+                                                                val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+                                                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                                    setDataAndType(uri, context.contentResolver.getType(uri) ?: "*/*")
+                                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                                }
+                                                                context.startActivity(Intent.createChooser(intent, "Open File"))
+                                                            } else {
+                                                                showOptionsDialog = true
                                                             }
-                                                            context.startActivity(Intent.createChooser(intent, "Open File"))
                                                         } catch (e: Exception) {
                                                             Toast.makeText(context, "Open failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                                                         }
@@ -1174,7 +1428,7 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                Text("${file.length() / 1024} KB • Hold for options", color = Color.Gray, fontSize = 9.sp)
+                                                Text("${if (file.exists()) file.length() / 1024 else 0} KB • Hold for options", color = Color.Gray, fontSize = 9.sp)
                                             }
                                             IconButton(
                                                 onClick = {
@@ -1182,7 +1436,9 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     val updated = contact.copy(attachedFilesJson = org.json.JSONArray(newList).toString())
                                                     viewModel.updateContact(updated)
                                                     selectedContact = updated
-                                                    try { file.delete() } catch (e: Exception) {}
+                                                    if (file.exists()) {
+                                                        try { file.delete() } catch (_: Exception) {}
+                                                    }
                                                     Toast.makeText(context, "Attachment removed!", Toast.LENGTH_SHORT).show()
                                                 },
                                                 modifier = Modifier.size(24.dp)
@@ -1425,7 +1681,21 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 val datesJson = customDatesList.joinToString(";") { "${it.first}:${it.second}" }
                                 val fieldsJson = customFieldsList.joinToString(";") { "${it.first}:${it.second}" }
                                 
+                                val photoToSave = selectedAvatar.takeIf { it.isNotEmpty() }
                                 if (isEdit && selectedContact != null) {
+                                    val currentAttached = mutableListOf<String>()
+                                    if (selectedContact!!.attachedFilesJson.isNotEmpty()) {
+                                        try {
+                                            val arr = org.json.JSONArray(selectedContact!!.attachedFilesJson)
+                                            for (i in 0 until arr.length()) {
+                                                val itm = arr.getString(i)
+                                                if (itm.isNotBlank() && !currentAttached.contains(itm)) currentAttached.add(itm)
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                                    if (!photoToSave.isNullOrEmpty() && !currentAttached.contains(photoToSave)) {
+                                        currentAttached.add(0, photoToSave)
+                                    }
                                     val updated = selectedContact!!.copy(
                                         firstName = firstName.trim(),
                                         middleName = middleName.trim(),
@@ -1435,16 +1705,21 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         address = address.trim(),
                                         phone = phone.trim(),
                                         dobString = dobString.trim(),
-                                        photoUri = selectedAvatar.takeIf { it.isNotEmpty() },
+                                        photoUri = photoToSave,
                                         anniversaryString = anniversaryString.trim(),
                                         additionalFieldsJson = fieldsJson,
                                         additionalDatesJson = datesJson,
-                                        folder = selectedFolderOption
+                                        folder = selectedFolderOption,
+                                        attachedFilesJson = org.json.JSONArray(currentAttached).toString()
                                     )
                                     viewModel.updateContact(updated)
                                     selectedContact = updated
                                     Toast.makeText(context, "Contact details updated!", Toast.LENGTH_SHORT).show()
                                 } else {
+                                    val currentAttached = mutableListOf<String>()
+                                    if (!photoToSave.isNullOrEmpty()) {
+                                        currentAttached.add(photoToSave)
+                                    }
                                     viewModel.createContact(
                                         firstName = firstName.trim(),
                                         middleName = middleName.trim(),
@@ -1454,11 +1729,12 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         address = address.trim(),
                                         phone = phone.trim(),
                                         dobString = dobString.trim(),
-                                        photoUri = selectedAvatar.takeIf { it.isNotEmpty() },
+                                        photoUri = photoToSave,
                                         anniversaryString = anniversaryString.trim(),
                                         additionalFieldsJson = fieldsJson,
                                         additionalDatesJson = datesJson,
-                                        folder = selectedFolderOption
+                                        folder = selectedFolderOption,
+                                        attachedFilesJson = org.json.JSONArray(currentAttached).toString()
                                     )
                                     Toast.makeText(context, "Contact created in folder: $selectedFolderOption", Toast.LENGTH_SHORT).show()
                                 }
@@ -2750,9 +3026,47 @@ private fun copyUriToLocalFile(context: android.content.Context, uri: Uri, destF
     return com.example.util.StorageHelper.copyFileToInternalSandbox(context, uri)
 }
 
+private fun isPhotoPath(filePath: String): Boolean {
+    val lower = filePath.lowercase()
+    return lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("content://") ||
+            lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") ||
+            lower.endsWith(".webp") || lower.endsWith(".gif") || lower.contains("avatar") ||
+            lower.contains("photo") || lower.contains("profile")
+}
+
 private fun isPhotoFile(file: File): Boolean {
     val ext = file.extension.lowercase()
     return ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp" || ext == "gif"
+}
+
+private fun saveFileOrUrlToDownloads(context: android.content.Context, filePath: String, displayName: String): Boolean {
+    return try {
+        if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+            val mgr = context.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as? android.app.DownloadManager
+            if (mgr != null) {
+                val safeFileName = if (displayName.contains(".")) displayName else "$displayName.jpg"
+                val request = android.app.DownloadManager.Request(android.net.Uri.parse(filePath))
+                    .setTitle(displayName)
+                    .setDescription("Downloading photo")
+                    .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, safeFileName)
+                mgr.enqueue(request)
+                true
+            } else {
+                false
+            }
+        } else {
+            val file = File(filePath)
+            if (file.exists()) {
+                saveFileToDownloads(context, file, displayName)
+            } else {
+                false
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        false
+    }
 }
 
 private fun saveFileToDownloads(context: android.content.Context, sourceFile: File, displayName: String): Boolean {

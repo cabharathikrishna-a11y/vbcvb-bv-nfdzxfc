@@ -21,6 +21,10 @@ class TaskReminderReceiver : BroadcastReceiver() {
     private val CHANNEL_NAME = "Task Reminders"
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d("TaskReminderReceiver", "TaskReminderReceiver onReceive aborted: User is not logged in.")
+            return
+        }
         val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         if (prefs.getBoolean("master_silent_mode", false) || 
             (prefs.getBoolean("background_services_silent_mode", false) && prefs.getBoolean("app_is_backgrounded", false))) {

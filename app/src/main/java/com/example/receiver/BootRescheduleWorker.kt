@@ -13,6 +13,10 @@ class BootRescheduleWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(appContext)) {
+            Log.d("BootRescheduleWorker", "BootRescheduleWorker aborted: User is not logged in.")
+            return Result.success()
+        }
         Log.d("BootRescheduleWorker", "Starting rescheduled reminders and notifications work...")
         return try {
             val db = AppDatabase.getInstance(appContext)

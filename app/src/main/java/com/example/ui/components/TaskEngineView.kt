@@ -113,9 +113,9 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
     // Dropdown options state
     var showOptionsMenu by remember { mutableStateOf(false) }
-    var hideCompletedTasks by remember { mutableStateOf(false) }
-    var showTaskDetails by remember { mutableStateOf(false) }
-    var filterMode by remember { mutableStateOf("All") } // "All", "Task", "Habits", "Overdue"
+    val hideCompletedTasks by viewModel.taskHideCompleted.collectAsStateWithLifecycle()
+    val showTaskDetails by viewModel.taskShowDetails.collectAsStateWithLifecycle()
+    val filterMode by viewModel.taskFilterMode.collectAsStateWithLifecycle()
 
     androidx.activity.compose.BackHandler(enabled = showTaskEditorScreen || showTaskDetails) {
         if (showTaskEditorScreen) {
@@ -123,7 +123,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             editingTaskTarget = null
             viewModel.clearPendingTaskCreation()
         } else if (showTaskDetails) {
-            showTaskDetails = false
+            viewModel.setTaskShowDetails(false)
         }
     }
 
@@ -132,8 +132,8 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     var selectedList by remember(defaultTaskFolder) { mutableStateOf(defaultTaskFolder) }
 
     // Grouping & Sorting dynamic parameters (default Date to match user description)
-    var groupByMode by remember { mutableStateOf("Date") }
-    var sortByMode by remember { mutableStateOf("Date") }
+    val groupByMode by viewModel.taskGroupByMode.collectAsStateWithLifecycle()
+    val sortByMode by viewModel.taskSortByMode.collectAsStateWithLifecycle()
     var showGroupSortSheet by remember { mutableStateOf(false) }
     var expandedGroups by remember { mutableStateOf(mapOf<String, Boolean>()) }
 
@@ -660,7 +660,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 }
                             },
                             onClick = {
-                                showTaskDetails = !showTaskDetails
+                                viewModel.setTaskShowDetails(!showTaskDetails)
                                 showOptionsMenu = false
                             }
                         )
@@ -677,16 +677,61 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = if (hideCompletedTasks) "Show Completed" else "Hide Completed",
-                                        color = Color.White,
-                                        fontSize = 14.sp
-                                    )
+                                    Column {
+                                        Text(
+                                            text = if (hideCompletedTasks) "Show Completed Tasks" else "Hide Completed Tasks",
+                                            color = Color.White,
+                                            fontSize = 14.sp
+                                        )
+                                        Text(
+                                            text = if (hideCompletedTasks) "Completed tasks hidden & synced" else "All tasks visible & synced",
+                                            color = if (hideCompletedTasks) WaterBlue.copy(alpha = 0.8f) else Color.Gray,
+                                            fontSize = 10.sp
+                                        )
+                                    }
                                 }
                             },
                             onClick = {
-                                hideCompletedTasks = !hideCompletedTasks
+                                viewModel.setTaskHideCompleted(!hideCompletedTasks)
                                 showOptionsMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = WaterBlue,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = "Sync Settings & Drive",
+                                            color = Color.White,
+                                            fontSize = 14.sp
+                                        )
+                                        Text(
+                                            text = "Live multi-device & Google Drive",
+                                            color = Color.Gray,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                showOptionsMenu = false
+                                viewModel.syncSettingsAcrossDevicesAndDrive { success, msg ->
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        if (success) "Settings synced with Google Drive & live devices!" else msg,
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
                         )
                         
@@ -747,7 +792,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     modifier = Modifier
                         .clip(RoundedCornerShape(16.dp))
                         .background(if (isAllSelected) Color(0xFF1D2C42) else Color(0xFF161618))
-                        .clickable { filterMode = "All" }
+                        .clickable { viewModel.setTaskFilterMode("All") }
                         .padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
                     Text(
@@ -765,7 +810,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (isTaskSelected) Color(0xFF1D2C42) else Color(0xFF161618))
-                            .clickable { filterMode = if (isTaskSelected) "All" else "Task" }
+                            .clickable { viewModel.setTaskFilterMode(if (isTaskSelected) "All" else "Task") }
                             .padding(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Text(
@@ -784,7 +829,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (isHabitSelected) Color(0xFF1D2C42) else Color(0xFF161618))
-                            .clickable { filterMode = if (isHabitSelected) "All" else "Habits" }
+                            .clickable { viewModel.setTaskFilterMode(if (isHabitSelected) "All" else "Habits") }
                             .padding(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Text(
@@ -803,7 +848,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (isOverdueSelected) Color(0xFF1D2C42) else Color(0xFF161618))
-                            .clickable { filterMode = if (isOverdueSelected) "All" else "Overdue" }
+                            .clickable { viewModel.setTaskFilterMode(if (isOverdueSelected) "All" else "Overdue") }
                             .padding(horizontal = 14.dp, vertical = 6.dp)
                     ) {
                         Text(
@@ -1027,7 +1072,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
 
                         if (groupByMode == "None" || (expandedGroups[groupName] ?: true)) {
-                            items(tasksInGroup, key = { it.id }) { task ->
+                            itemsIndexed(tasksInGroup, key = { idx, task -> "${groupName}_${task.id}_$idx" }) { _, task ->
                                 val isSelected = selectedTaskIds.contains(task.id)
                                 Row(
                                     modifier = Modifier
@@ -2284,7 +2329,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         .weight(1f)
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(if (isSelected) Color(0xFF2E6FF3) else Color(0xFF161618))
-                                        .clickable { groupByMode = option }
+                                        .clickable { viewModel.setTaskGroupByMode(option) }
                                         .padding(vertical = 10.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -2319,7 +2364,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         .weight(1f)
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(if (isSelected) Color(0xFF2E6FF3) else Color(0xFF161618))
-                                        .clickable { sortByMode = option }
+                                        .clickable { viewModel.setTaskSortByMode(option) }
                                         .padding(vertical = 10.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -3836,7 +3881,7 @@ fun TaskEditorFullScreen(
                                         modifier = Modifier.fillMaxSize(),
                                         verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        items(subtasks, key = { it.id }) { sub ->
+                                        itemsIndexed(subtasks, key = { idx, sub -> "${sub.id}_$idx" }) { _, sub ->
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -6065,11 +6110,10 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     add(Calendar.DAY_OF_MONTH, 6)
                 }
                 val sdfStr = SimpleDateFormat("MMM d", Locale.getDefault())
-                val sdfYear = SimpleDateFormat("yyyy", Locale.getDefault())
-                "${sdfStr.format(startCal.time)} - ${sdfStr.format(endCal.time)}, ${sdfYear.format(endCal.time)}"
+                "${sdfStr.format(startCal.time)} - ${sdfStr.format(endCal.time)}"
             }
             CalendarViewMode.DAY -> {
-                val sdf = SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault())
+                val sdf = SimpleDateFormat("EEE, d MMM", Locale.getDefault())
                 sdf.format(selectedMonthCalendar.time)
             }
         }
@@ -6158,7 +6202,11 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             }
     ) {
         
-        // Navigation Header
+        // Navigation Header: Day view mode & filter on LEFT, compact date, navigation on RIGHT
+        var calendarFilterMode by remember { mutableStateOf("All") }
+        var filterMenuExpanded by remember { mutableStateOf(false) }
+        var viewMenuExpanded by remember { mutableStateOf(false) }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -6166,105 +6214,160 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = headerText,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.weight(1f, fill = false),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            // VIEW DROPDOWN BETWEEN MONTH YEAR AND TODAY
-            var expanded by remember { mutableStateOf(false) }
-            Box(
-                modifier = Modifier.wrapContentSize(Alignment.TopStart)
+            // LEFT: View mode selector (Day/Week/Month/Year) + Filter + Date
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f, fill = false)
             ) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF151515))
-                        .border(1.dp, Color(0xFF333333), RoundedCornerShape(8.dp))
-                        .clickable { expanded = true }
-                        .padding(horizontal = 8.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Text(
-                        text = calendarViewModeStr,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = WaterBlue
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Select View Mode",
-                        tint = WaterBlue,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.background(Color(0xFF222225))
-                ) {
-                    listOf("Year", "Month", "Week", "Day").forEach { mode ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = mode,
-                                    color = if (calendarViewModeStr == mode) WaterBlue else Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-                            },
-                            onClick = {
-                                viewModel.setCalendarViewModeStr(mode)
-                                expanded = false
-                            }
+                // View Mode Dropdown ("Day ▾")
+                Box {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF151515))
+                            .border(1.dp, WaterBlue.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .clickable { viewMenuExpanded = true }
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = calendarViewModeStr,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = WaterBlue
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Select View Mode",
+                            tint = WaterBlue,
+                            modifier = Modifier.size(15.dp)
                         )
                     }
+
+                    DropdownMenu(
+                        expanded = viewMenuExpanded,
+                        onDismissRequest = { viewMenuExpanded = false },
+                        modifier = Modifier.background(Color(0xFF222225))
+                    ) {
+                        listOf("Year", "Month", "Week", "Day").forEach { mode ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = mode,
+                                        color = if (calendarViewModeStr == mode) WaterBlue else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                },
+                                onClick = {
+                                    viewModel.setCalendarViewModeStr(mode)
+                                    viewMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
                 }
+
+                // Filter Dropdown ("All ▾", "Active", "Completed")
+                Box {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF151515))
+                            .border(1.dp, if (calendarFilterMode != "All") WaterBlue else Color(0xFF333333), RoundedCornerShape(8.dp))
+                            .clickable { filterMenuExpanded = true }
+                            .padding(horizontal = 7.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FilterList,
+                            contentDescription = "Filter",
+                            tint = if (calendarFilterMode != "All") WaterBlue else Color.Gray,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = calendarFilterMode,
+                            fontSize = 11.sp,
+                            fontWeight = if (calendarFilterMode != "All") FontWeight.Bold else FontWeight.Medium,
+                            color = if (calendarFilterMode != "All") WaterBlue else Color.LightGray
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = filterMenuExpanded,
+                        onDismissRequest = { filterMenuExpanded = false },
+                        modifier = Modifier.background(Color(0xFF222225))
+                    ) {
+                        listOf("All", "Active", "Completed").forEach { f ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = f,
+                                        color = if (calendarFilterMode == f) WaterBlue else Color.White,
+                                        fontWeight = if (calendarFilterMode == f) FontWeight.Bold else FontWeight.Normal,
+                                        fontSize = 12.sp
+                                    )
+                                },
+                                onClick = {
+                                    calendarFilterMode = f
+                                    filterMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Compact Date label
+                Text(
+                    text = headerText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // RIGHT: Navigation controls (< Today >)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 IconButton(
                     onClick = { navigate(-1) },
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowLeft,
                         contentDescription = "Previous",
                         tint = WaterBlue,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
-                
-                Spacer(modifier = Modifier.width(2.dp))
 
                 Button(
                     onClick = { selectedMonthCalendar = Calendar.getInstance() },
-                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f)),
+                    colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.07f)),
                     shape = RoundedCornerShape(6.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(28.dp)
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(26.dp)
                 ) {
                     Text("Today", color = WaterBlue, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
 
-                Spacer(modifier = Modifier.width(2.dp))
-
                 IconButton(
                     onClick = { navigate(1) },
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowRight,
                         contentDescription = "Next",
                         tint = WaterBlue,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -7165,12 +7268,13 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     CalendarViewMode.DAY -> {
                         val activeDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(selectedMonthCalendar.time)
                         val dayTasks = tasks.filter { it.dueDateString == activeDateStr }
+                        val filteredDayTasks = when (calendarFilterMode) {
+                            "Active" -> dayTasks.filter { !it.isCompleted }
+                            "Completed" -> dayTasks.filter { it.isCompleted }
+                            else -> dayTasks
+                        }
                         val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
                         val isToday = activeDateStr == todayStr
-
-                        // Day Header info matching screenshot 1 (TUE above, large 16 circle)
-                        val dayOfWeekLabel = SimpleDateFormat("EEE", Locale.getDefault()).format(selectedMonthCalendar.time).uppercase()
-                        val dayNumLabel = SimpleDateFormat("d", Locale.getDefault()).format(selectedMonthCalendar.time)
 
                         val scrollState = rememberScrollState()
 
@@ -7184,60 +7288,6 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         var showLateHours by remember { mutableStateOf(false) }
 
                         Column(modifier = Modifier.fillMaxSize()) {
-                            // Top Day Identifier block
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.padding(start = 12.dp)
-                                ) {
-                                    Text(
-                                        text = dayOfWeekLabel,
-                                        color = if (isToday) WaterBlue else Color.Gray,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isToday) WaterBlue else SurfaceCard),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = dayNumLabel,
-                                            color = if (isToday) Color.Black else Color.White,
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.width(16.dp))
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    val readableDate = SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault()).format(selectedMonthCalendar.time)
-                                    Text(
-                                        text = "DAILY TIMELINE",
-                                        color = WaterBlue,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp,
-                                        letterSpacing = 1.2.sp
-                                    )
-                                    Text(
-                                        text = readableDate,
-                                        color = Color.White,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-
                             val currentDayBirthdays = getContactBirthdaysForDate(contacts, selectedMonthCalendar.time)
                             val currentDayAnniversaries = getContactAnniversariesForDate(contacts, selectedMonthCalendar.time)
                             
@@ -7253,12 +7303,14 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             val currentDayHolidays = deduplicatedDayEvents.filter { it.isHolidayOrFestival }
                             val holidayNormTitles = currentDayHolidays.map { com.example.util.GoogleCalendarSyncHelper.normalizeEventTitle(it.title) }.toSet()
 
-                            if (currentDayHolidays.isNotEmpty()) {
-                                Column(
+                            // Compact chip banners for holidays, birthdays & anniversaries
+                            if (currentDayHolidays.isNotEmpty() || currentDayBirthdays.isNotEmpty() || currentDayAnniversaries.isNotEmpty()) {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     currentDayHolidays.forEach { holiday ->
                                         val isBdayEvent = holiday.title.contains("birthday", ignoreCase = true) ||
@@ -7267,99 +7319,59 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         val cardBorder = if (isBdayEvent) Color(0xFFEC407A).copy(alpha = 0.6f) else Color(0xFFAB47BC).copy(alpha = 0.6f)
                                         val iconText = if (isBdayEvent) "🎂" else "🎉"
                                         val displayName = com.example.util.GoogleCalendarSyncHelper.cleanDisplayEventTitle(holiday.title)
-
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = CardDefaults.cardColors(containerColor = cardBg),
-                                            border = BorderStroke(1.dp, cardBorder),
-                                            shape = RoundedCornerShape(10.dp)
+                                        Surface(
+                                            color = cardBg,
+                                            border = BorderStroke(0.5.dp, cardBorder),
+                                            shape = RoundedCornerShape(12.dp)
                                         ) {
                                             Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text(iconText, fontSize = 20.sp)
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Text(
-                                                    text = displayName,
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    fontSize = 15.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                                Text(iconText, fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(text = displayName, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                                             }
                                         }
                                     }
-                                }
-                            }
 
-                            if (currentDayBirthdays.isNotEmpty() || currentDayAnniversaries.isNotEmpty()) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
                                     currentDayBirthdays.forEach { contact ->
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = CardDefaults.cardColors(containerColor = Color(0xFF331524)),
-                                            border = BorderStroke(1.dp, Color(0xFFEC407A).copy(alpha = 0.6f)),
-                                            shape = RoundedCornerShape(10.dp)
+                                        Surface(
+                                            color = Color(0xFF331524),
+                                            border = BorderStroke(0.5.dp, Color(0xFFEC407A).copy(alpha = 0.6f)),
+                                            shape = RoundedCornerShape(12.dp)
                                         ) {
                                             Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("🎂", fontSize = 20.sp)
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Text(
-                                                    text = getContactDisplayName(contact),
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    fontSize = 15.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                                Text("🎂", fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(text = getContactDisplayName(contact), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                                             }
                                         }
                                     }
 
                                     currentDayAnniversaries.forEach { contact ->
-                                        Card(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = CardDefaults.cardColors(containerColor = Color(0xFF281830)),
-                                            border = BorderStroke(1.dp, Color(0xFFAB47BC).copy(alpha = 0.6f)),
-                                            shape = RoundedCornerShape(10.dp)
+                                        Surface(
+                                            color = Color(0xFF281830),
+                                            border = BorderStroke(0.5.dp, Color(0xFFAB47BC).copy(alpha = 0.6f)),
+                                            shape = RoundedCornerShape(12.dp)
                                         ) {
                                             Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("💍", fontSize = 20.sp)
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Text(
-                                                    text = getContactDisplayName(contact),
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    fontSize = 15.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                                Text("💍", fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(text = getContactDisplayName(contact), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                                             }
                                         }
                                     }
                                 }
                             }
 
-                            // ALL-DAY TASKS SECTION (Above the Timeline)
+                            // ALL-DAY TASKS SECTION (Above the Timeline) - Compact & Filter-aware
                             val dayAllDayEvents = deduplicatedDayEvents.filter { event ->
                                 event.isAllDay && !event.isHolidayOrFestival &&
                                 com.example.util.GoogleCalendarSyncHelper.normalizeEventTitle(event.title) !in holidayNormTitles &&
@@ -7370,24 +7382,24 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 }
                             }
                             val allEventNormTitles = holidayNormTitles + dayAllDayEvents.map { com.example.util.GoogleCalendarSyncHelper.normalizeEventTitle(it.title) }.toSet()
-                            val dayAllDayTasks = dayTasks.filter {
+                            val dayAllDayTasks = filteredDayTasks.filter {
                                 isTaskAllDay(it) && com.example.util.GoogleCalendarSyncHelper.normalizeEventTitle(it.title) !in allEventNormTitles
                             }
 
                             if (dayAllDayTasks.isNotEmpty() || dayAllDayEvents.isNotEmpty()) {
-                                Card(
+                                Surface(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF14141A)),
-                                    border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.35f)),
-                                    shape = RoundedCornerShape(12.dp)
+                                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                                    color = Color(0xFF14141A),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(0.5.dp, WaterBlue.copy(alpha = 0.3f))
                                 ) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(12.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)
                                     ) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -7395,82 +7407,53 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(26.dp)
-                                                        .clip(CircleShape)
-                                                        .background(WaterBlue.copy(alpha = 0.2f)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Event,
-                                                        contentDescription = null,
-                                                        tint = WaterBlue,
-                                                        modifier = Modifier.size(15.dp)
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.width(8.dp))
                                                 Text(
-                                                    text = "ALL-DAY TASKS",
+                                                    text = "ALL-DAY",
                                                     color = WaterBlue,
                                                     fontWeight = FontWeight.Bold,
-                                                    fontSize = 12.sp,
-                                                    letterSpacing = 1.sp
+                                                    fontSize = 10.sp,
+                                                    letterSpacing = 0.8.sp
                                                 )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(10.dp))
-                                                        .background(WaterBlue.copy(alpha = 0.2f))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "${dayAllDayTasks.size + dayAllDayEvents.size}",
-                                                        color = WaterBlue,
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                }
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "(${dayAllDayTasks.size + dayAllDayEvents.size})",
+                                                    color = Color.Gray,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
                                             }
 
                                             IconButton(
                                                 onClick = { viewModel.triggerTaskCreationRedirect(activeDateStr, null, "Inbox") },
-                                                modifier = Modifier.size(28.dp)
+                                                modifier = Modifier.size(20.dp)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.Add,
                                                     contentDescription = "Add All-Day Task",
                                                     tint = WaterBlue,
-                                                    modifier = Modifier.size(18.dp)
+                                                    modifier = Modifier.size(15.dp)
                                                 )
                                             }
                                         }
 
                                         // System Calendar all-day events
                                         dayAllDayEvents.forEach { event ->
-                                            Surface(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = Color(0xFF1E2430),
-                                                border = BorderStroke(0.5.dp, Color(0xFF81D4FA).copy(alpha = 0.4f))
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text("📅", fontSize = 16.sp)
-                                                    Spacer(modifier = Modifier.width(10.dp))
-                                                    Text(
-                                                        text = com.example.util.GoogleCalendarSyncHelper.cleanDisplayEventTitle(event.title),
-                                                        color = Color.White,
-                                                        fontSize = 13.sp,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
+                                                Text("📅", fontSize = 11.sp)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = com.example.util.GoogleCalendarSyncHelper.cleanDisplayEventTitle(event.title),
+                                                    color = Color.White,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
                                             }
                                         }
 
@@ -7482,82 +7465,51 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 else -> WaterBlue
                                             }
 
-                                            Surface(
+                                            Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .clickable { selectedTaskForEdit = task },
-                                                shape = RoundedCornerShape(if (task.isCompleted) 6.dp else 8.dp),
-                                                color = if (task.isCompleted) Color(0xFF141416) else Color(0xFF1C1C24),
-                                                border = BorderStroke(
-                                                    0.5.dp,
-                                                    if (task.isCompleted) Color.DarkGray.copy(alpha = 0.3f) else priorityColor.copy(alpha = 0.4f)
-                                                )
+                                                    .clickable { selectedTaskForEdit = task }
+                                                    .padding(vertical = 1.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Row(
+                                                Checkbox(
+                                                    checked = task.isCompleted,
+                                                    onCheckedChange = { checked ->
+                                                        viewModel.updateTask(task.copy(isCompleted = checked))
+                                                    },
+                                                    colors = CheckboxDefaults.colors(
+                                                        checkedColor = WaterBlue,
+                                                        uncheckedColor = Color.Gray
+                                                    ),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(5.dp))
+                                                Box(
                                                     modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(horizontal = if (task.isCompleted) 6.dp else 8.dp, vertical = if (task.isCompleted) 4.dp else 8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Checkbox(
-                                                        checked = task.isCompleted,
-                                                        onCheckedChange = { checked ->
-                                                            viewModel.updateTask(task.copy(isCompleted = checked))
-                                                        },
-                                                        colors = CheckboxDefaults.colors(
-                                                            checkedColor = WaterBlue,
-                                                            uncheckedColor = Color.Gray
-                                                        ),
-                                                        modifier = Modifier.size(if (task.isCompleted) 18.dp else 24.dp)
+                                                        .size(5.dp)
+                                                        .clip(CircleShape)
+                                                        .background(priorityColor)
+                                                )
+                                                Spacer(modifier = Modifier.width(5.dp))
+                                                Text(
+                                                    text = task.title,
+                                                    color = if (task.isCompleted) Color.Gray else Color.White,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = if (task.isCompleted) FontWeight.Normal else FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null
+                                                    ),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                if (task.listCategory.isNotBlank() && task.listCategory != "Inbox") {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = task.listCategory,
+                                                        color = Color.Gray,
+                                                        fontSize = 9.sp
                                                     )
-                                                    Spacer(modifier = Modifier.width(if (task.isCompleted) 4.dp else 8.dp))
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(if (task.isCompleted) 4.dp else 6.dp)
-                                                            .clip(CircleShape)
-                                                            .background(priorityColor)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(if (task.isCompleted) 4.dp else 6.dp))
-                                                    Column(modifier = Modifier.weight(1f)) {
-                                                        Text(
-                                                            text = task.title,
-                                                            color = if (task.isCompleted) Color.Gray else Color.White,
-                                                            fontSize = if (task.isCompleted) 11.5.sp else 13.sp,
-                                                            fontWeight = if (task.isCompleted) FontWeight.Medium else FontWeight.SemiBold,
-                                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null
-                                                            )
-                                                        )
-                                                        val cleanNotes = task.description
-                                                            .replace(Regex("""\[[^\]]+\]"""), "")
-                                                            .trim()
-                                                        if (cleanNotes.isNotBlank()) {
-                                                            Text(
-                                                                text = cleanNotes,
-                                                                color = Color.Gray,
-                                                                fontSize = 11.sp,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                        }
-                                                    }
-
-                                                    if (task.listCategory.isNotBlank() && task.listCategory != "Inbox") {
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .clip(RoundedCornerShape(4.dp))
-                                                                .background(Color.White.copy(alpha = 0.1f))
-                                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                        ) {
-                                                            Text(
-                                                                text = task.listCategory,
-                                                                color = Color.LightGray,
-                                                                fontSize = 9.sp,
-                                                                fontWeight = FontWeight.Medium
-                                                            )
-                                                        }
-                                                    }
                                                 }
                                             }
                                         }
@@ -7590,17 +7542,17 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                                     // 1. "Above Wake-Up Time" button if there are early hours and they are not shown yet
                                     if (!showEarlyHours && wakeUpHour > 0) {
-                                        Card(
+                                        Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                                .padding(horizontal = 12.dp, vertical = 2.dp)
                                                 .clickable { showEarlyHours = true },
-                                            colors = CardDefaults.cardColors(containerColor = Color(0xFF09090C)),
-                                            border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.3f)),
-                                            shape = RoundedCornerShape(12.dp)
+                                            color = Color(0xFF0D0D12),
+                                            border = BorderStroke(0.5.dp, WaterBlue.copy(alpha = 0.3f)),
+                                            shape = RoundedCornerShape(8.dp)
                                         ) {
                                             Row(
-                                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.Center
                                             ) {
@@ -7608,14 +7560,14 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     imageVector = Icons.Default.KeyboardArrowUp,
                                                     contentDescription = "Show earlier hours",
                                                     tint = WaterBlue,
-                                                    modifier = Modifier.size(18.dp)
+                                                    modifier = Modifier.size(15.dp)
                                                 )
-                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
-                                                    text = "Show hours before Wake-Up Time ($wakeUpTime) [ABOVE ALL TIMES]",
-                                                    color = Color.White,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.SemiBold
+                                                    text = "Show hours before $wakeUpTime",
+                                                    color = Color.LightGray,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium
                                                 )
                                             }
                                         }
@@ -7627,7 +7579,7 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     val lateHours = if (showLateHours) ((sleepHour + 1)..23).toList() else emptyList()
                                     val hoursToRender = earlyHours + coreHours + lateHours
 
-                                    val hourHeight = 64.dp
+                                    val hourHeight = 44.dp
                                     val totalGridHeight = hourHeight * hoursToRender.size
 
                                     Box(
@@ -7651,15 +7603,15 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     // Time Label on Left
                                                     Box(
                                                         modifier = Modifier
-                                                            .width(64.dp)
+                                                            .width(50.dp)
                                                             .fillMaxHeight()
-                                                            .padding(end = 8.dp, top = 4.dp),
+                                                            .padding(end = 6.dp, top = 2.dp),
                                                         contentAlignment = Alignment.TopEnd
                                                     ) {
                                                         Text(
                                                             text = if (hrInt == 0) tzOffset else hrStr,
                                                             color = Color.Gray,
-                                                            fontSize = 11.sp,
+                                                            fontSize = 10.5.sp,
                                                             fontWeight = if (hrInt == 0) FontWeight.Bold else FontWeight.Medium
                                                         )
                                                     }
@@ -7684,15 +7636,15 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         BoxWithConstraints(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .padding(start = 64.dp)
+                                                .padding(start = 50.dp)
                                         ) {
                                             val firstRenderedHour = hoursToRender.firstOrNull() ?: 0
 
                                             var draggingTaskId by remember { mutableStateOf<Int?>(null) }
                                             var dragOffsetPx by remember { mutableStateOf(0f) }
 
-                                            // Extract and parse valid timed tasks
-                                            val activeDateTasksWithTimes = dayTasks.mapNotNull { task ->
+                                            // Extract and parse valid timed tasks (filter-aware)
+                                            val activeDateTasksWithTimes = filteredDayTasks.mapNotNull { task ->
                                                 val timeParts = parseTaskTime(task.description)
                                                 if (timeParts != null) {
                                                     val (startHour, startMinute) = timeParts
@@ -7744,13 +7696,13 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 val maxColAmongOverlaps = overlappingTasks.map { taskToColumn[it.first] ?: 0 }.maxOrNull() ?: 0
                                                 val numSlices = maxColAmongOverlaps + 1
 
-                                                val trackWidth = maxWidth - 24.dp
+                                                val trackWidth = maxWidth - 16.dp
                                                 val cardWidth = trackWidth / numSlices
-                                                val leftOffset = 8.dp + cardWidth * colIdx
+                                                val leftOffset = 4.dp + cardWidth * colIdx
 
                                                 val relativeStartMinutes = (startHour - firstRenderedHour) * 60 + startMinute
                                                 val topOffsetDp = (relativeStartMinutes / 60f) * hourHeight.value
-                                                val heightDp = (durationMins / 60f) * hourHeight.value
+                                                val heightDp = maxOf((durationMins / 60f) * hourHeight.value, 32f)
 
                                                 val isDragging = task.id == draggingTaskId
                                                 val dragOffsetDp = if (isDragging) {
@@ -7858,19 +7810,19 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                         BorderStroke(1.5.dp, WaterBlue)
                                                     } else if (task.isCompleted) {
                                                         null
-                                                     } else {
-                                                         BorderStroke(0.5.dp, Color.Gray.copy(alpha = 0.3f))
-                                                     }
+                                                    } else {
+                                                        BorderStroke(0.5.dp, Color.Gray.copy(alpha = 0.3f))
+                                                    }
                                                 ) {
                                                     Row(
                                                         modifier = Modifier
                                                             .fillMaxSize()
-                                                            .padding(if (task.isCompleted) 4.dp else 8.dp),
+                                                            .padding(horizontal = 6.dp, vertical = 2.dp),
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
                                                         Box(
                                                             modifier = Modifier
-                                                                .size(8.dp)
+                                                                .size(6.dp)
                                                                 .clip(CircleShape)
                                                                 .background(
                                                                     when (task.priority.uppercase()) {
@@ -7880,34 +7832,34 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                                     }
                                                                 )
                                                         )
-                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Spacer(modifier = Modifier.width(6.dp))
                                                         Column(modifier = Modifier.weight(1f)) {
-                                                            if (heightDp >= 32) {
+                                                            if (heightDp >= 44) {
                                                                 Text(
                                                                     text = liveTimeRangeText,
                                                                     color = WaterBlue.copy(alpha = 0.9f),
                                                                     fontWeight = FontWeight.Bold,
-                                                                    fontSize = 10.sp,
+                                                                    fontSize = 9.5.sp,
                                                                     modifier = Modifier.padding(bottom = 1.dp)
                                                                 )
                                                             }
                                                             Text(
                                                                 text = task.title,
                                                                 color = if (task.isCompleted) Color.Gray else Color.White,
-                                                                fontWeight = FontWeight.Bold,
-                                                                fontSize = 12.sp,
-                                                                maxLines = if (heightDp >= 50) 2 else 1,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                fontSize = 11.5.sp,
+                                                                maxLines = if (heightDp >= 48) 2 else 1,
                                                                 overflow = TextOverflow.Ellipsis,
                                                                 style = MaterialTheme.typography.bodySmall.copy(
                                                                     textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null
                                                                 )
                                                             )
-                                                            if (task.description.isNotEmpty() && heightDp >= 50) {
+                                                            if (task.description.isNotEmpty() && heightDp >= 52) {
                                                                 Text(
                                                                     text = task.description.replace(Regex("""\[[^\]]+\]"""), "").trim(),
                                                                     color = Color.Gray,
-                                                                    fontSize = 10.sp,
-                                                                    maxLines = if (heightDp >= 60) 2 else 1,
+                                                                    fontSize = 9.5.sp,
+                                                                    maxLines = 1,
                                                                     overflow = TextOverflow.Ellipsis
                                                                 )
                                                             }
@@ -7951,17 +7903,17 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                                     // 3. "Below Sleep Time" button if there are late hours and they are not shown yet
                                     if (!showLateHours && sleepHour < 23) {
-                                        Card(
+                                        Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                                                .padding(horizontal = 12.dp, vertical = 2.dp)
                                                 .clickable { showLateHours = true },
-                                            colors = CardDefaults.cardColors(containerColor = Color(0xFF09090C)),
-                                            border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.3f)),
-                                            shape = RoundedCornerShape(12.dp)
+                                            color = Color(0xFF0D0D12),
+                                            border = BorderStroke(0.5.dp, WaterBlue.copy(alpha = 0.3f)),
+                                            shape = RoundedCornerShape(8.dp)
                                         ) {
                                             Row(
-                                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.Center
                                             ) {
@@ -7969,34 +7921,39 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     imageVector = Icons.Default.KeyboardArrowDown,
                                                     contentDescription = "Show later hours",
                                                     tint = WaterBlue,
-                                                    modifier = Modifier.size(18.dp)
+                                                    modifier = Modifier.size(15.dp)
                                                 )
-                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
-                                                    text = "Show hours after Sleep Time ($sleepTime) [MORE THAN END TIME]",
-                                                    color = Color.White,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.SemiBold
+                                                    text = "Show hours after $sleepTime",
+                                                    color = Color.LightGray,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium
                                                 )
                                             }
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(24.dp))
+                                    Spacer(modifier = Modifier.height(16.dp))
                                 }
-                            }
 
-                            Button(
-                                onClick = { viewModel.triggerTaskCreationRedirect(activeDateStr, null, "Inbox") },
-                                colors = ButtonDefaults.buttonColors(containerColor = WaterBlue),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Task for $activeDateStr", color = Color.Black, fontWeight = FontWeight.Bold)
+                                // Floating Action Button for task creation with minimal visual footprint
+                                FloatingActionButton(
+                                    onClick = { viewModel.triggerTaskCreationRedirect(activeDateStr, null, "Inbox") },
+                                    containerColor = WaterBlue,
+                                    contentColor = Color.Black,
+                                    shape = CircleShape,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(end = 16.dp, bottom = 16.dp)
+                                        .size(48.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Add Task for $activeDateStr",
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
                             }
                         }
                     }

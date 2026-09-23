@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -1744,7 +1745,7 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(combinedList, key = { it.id }) { item ->
+                            itemsIndexed(combinedList, key = { idx, item -> "${item.id}_$idx" }) { _, item ->
                                 val dateStr = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date(item.timestamp))
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1869,7 +1870,7 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(filteredTxs, key = { it.id }) { t ->
+                            itemsIndexed(filteredTxs, key = { idx, t -> "${t.id}_$idx" }) { _, t ->
                                 val dateStr = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date(t.timestamp))
                                 val memberName = familyMembers.find { it.id == t.memberId }?.name ?: "Unknown"
                                 val fromAccName = accounts.find { it.id == t.fromAccountId }?.name ?: t.fromCategory ?: "None"

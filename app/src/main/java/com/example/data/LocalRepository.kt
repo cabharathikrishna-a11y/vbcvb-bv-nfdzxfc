@@ -433,14 +433,17 @@ class LocalRepository(val db: AppDatabase, val context: android.content.Context)
     }
 
     suspend fun insertKeepNote(note: KeepNote): Long = withContext(NonCancellable) {
+        com.example.util.DeletedKeepNoteLogHelper.removeDeletedNoteFromLog(context, note.title, note.content)
         keepNoteDao.insertKeepNote(note)
     }
 
     suspend fun updateKeepNote(note: KeepNote) = withContext(NonCancellable) {
+        com.example.util.DeletedKeepNoteLogHelper.removeDeletedNoteFromLog(context, note.title, note.content)
         keepNoteDao.updateKeepNote(note)
     }
 
     suspend fun deleteKeepNote(note: KeepNote) = withContext(NonCancellable) {
+        com.example.util.DeletedKeepNoteLogHelper.logDeletedNote(context, note.title, note.content)
         keepNoteDao.deleteKeepNote(note)
     }
 

@@ -45,6 +45,8 @@ fun GoogleDriveSyncView(
     var accountEmail by remember { mutableStateOf(prefs.getString("selected_file_backup_account", null) ?: "Signed In User") }
     var hasPermission by remember { mutableStateOf(GoogleDriveSyncManager.hasDrivePermission(context)) }
 
+    val syncStatus by viewModel.driveSyncStatus.collectAsState()
+
     var isSyncing by remember { mutableStateOf(false) }
     var syncMessage by remember { mutableStateOf("Ready to sync") }
     var lastSyncTime by remember { mutableStateOf(prefs.getString("last_gdrive_sync_timestamp", "Never") ?: "Never") }
@@ -101,15 +103,6 @@ fun GoogleDriveSyncView(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = Color.White
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { viewModel.navigateTo(Screen.OBSIDIAN_ARCHITECTURE) }) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = "Obsidian Architecture",
-                            tint = Color(0xFF38BDF8)
                         )
                     }
                 },
@@ -247,13 +240,75 @@ fun GoogleDriveSyncView(
                     )
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    if (isSyncing) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    if (syncStatus.isRunning) {
+                        Surface(
+                            color = Color(0xFF0F172A),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFF818CF8).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            CircularProgressIndicator(color = Color(0xFF818CF8), modifier = Modifier.size(24.dp))
-                            Text(text = syncMessage, color = Color.White, fontSize = 13.sp)
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color(0xFF818CF8)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "${syncStatus.operationType}: ${syncStatus.phase}",
+                                            color = Color(0xFF818CF8),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = "${syncStatus.progress}%",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+
+                                LinearProgressIndicator(
+                                    progress = { (syncStatus.progress / 100f).coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                    color = Color(0xFF818CF8),
+                                    trackColor = Color(0xFF334155)
+                                )
+
+                                Text(
+                                    text = syncStatus.statusMessage,
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 11.sp
+                                )
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudSync,
+                                        contentDescription = null,
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Background service active with silent notifications — safe to close app",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
                         }
                     } else {
                         Row(
@@ -263,31 +318,11 @@ fun GoogleDriveSyncView(
                             // Push Backup Button
                             Button(
                                 onClick = {
-                                    scope.launch {
-                                        isSyncing = true
-                                        syncMessage = "Uploading App Vault to Google Drive..."
-                                        addLog("Initiating Push Backup to Google Drive...")
-
-                                        try {
-                                            val db = viewModel.appDatabase
-                                            val (success, msg) = GoogleDriveSyncManager.backupAllAppData(context, db)
-                                            if (success) {
-                                                val nowStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                                                lastSyncTime = nowStr
-                                                prefs.edit().putString("last_gdrive_sync_timestamp", nowStr).apply()
-                                                addLog("Push Backup Success: $msg")
-                                                Toast.makeText(context, "Vault Backed Up to Drive! ☁️", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                addLog("Push Backup Result: $msg")
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                            }
-                                        } catch (e: Exception) {
-                                            addLog("Push Backup Error: ${e.message}")
-                                        } finally {
-                                            isSyncing = false
-                                        }
-                                    }
+                                    addLog("Triggering Push Backup background task...")
+                                    viewModel.triggerGoogleDriveBackup(context)
+                                    Toast.makeText(context, "Cloud Backup started in background ☁️", Toast.LENGTH_SHORT).show()
                                 },
+                                enabled = !syncStatus.isRunning,
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF818CF8)),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
@@ -300,30 +335,11 @@ fun GoogleDriveSyncView(
                             // Pull Restore Button
                             OutlinedButton(
                                 onClick = {
-                                    scope.launch {
-                                        isSyncing = true
-                                        syncMessage = "Restoring App Vault from Google Drive..."
-                                        addLog("Initiating Pull Restore from Google Drive...")
-
-                                        try {
-                                            val db = viewModel.appDatabase
-                                            val (success, msg) = GoogleDriveSyncManager.restoreAllAppData(context, db)
-                                            if (success) {
-                                                val nowStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                                                lastSyncTime = nowStr
-                                                addLog("Pull Restore Success: $msg")
-                                                Toast.makeText(context, "Vault Restored from Drive! 📥", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                addLog("Pull Restore Result: $msg")
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                            }
-                                        } catch (e: Exception) {
-                                            addLog("Pull Restore Error: ${e.message}")
-                                        } finally {
-                                            isSyncing = false
-                                        }
-                                    }
+                                    addLog("Triggering Pull Restore background task...")
+                                    viewModel.triggerGoogleDriveRestore(context)
+                                    Toast.makeText(context, "Cloud Restore started in background 📥", Toast.LENGTH_SHORT).show()
                                 },
+                                enabled = !syncStatus.isRunning,
                                 border = BorderStroke(1.dp, Color(0xFF34D399)),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
@@ -374,29 +390,11 @@ fun GoogleDriveSyncView(
 
                     Button(
                         onClick = {
-                            scope.launch {
-                                isSyncing = true
-                                syncMessage = "Consolidating folders and cleaning old copies on Drive..."
-                                addLog("Starting Google Drive Single-Vault Consolidation & Cleanup...")
-                                try {
-                                    val (success, msg) = GoogleDriveSyncManager.manageAndCleanDriveAppData(context)
-                                    if (success) {
-                                        addLog(msg)
-                                        Toast.makeText(context, "Drive Vault Cleaned & Consolidated! 🧹", Toast.LENGTH_LONG).show()
-                                        // Refresh files
-                                        val (_, files) = GoogleDriveSyncManager.listGoogleDriveFiles(context, parentId = null)
-                                        driveFiles = files
-                                    } else {
-                                        addLog("Drive Cleanup Result: $msg")
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                } catch (e: Exception) {
-                                    addLog("Cleanup Error: ${e.message}")
-                                } finally {
-                                    isSyncing = false
-                                }
-                            }
+                            addLog("Triggering Drive Vault Consolidation & Cleanup background task...")
+                            viewModel.triggerGoogleDriveCleanVault(context)
+                            Toast.makeText(context, "Drive cleanup started in background 🧹", Toast.LENGTH_SHORT).show()
                         },
+                        enabled = !syncStatus.isRunning,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()

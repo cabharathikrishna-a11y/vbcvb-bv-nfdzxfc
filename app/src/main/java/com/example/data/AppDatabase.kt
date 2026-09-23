@@ -210,6 +210,12 @@ interface HabitDao {
     @Query("SELECT * FROM habits ORDER BY orderIndex ASC, id ASC")
     fun getAllHabits(): Flow<List<Habit>>
 
+    @Query("SELECT * FROM habits ORDER BY orderIndex ASC, id ASC")
+    suspend fun getAllHabitsDirect(): List<Habit>
+
+    @Query("SELECT * FROM habits WHERE id = :id LIMIT 1")
+    suspend fun getHabitById(id: Int): Habit?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHabit(habit: Habit): Long
 
@@ -225,6 +231,15 @@ interface HabitDao {
 
     @Query("SELECT * FROM habit_completions")
     fun getAllCompletions(): Flow<List<HabitCompletion>>
+
+    @Query("SELECT * FROM habit_completions")
+    suspend fun getAllCompletionsDirect(): List<HabitCompletion>
+
+    @Query("SELECT * FROM habit_completions WHERE dateString = :dateString")
+    suspend fun getCompletionsForDateDirect(dateString: String): List<HabitCompletion>
+
+    @Query("SELECT * FROM habit_completions WHERE habitId = :habitId AND dateString = :dateString LIMIT 1")
+    suspend fun getCompletionDirect(habitId: Int, dateString: String): HabitCompletion?
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCompletion(completion: HabitCompletion)
@@ -274,6 +289,9 @@ interface DeadlineDao {
     @Query("SELECT * FROM deadlines ORDER BY isCompleted ASC, targetTimestamp ASC")
     fun getAllDeadlines(): Flow<List<Deadline>>
 
+    @Query("SELECT * FROM deadlines ORDER BY isCompleted ASC, targetTimestamp ASC")
+    suspend fun getAllDeadlinesDirect(): List<Deadline>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDeadline(deadline: Deadline): Long
 
@@ -303,6 +321,9 @@ interface FinancialGoalDao {
 interface ContactDao {
     @Query("SELECT * FROM contacts ORDER BY firstName ASC, lastName ASC")
     fun getAllContacts(): Flow<List<Contact>>
+
+    @Query("SELECT * FROM contacts ORDER BY firstName ASC, lastName ASC")
+    suspend fun getAllContactsDirect(): List<Contact>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertContact(contact: Contact): Long

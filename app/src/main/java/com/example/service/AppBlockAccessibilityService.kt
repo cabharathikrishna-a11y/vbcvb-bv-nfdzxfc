@@ -46,6 +46,9 @@ class AppBlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
+            return
+        }
         try {
             val packageName = event.packageName?.toString() ?: return
 

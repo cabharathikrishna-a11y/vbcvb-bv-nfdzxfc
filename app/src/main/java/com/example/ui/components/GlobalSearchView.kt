@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,7 +52,7 @@ import java.util.Locale
 import java.text.SimpleDateFormat
 
 enum class SearchFilter {
-    ALL, TASKS, HABITS, JOURNALS, CONTACTS, FINANCES, NOTES
+    ALL, TASKS, HABITS, JOURNALS, CONTACTS, FINANCES, NOTES, SETTINGS
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -93,7 +94,7 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 },
                 placeholder = {
                     Text(
-                        text = "Search tasks, habits, journals...",
+                        text = "Search tasks, habits, settings...",
                         fontSize = 13.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -342,47 +343,13 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = "Start typing keywords to search across tasks, habits, journals, contacts, finances, and notes",
+                            text = "Start typing keywords to search across tasks, habits, journals, contacts, finances, notes, and settings",
                             color = Color.Gray,
                             fontSize = 12.sp,
                             lineHeight = 18.sp,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        // Interactive quick filter shortcut chips
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            listOf(
-                                "Tasks" to SearchFilter.TASKS,
-                                "Habits" to SearchFilter.HABITS,
-                                "Journals" to SearchFilter.JOURNALS,
-                                "Contacts" to SearchFilter.CONTACTS
-                            ).forEach { (title, filter) ->
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = Color(0xFF161824),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .clickable {
-                                            activeFilter = filter
-                                        }
-                                ) {
-                                    Text(
-                                        text = title,
-                                        color = Color(0xFFB0B8C6),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -411,8 +378,9 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 val finalContacts = if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.CONTACTS) results.matchingContacts else emptyList()
                 val finalFinances = if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.FINANCES) results.matchingFinances else emptyList()
                 val finalNotes = if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.NOTES) results.matchingNotes else emptyList()
+                val finalSettings = if (activeFilter == SearchFilter.ALL || activeFilter == SearchFilter.SETTINGS) results.matchingSettings else emptyList()
 
-                val totalCount = finalTasks.size + finalHabits.size + finalJournals.size + finalContacts.size + finalFinances.size + finalNotes.size
+                val totalCount = finalTasks.size + finalHabits.size + finalJournals.size + finalContacts.size + finalFinances.size + finalNotes.size + finalSettings.size
 
                 if (totalCount == 0) {
                     Box(
@@ -578,6 +546,25 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 NoteSearchItem(note = note, onOpen = {
                                     viewModel.selectNote(note.id)
                                 })
+                            }
+                        }
+
+                        // SETTINGS & CONFIGURATION BLOCK
+                        if (finalSettings.isNotEmpty()) {
+                            item {
+                                SectionHeader(title = "SETTINGS & PREFERENCES MATCHING", count = finalSettings.size)
+                            }
+                            itemsIndexed(finalSettings, key = { idx, setting -> "setting_${setting.pageId}_$idx" }) { _, setting ->
+                                SettingSearchItem(
+                                    setting = setting,
+                                    onClick = {
+                                        viewModel.navigateToSetting(
+                                            pageId = setting.pageId,
+                                            scrollPercent = setting.scrollPercent,
+                                            highlightTitle = setting.title
+                                        )
+                                    }
+                                )
                             }
                         }
                     }
@@ -1386,6 +1373,144 @@ fun NoteSearchItem(note: KeepNote, onOpen: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun SettingSearchItem(
+    setting: com.example.data.SettingSearchResult,
+    onClick: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color(0xFF282A36)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .testTag("setting_search_item_${setting.pageId}")
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val iconVector = when (setting.iconName) {
+                "tab" -> Icons.Default.ViewAgenda
+                "data_usage" -> Icons.Default.DataUsage
+                "notifications" -> Icons.Default.Notifications
+                "water" -> Icons.Default.WaterDrop
+                "info" -> Icons.Default.Info
+                "battery" -> Icons.Default.BatteryChargingFull
+                "refresh" -> Icons.Default.Refresh
+                "face" -> Icons.Default.Face
+                "backup" -> Icons.Default.CloudSync
+                "timer" -> Icons.Default.Timer
+                "volume" -> Icons.Default.VolumeUp
+                "list" -> Icons.Default.Checklist
+                "calendar" -> Icons.Default.CalendarToday
+                "habits" -> Icons.Default.Bolt
+                "alarm" -> Icons.Default.Alarm
+                "countdown" -> Icons.Default.HourglassBottom
+                "journal" -> Icons.Default.MenuBook
+                "contacts" -> Icons.Default.Contacts
+                "merge" -> Icons.Default.CallMerge
+                "folder" -> Icons.Default.Folder
+                "monetization" -> Icons.Default.AccountBalanceWallet
+                "lock" -> Icons.Default.Lock
+                "block" -> Icons.Default.Block
+                "check_circle" -> Icons.Default.CheckCircle
+                "person" -> Icons.Default.Person
+                "share" -> Icons.Default.Share
+                "fitness" -> Icons.Default.FitnessCenter
+                "security" -> Icons.Default.Security
+                "keyboard" -> Icons.Default.Keyboard
+                else -> Icons.Default.Settings
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(WaterBlue.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = iconVector,
+                    contentDescription = null,
+                    tint = WaterBlue,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF1E2838))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = setting.categoryName.uppercase(),
+                            color = WaterBlue,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+
+                    if (setting.scrollPercent > 0.4f) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF2E2416))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "DEEP OPTION",
+                                color = Color(0xFFFFB74D),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = setting.title,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Text(
+                    text = setting.subtitle,
+                    color = Color.LightGray,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Open Setting",
+                tint = Color.Gray,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

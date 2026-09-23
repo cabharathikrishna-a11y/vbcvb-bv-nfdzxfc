@@ -131,13 +131,13 @@ object SmartUpdateManager {
                 var patchMd5: String? = null
                 var isForceUpdate = false
 
-                // 1. Try Firebase RTDB SDK query with a 3.5s timeout
+                // 1. Try Firebase RTDB SDK query with a fast 2.0s timeout
                 if (dbUrl.isNotEmpty()) {
                     try {
                         val database = FirebaseDatabase.getInstance(dbUrl)
                         val ref = database.getReference("UPDATE_CONFIG")
 
-                        val snapshot = withTimeoutOrNull(3500L) {
+                        val snapshot = withTimeoutOrNull(2000L) {
                             suspendCoroutine<DataSnapshot?> { continuation ->
                                 ref.addListenerForSingleValueEvent(object : ValueEventListener {
                                     override fun onDataChange(s: DataSnapshot) {
@@ -151,18 +151,15 @@ object SmartUpdateManager {
                         }
 
                         if (snapshot != null && snapshot.exists()) {
-                            cloudVersion = snapshot.child("Version_no").getValue(Int::class.java) ?: -1
-                            fullApkUrl = snapshot.child("Full_Apk_Url").getValue(String::class.java) ?: ""
+                            cloudVersion = snapshot.child("Version_no").getValue(Int::class.java) 
+                                ?: snapshot.child("versionId").getValue(Int::class.java) 
+                                ?: -1
+                            fullApkUrl = snapshot.child("Full_Apk_Url").getValue(String::class.java) 
+                                ?: snapshot.child("apkFileId").getValue(String::class.java) 
+                                ?: ""
                             patchFileUrl = snapshot.child("Patch_File_Url").getValue(String::class.java)
                             patchMd5 = snapshot.child("Patch_MD5").getValue(String::class.java)
                             isForceUpdate = snapshot.child("Is_Force_Update").getValue(Boolean::class.java) ?: false
-                        } else if (snapshot != null && !snapshot.exists()) {
-                            // Seed default config for reference asynchronously
-                            ref.child("Version_no").setValue(localVersion)
-                            ref.child("Full_Apk_Url").setValue("https://example.com/app-full.apk")
-                            ref.child("Patch_File_Url").setValue("https://example.com/app-patch.bin")
-                            ref.child("Patch_MD5").setValue("")
-                            ref.child("Is_Force_Update").setValue(false)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "RTDB SDK update query error, fallback to REST", e)
@@ -230,15 +227,50 @@ object SmartUpdateManager {
                     _isForceUpdateRequired.value = forceThisUpdate
                     activeForceUpdateConfig = if (forceThisUpdate) updateConfig else null
                     _updateStatus.value = updateConfig
+
+                    if (manualCheck) {
+                        withContext(Dispatchers.Main) {
+                            try {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "✨ New Update Available: Build $cloudVersion (Installed: Build $localVersion)",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            } catch (_: Exception) {}
+                        }
+                    }
                 } else {
                     _isForceUpdateRequired.value = false
                     activeForceUpdateConfig = null
                     _updateStatus.value = SmartUpdateStatus.NoUpdateAvailable
+
+                    if (manualCheck) {
+                        withContext(Dispatchers.Main) {
+                            try {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "✅ Life OS is up to date (Build $localVersion)",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            } catch (_: Exception) {}
+                        }
+                    }
                 }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error checking for updates", e)
                 _updateStatus.value = SmartUpdateStatus.Error("Error checking updates: ${e.localizedMessage}")
+                if (manualCheck) {
+                    withContext(Dispatchers.Main) {
+                        try {
+                            android.widget.Toast.makeText(
+                                context,
+                                "⚠️ Error checking updates: ${e.localizedMessage}",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        } catch (_: Exception) {}
+                    }
+                }
             }
         }
     }

@@ -4,12 +4,14 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,12 +22,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.SubcomposeAsyncImage
 import com.example.ui.theme.SurfaceCard
 import com.example.ui.theme.WaterBlue
 import com.example.util.FileActivityLog
@@ -113,6 +117,7 @@ fun FileDocumentStructureView(
                         )
                     }
 
+                    val actualFilesCount = remember(files) { files.count { it.fileMime != "inode/directory" } }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "FOLDER: ${folderHeading.uppercase()}",
@@ -123,7 +128,7 @@ fun FileDocumentStructureView(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "$folderDescription (${files.size} files)",
+                            text = "$folderDescription ($actualFilesCount files)",
                             color = Color.Gray,
                             fontSize = 12.sp
                         )
@@ -225,7 +230,7 @@ fun FileDocumentStructureView(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
-                items(files, key = { it.path.ifEmpty { it.name } + it.timestamp }) { file ->
+                itemsIndexed(files, key = { idx, file -> "${file.path.ifEmpty { file.name }}_${file.timestamp}_$idx" }) { _, file ->
                     FileDocumentBulletCard(
                         context = context,
                         file = file,
@@ -268,175 +273,315 @@ fun FileDocumentBulletCard(
     val uploaderDetails = "Bharathi Krishna (bharathikrishna9440@gmail.com)"
     val docUrl = FileActivityLogger.GOOGLE_DOC_URL
 
+    var isExpanded by remember { mutableStateOf(false) }
+
+    val isImage = remember(file) {
+        file.type.equals("image", ignoreCase = true) ||
+        file.fileMime.startsWith("image/", ignoreCase = true) ||
+        file.name.endsWith(".png", ignoreCase = true) ||
+        file.name.endsWith(".jpg", ignoreCase = true) ||
+        file.name.endsWith(".jpeg", ignoreCase = true) ||
+        file.name.endsWith(".webp", ignoreCase = true) ||
+        file.name.startsWith("photo_", ignoreCase = true)
+    }
+
+    val imageModel: Any? = remember(file) {
+        val raw = file.appFileRef?.uriString?.ifEmpty { null } ?: file.path.ifEmpty { null }
+        when {
+            raw == null -> null
+            raw.startsWith("content://") || raw.startsWith("file://") -> Uri.parse(raw)
+            raw.startsWith("http://") || raw.startsWith("https://") -> raw
+            else -> java.io.File(raw)
+        }
+    }
+
+    val (fileIcon, fileIconTint) = remember(file, isImage) {
+        when {
+            isImage -> Icons.Default.Image to Color(0xFF4CAF50)
+            file.type.equals("video", ignoreCase = true) || file.fileMime.startsWith("video/") -> Icons.Default.VideoLibrary to Color(0xFFFF5252)
+            file.type.equals("audio", ignoreCase = true) || file.fileMime.startsWith("audio/") -> Icons.Default.AudioFile to Color(0xFF00E5FF)
+            file.name.endsWith(".pdf", ignoreCase = true) || file.fileMime == "application/pdf" -> Icons.Default.PictureAsPdf to Color(0xFFE53935)
+            file.fileMime == "inode/directory" -> Icons.Default.Folder to Color(0xFFFFB300)
+            file.name.endsWith(".doc", ignoreCase = true) || file.name.endsWith(".docx", ignoreCase = true) -> Icons.Default.Description to Color(0xFF4285F4)
+            file.name.endsWith(".xls", ignoreCase = true) || file.name.endsWith(".xlsx", ignoreCase = true) -> Icons.Default.TableChart to Color(0xFF10B981)
+            else -> Icons.Default.InsertDriveFile to WaterBlue
+        }
+    }
+
+    val contactInitial = remember(file.name) {
+        if (file.name.startsWith("photo_", ignoreCase = true)) {
+            file.name.substringAfter("photo_").firstOrNull { it.isLetter() }?.uppercaseChar()?.toString() ?: ""
+        } else ""
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .animateContentSize()
             .testTag("file_bullet_card_${file.name}"),
         colors = CardDefaults.cardColors(containerColor = SurfaceCard),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // MAIN BULLET POINT: File Name with File ID
+            // COMPACT ROW: [Mini Photo Preview] [Name & Sequential ID \n Date & Time] [3-Dots Button]
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onFileClick() },
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // LEFT: Mini Preview of Photo / File Icon
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF1B1B24))
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                        .clickable { onFileClick() },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "•",
-                        color = WaterBlue,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
+                    if (isImage && imageModel != null) {
+                        SubcomposeAsyncImage(
+                            model = imageModel,
+                            contentDescription = file.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(10.dp)),
+                            loading = {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = WaterBlue)
+                                }
+                            },
+                            error = {
+                                if (contactInitial.isNotEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(WaterBlue.copy(alpha = 0.25f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = contactInitial,
+                                            color = WaterBlue,
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                } else {
+                                    Icon(Icons.Default.Image, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(24.dp))
+                                }
+                            }
+                        )
+                    } else if (contactInitial.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(WaterBlue.copy(alpha = 0.25f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = contactInitial,
+                                color = WaterBlue,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = fileIcon,
+                            contentDescription = null,
+                            tint = fileIconTint,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
 
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(WaterBlue.copy(alpha = 0.2f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                // CENTER: Name on top, Date & Time below
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onFileClick() }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(WaterBlue.copy(alpha = 0.2f))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = sequentialId,
+                                color = WaterBlue,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
                         Text(
-                            text = sequentialId,
-                            color = WaterBlue,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            text = file.name,
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(3.dp))
+
                     Text(
-                        text = file.name,
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
+                        text = formattedDate,
+                        color = Color.Gray,
+                        fontSize = 11.5.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
 
+                // RIGHT: 3 Dots icon button - click extends the card to show remaining details
                 IconButton(
-                    onClick = onOptionsClick,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Options", tint = Color.Gray)
-                }
-            }
-
-            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-
-            // SUB-BULLET POINTS (File Details)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                SubBulletItem(label = "Sequential File ID", value = sequentialId, valueColor = WaterBlue)
-                SubBulletItem(label = "Format", value = file.fileMime.ifEmpty { file.type.uppercase() })
-                SubBulletItem(label = "File Size", value = formattedSize)
-                SubBulletItem(label = "Uploader", value = uploaderDetails)
-                SubBulletItem(label = "Uploaded Date & Time", value = formattedDate)
-                SubBulletItem(label = "Permissions", value = "Anyone with link can view & download", valueColor = Color(0xFF81C784))
-
-                // Google Drive Sync Link sub-bullet point
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    onClick = { isExpanded = !isExpanded },
                     modifier = Modifier
-                        .clickable { openDocLink(context, docUrl) }
-                        .padding(vertical = 2.dp)
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isExpanded) WaterBlue.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
+                        .testTag("expand_file_details_${file.name}")
                 ) {
-                    Text(text = "◦", color = Color.Gray, fontSize = 12.sp)
-                    Text(text = "Google Drive Sync Doc:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                    Text(
-                        text = "Open Shared Google Doc 🔗",
-                        color = WaterBlue,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = if (isExpanded) "Collapse details" else "Extend card details",
+                        tint = if (isExpanded) WaterBlue else Color.LightGray,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            // EXTENDED CARD DETAILS: Shown when 3-dots is clicked
+            if (isExpanded) {
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 2.dp))
 
-            // Quick Action Buttons Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onFileClick,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                // Sub-bullet details
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Open", fontSize = 10.sp)
+                    SubBulletItem(label = "Sequential File ID", value = sequentialId, valueColor = WaterBlue)
+                    SubBulletItem(label = "Format", value = file.fileMime.ifEmpty { file.type.uppercase() })
+                    SubBulletItem(label = "File Size", value = formattedSize)
+                    SubBulletItem(label = "Uploader", value = uploaderDetails)
+                    SubBulletItem(label = "Uploaded Date & Time", value = formattedDate)
+                    SubBulletItem(label = "Permissions", value = "Anyone with link can view & download", valueColor = Color(0xFF81C784))
+
+                    // Google Drive Sync Link sub-bullet point
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .clickable { openDocLink(context, docUrl) }
+                            .padding(vertical = 2.dp)
+                    ) {
+                        Text(text = "◦", color = Color.Gray, fontSize = 12.sp)
+                        Text(text = "Google Drive Sync Doc:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = "Open Shared Google Doc 🔗",
+                            color = WaterBlue,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
-                OutlinedButton(
-                    onClick = onCopyClick,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF60A5FA)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF60A5FA).copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Copy", fontSize = 10.sp)
-                }
+                Spacer(modifier = Modifier.height(4.dp))
 
-                OutlinedButton(
-                    onClick = onMoveClick,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC084FC)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.4f))
+                // Quick Action Buttons Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Move", fontSize = 10.sp)
-                }
+                    OutlinedButton(
+                        onClick = onFileClick,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                    ) {
+                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Open", fontSize = 10.sp)
+                    }
 
-                OutlinedButton(
-                    onClick = onRenameClick,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFBBF24)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBBF24).copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Rename", fontSize = 10.sp)
-                }
+                    OutlinedButton(
+                        onClick = onCopyClick,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF60A5FA)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF60A5FA).copy(alpha = 0.4f))
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Copy", fontSize = 10.sp)
+                    }
 
-                OutlinedButton(
-                    onClick = onDeleteClick,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF5350)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF5350).copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(12.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Delete", fontSize = 10.sp)
+                    OutlinedButton(
+                        onClick = onMoveClick,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC084FC)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.4f))
+                    ) {
+                        Icon(Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Move", fontSize = 10.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = onRenameClick,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFBBF24)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBBF24).copy(alpha = 0.4f))
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Rename", fontSize = 10.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF5350)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF5350).copy(alpha = 0.4f))
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Delete", fontSize = 10.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = onOptionsClick,
+                        modifier = Modifier.size(width = 36.dp, height = 32.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = WaterBlue),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, WaterBlue.copy(alpha = 0.4f))
+                    ) {
+                        Icon(Icons.Default.MoreHoriz, contentDescription = "More Options", modifier = Modifier.size(14.dp))
+                    }
                 }
             }
         }

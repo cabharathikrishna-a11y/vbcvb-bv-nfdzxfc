@@ -218,7 +218,6 @@ fun TimerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     // Navigation & Modal States
     val showHistoryScreen by viewModel.showHistoryScreen.collectAsStateWithLifecycle()
     var showFriendsFocusDetails by remember { mutableStateOf(false) }
-    var showTelemetryScreen by remember { mutableStateOf(false) }
     var selectedDateStr by remember { 
         mutableStateOf(com.example.util.TimeEngine.formatDateToYmd(System.currentTimeMillis())) 
     }
@@ -448,11 +447,12 @@ fun TimerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
 
     var lastNormalInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    val isAnyDialogOrHistoryActive = showTelemetryScreen || showHistoryScreen || showCalendarDialog || showTaskSelectionDialog || showTagSelectionDialog || showFriendsFocusDetails
+    val isAnyDialogOrHistoryActive = showHistoryScreen || showCalendarDialog || showTaskSelectionDialog || showTagSelectionDialog || showFriendsFocusDetails
 
-    // Auto-switch to full screen (control hidden mode) when normal mode is displayed for >10 sec without interaction
-    LaunchedEffect(isImmersive, lastNormalInteractionTime, isAnyDialogOrHistoryActive) {
-        if (!isImmersive && !isAnyDialogOrHistoryActive) {
+    // Auto-switch to full screen (control hidden mode) when normal mode is displayed for >10 sec without interaction ONLY when timer is running, paused, or break
+    LaunchedEffect(isImmersive, lastNormalInteractionTime, isAnyDialogOrHistoryActive, isTimerActiveNow, isPaused, isFocusPhase) {
+        val isTimerRunningOrPausedOrBreak = isTimerActiveNow || isPaused || !isFocusPhase
+        if (!isImmersive && !isAnyDialogOrHistoryActive && isTimerRunningOrPausedOrBreak) {
             delay(10000L)
             viewModel.setTimerImmersive(true)
         }
@@ -535,33 +535,7 @@ fun TimerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    if (showTelemetryScreen) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { showTelemetryScreen = false }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowBack,
-                                contentDescription = "Back to Timer",
-                                tint = WaterBlue,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Back to Timer",
-                                color = WaterBlue,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        Text(
-                            text = "Timer Telemetry Logs",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    } else if (showHistoryScreen) {
+                    if (showHistoryScreen) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.clickable { viewModel.setShowHistoryScreen(false) }
@@ -601,42 +575,7 @@ fun TimerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             onClick = { viewModel.navigateTo(Screen.LIVE_SPHERE) }
                         )
 
-                        if (sduiPrefs.motivationalBannerText.isNotEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(horizontal = 8.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.DirectionsRun,
-                                        contentDescription = "Motivational Banner Icon",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = sduiPrefs.motivationalBannerText,
-                                        color = MaterialTheme.colorScheme.onBackground,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
+                        Spacer(modifier = Modifier.weight(1f))
 
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -669,21 +608,6 @@ fun TimerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     imageVector = Icons.Default.Fullscreen,
                                     contentDescription = "Enter Fullscreen",
                                     tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            IconButton(
-                                onClick = { showTelemetryScreen = true },
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF151515))
-                                    .size(32.dp)
-                                    .testTag("timer_telemetry_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Storage,
-                                    contentDescription = "Timer Display Telemetry",
-                                    tint = WaterBlue,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -776,11 +700,7 @@ fun TimerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 AnimatedContent(
-                    targetState = when {
-                        showTelemetryScreen -> "telemetry"
-                        showHistoryScreen -> "history"
-                        else -> "timer"
-                    },
+                    targetState = if (showHistoryScreen) "history" else "timer",
                     transitionSpec = {
                         slideInHorizontally { width -> if (targetState != "timer") width else -width } + fadeIn() togetherWith
                         slideOutHorizontally { width -> if (targetState != "timer") -width else width } + fadeOut()
@@ -789,11 +709,6 @@ fun TimerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     label = "timer_animated_content"
                 ) { targetScreen ->
                     when (targetScreen) {
-                        "telemetry" -> {
-                            TimerDisplayTelemetryPage(
-                                onBack = { showTelemetryScreen = false }
-                            )
-                        }
                         "history" -> {
                             TimerHistoryView(
                                 viewModel = viewModel,
@@ -810,8 +725,7 @@ fun TimerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 globalTodaySeconds = globalTodaySeconds,
                                 focusTimerDurationMins = focusTimerDurationMins,
                                 myXp = myXp,
-                                wastedMins = wastedMins,
-                                onOpenTelemetry = { showTelemetryScreen = true }
+                                wastedMins = wastedMins
                             )
                         }
                     }
@@ -5301,7 +5215,6 @@ fun TimerLiveControlContent(
     focusTimerDurationMins: Int,
     myXp: Int,
     wastedMins: Int,
-    onOpenTelemetry: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val WaterBlue = Color(0xFF38BDF8)
@@ -5484,85 +5397,6 @@ fun TimerLiveControlContent(
                     }
                 }
 
-                // Telemetry & Total Focused Time Display Card (Tablet)
-                Card(
-                    modifier = Modifier
-                        .widthIn(max = 500.dp)
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .clickable { onOpenTelemetry() }
-                        .testTag("timer_telemetry_summary_card_tablet"),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A).copy(alpha = 0.55f)),
-                    border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.35f)),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(26.dp)
-                                    .clip(CircleShape)
-                                    .background(WaterBlue.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Storage,
-                                    contentDescription = "Telemetry",
-                                    tint = WaterBlue,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                            Column {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = "Timer Telemetry",
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Surface(
-                                        color = Color(0xFF10B981).copy(alpha = 0.15f),
-                                        shape = RoundedCornerShape(4.dp),
-                                        border = BorderStroke(0.5.dp, Color(0xFF10B981).copy(alpha = 0.4f))
-                                    ) {
-                                        Text(
-                                            text = "77d Local",
-                                            color = Color(0xFF10B981),
-                                            fontSize = 8.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = "Tab Total: ${formatLiveSeconds(globalTodaySeconds)} • Friends: ${com.example.util.TodayTotalFocusTimeManager.formatSecondsToHms(globalTodaySeconds)}",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 9.5.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-                        Icon(
-                            imageVector = Icons.Default.ArrowForward,
-                            contentDescription = "Open Telemetry",
-                            tint = WaterBlue,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-
                 if (isIdle) {
                     val context = androidx.compose.ui.platform.LocalContext.current
                     var showBatteryPrompt by androidx.compose.runtime.remember {
@@ -5639,36 +5473,72 @@ fun TimerLiveControlContent(
 
                 if (isFocusPhase) {
                     val selectedTag by viewModel.attachedTag.collectAsStateWithLifecycle()
-                    if (sessionStartTimestamp == null) {
-                        SyllabusSelectionBar(
-                            viewModel = viewModel,
+                    var isEditingTargetTablet by remember { mutableStateOf(false) }
+                    val isSessionActive = isTimerActive || isStopwatchActive || isPaused
+
+                    if (!isSessionActive || isEditingTargetTablet) {
+                        Column(
                             modifier = Modifier
                                 .widthIn(max = 500.dp)
                                 .fillMaxWidth()
-                        )
+                        ) {
+                            if (isSessionActive) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    Text(
+                                        text = "Done Editing",
+                                        color = WaterBlue,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.clickable { isEditingTargetTablet = false }
+                                    )
+                                }
+                            }
+                            SyllabusSelectionBar(
+                                viewModel = viewModel,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     } else {
                         Card(
                             modifier = Modifier
                                 .widthIn(max = 500.dp)
-                                .fillMaxWidth(),
+                                .fillMaxWidth()
+                                .clickable { isEditingTargetTablet = true },
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF111113)),
                             border = BorderStroke(1.dp, Color(0xFF232326))
                         ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                            Row(
+                                modifier = Modifier
+                                    .padding(12.dp)
+                                    .fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("CURRENT STUDY TARGET", color = WaterBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = selectedTask?.title ?: "Study Session",
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    textAlign = TextAlign.Center
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text("CURRENT STUDY TARGET", color = WaterBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = selectedTask?.title ?: "Study Session",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(text = "ID: ${selectedTag.ifEmpty { "Study" }} (Tap to change)", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Change Subject or Topic",
+                                    tint = WaterBlue,
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(text = "ID: ${selectedTag.ifEmpty { "Study" }}", color = Color.Gray, fontSize = 11.sp)
                             }
                         }
                     }
@@ -5944,113 +5814,71 @@ fun TimerLiveControlContent(
                         }
                     }
 
-                    // Telemetry & Total Focused Time Display Card (Phone)
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clickable { onOpenTelemetry() }
-                            .testTag("timer_telemetry_summary_card"),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A).copy(alpha = 0.55f)),
-                        border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.35f)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(26.dp)
-                                        .clip(CircleShape)
-                                        .background(WaterBlue.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Storage,
-                                        contentDescription = "Telemetry",
-                                        tint = WaterBlue,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                                Column {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Text(
-                                            text = "Timer Telemetry",
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Surface(
-                                            color = Color(0xFF10B981).copy(alpha = 0.15f),
-                                            shape = RoundedCornerShape(4.dp),
-                                            border = BorderStroke(0.5.dp, Color(0xFF10B981).copy(alpha = 0.4f))
-                                        ) {
-                                            Text(
-                                                text = "77d Local",
-                                                color = Color(0xFF10B981),
-                                                fontSize = 8.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                            )
-                                        }
-                                    }
-                                    Text(
-                                        text = "Tab Total: ${formatLiveSeconds(globalTodaySeconds)} • Friends: ${com.example.util.TodayTotalFocusTimeManager.formatSecondsToHms(globalTodaySeconds)}",
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 9.5.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                            }
-                            Icon(
-                                imageVector = Icons.Default.ArrowForward,
-                                contentDescription = "Open Telemetry",
-                                tint = WaterBlue,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-
                     // 4. Subject tagging (Syllabus/Target Selection)
                     if (isFocusPhase) {
                         val selectedTag by viewModel.attachedTag.collectAsStateWithLifecycle()
-                        if (sessionStartTimestamp == null) {
-                            SyllabusSelectionBar(
-                                viewModel = viewModel,
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                            )
+                        var isEditingTargetPhone by remember { mutableStateOf(false) }
+                        val isSessionActive = isTimerActive || isStopwatchActive || isPaused
+
+                        if (!isSessionActive || isEditingTargetPhone) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                if (isSessionActive) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        Text(
+                                            text = "Done Editing",
+                                            color = WaterBlue,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.clickable { isEditingTargetPhone = false }
+                                        )
+                                    }
+                                }
+                                SyllabusSelectionBar(
+                                    viewModel = viewModel,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         } else {
                             Card(
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp)
+                                    .clickable { isEditingTargetPhone = true },
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111113)),
                                 border = BorderStroke(1.dp, Color(0xFF232326))
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                Row(
+                                    modifier = Modifier
+                                        .padding(12.dp)
+                                        .fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("CURRENT STUDY TARGET", color = WaterBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = selectedTask?.title ?: "Study Session",
-                                        color = Color.White,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        textAlign = TextAlign.Center
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text("CURRENT STUDY TARGET", color = WaterBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = selectedTask?.title ?: "Study Session",
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(text = "ID: ${selectedTag.ifEmpty { "Study" }} (Tap to change)", color = Color.Gray, fontSize = 11.sp)
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Change Subject or Topic",
+                                        tint = WaterBlue,
+                                        modifier = Modifier.size(18.dp)
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(text = "ID: ${selectedTag.ifEmpty { "Study" }}", color = Color.Gray, fontSize = 11.sp)
                                 }
                             }
                         }
@@ -6168,9 +5996,17 @@ fun SyllabusSelectionBar(
 
     val subjects = com.example.api.CAInterPaperSubject.entries
 
-    // Derive selected subject enum from the selectedTag string
-    val selectedSubject = remember(selectedTag) {
-        subjects.firstOrNull { it.title == selectedTag }
+    // Derive selected subject enum from the selectedTag string or task
+    val selectedSubject = remember(selectedTag, selectedTask) {
+        subjects.firstOrNull { 
+            it.title == selectedTag || 
+            it.name.equals(selectedTag, ignoreCase = true) || 
+            it.subjectCode.equals(selectedTag, ignoreCase = true) ||
+            (selectedTag.isNotEmpty() && selectedTag.startsWith(it.subjectCode, ignoreCase = true)) ||
+            (selectedTag.isNotEmpty() && selectedTag.contains(it.title, ignoreCase = true))
+        } ?: selectedTask?.let { task ->
+            subjects.firstOrNull { sub -> task.title.contains(sub.subjectCode) || task.title.contains(sub.title) }
+        }
     }
 
     // Filter topics for the currently selected subject
@@ -6178,7 +6014,7 @@ fun SyllabusSelectionBar(
         if (selectedSubject != null) {
             com.example.api.SyllabusRegistry.allTopics.filter { it.subject == selectedSubject }
         } else {
-            emptyList()
+            com.example.api.SyllabusRegistry.allTopics
         }
     }
 
@@ -6291,6 +6127,8 @@ fun SyllabusSelectionBar(
                     .clickable { 
                         if (selectedSubject != null) {
                             chapterExpanded = true 
+                        } else {
+                            subjectExpanded = true
                         }
                     },
                 shape = RoundedCornerShape(12.dp),
@@ -6339,7 +6177,7 @@ fun SyllabusSelectionBar(
                                 letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = selectedTask?.title ?: if (selectedSubject == null) "Select Subject First" else "Select Chapter/Topic...",
+                                text = selectedTask?.title ?: if (selectedSubject == null) "Tap to select subject & chapter" else "Select Chapter/Topic...",
                                 color = if (selectedTask != null) Color.White else Color.Gray,
                                 fontSize = 12.sp,
                                 fontWeight = if (selectedTask != null) FontWeight.SemiBold else FontWeight.Normal,
@@ -6357,46 +6195,45 @@ fun SyllabusSelectionBar(
                 }
             }
 
-            if (selectedSubject != null) {
-                DropdownMenu(
-                    expanded = chapterExpanded,
-                    onDismissRequest = { chapterExpanded = false },
-                    modifier = Modifier
-                        .fillMaxWidth(0.9f)
-                        .heightIn(max = 300.dp) // Scrollable dropdown for many topics
-                        .background(Color(0xFF141416))
-                        .border(1.dp, Color(0xFF232326), RoundedCornerShape(8.dp))
-                ) {
-                    availableTopics.forEach { topic ->
-                        val combinedTitle = "${topic.chapterName} - ${topic.subTopicTitle}"
-                        DropdownMenuItem(
-                            text = {
-                                Column(modifier = Modifier.padding(vertical = 2.dp)) {
-                                    Text(
-                                        text = topic.chapterName,
-                                        color = Color.LightGray,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = topic.subTopicTitle,
-                                        color = Color.White,
-                                        fontSize = 13.sp
-                                    )
-                                }
-                            },
-                            onClick = {
-                                chapterExpanded = false
-                                val virtualTask = com.example.data.Task(
-                                    id = -999,
-                                    title = combinedTitle,
-                                    description = "CA Inter Syllabus Study Node",
-                                    listCategory = "Inbox"
+            DropdownMenu(
+                expanded = chapterExpanded,
+                onDismissRequest = { chapterExpanded = false },
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .heightIn(max = 320.dp) // Scrollable dropdown for many topics
+                    .background(Color(0xFF141416))
+                    .border(1.dp, Color(0xFF232326), RoundedCornerShape(8.dp))
+            ) {
+                availableTopics.forEach { topic ->
+                    val combinedTitle = "${topic.chapterName} - ${topic.subTopicTitle}"
+                    DropdownMenuItem(
+                        text = {
+                            Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                                Text(
+                                    text = "${topic.subject.subjectCode}: ${topic.chapterName}",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
-                                viewModel.attachTaskToTimer(virtualTask)
+                                Text(
+                                    text = topic.subTopicTitle,
+                                    color = Color.White,
+                                    fontSize = 12.5.sp
+                                )
                             }
-                        )
-                    }
+                        },
+                        onClick = {
+                            chapterExpanded = false
+                            viewModel.attachTagToTimer(topic.subject.title)
+                            val virtualTask = com.example.data.Task(
+                                id = -999,
+                                title = combinedTitle,
+                                description = "CA Inter Syllabus Study Node",
+                                listCategory = "Inbox"
+                            )
+                            viewModel.attachTaskToTimer(virtualTask)
+                        }
+                    )
                 }
             }
         }

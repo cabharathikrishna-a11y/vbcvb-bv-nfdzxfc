@@ -37,8 +37,20 @@
     <string name="widget_name_photo_shower">Journal Photo Shower</string>
     <string name="widget_desc_photo_shower">Displays random journal photos with DD/MM/YY date overlay and journal notes</string>
 
+    <string name="widget_name_countdowns">Countdowns &amp; Anniversaries</string>
+    <string name="widget_desc_countdowns">Scrollable upcoming countdowns, birthdays, and anniversaries</string>
+
     <string name="widget_name_quick_shortcuts">Web Apps Bar</string>
     <string name="widget_desc_quick_shortcuts">Quick 1-tap shortcuts for Instagram Web, YouTube Web, and Spotify Web</string>
+
+    <string name="widget_name_tasks">Tasks</string>
+    <string name="widget_desc_tasks">Interactive task list with date filters, folder sorting, and 1-tap completion</string>
+
+    <string name="widget_name_habits">Today\'s Habits</string>
+    <string name="widget_desc_habits">Interactive daily habits with streak counters and 1-tap completion</string>
+
+    <string name="widget_name_single_habit">Individual Habit</string>
+    <string name="widget_desc_single_habit">Track and tick off a specific habit directly on your home screen</string>
 
     <string name="shortcut_timer_short">Timer</string>
     <string name="shortcut_timer_long">Focus Timer</string>

@@ -81,11 +81,21 @@ class FocusForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
+            Log.d(TAG, "FocusForegroundService onCreate aborted: User is not logged in.")
+            stopSelf()
+            return
+        }
         instance = this
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
+            Log.d(TAG, "FocusForegroundService onStartCommand aborted: User is not logged in.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         val action = intent?.action
         if (action == ACTION_PAUSE || action == ACTION_RESUME) {
             handleNotificationAction(action)

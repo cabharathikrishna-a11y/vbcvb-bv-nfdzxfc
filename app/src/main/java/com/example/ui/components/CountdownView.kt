@@ -2,11 +2,14 @@ package com.example.ui.components
 
 import android.app.DatePickerDialog
 import android.content.Context
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -25,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -425,36 +429,38 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        // Top Control Row: Categories Filters + Dedicated Sort Box + Add Button
+    Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        // Top Header Row: Title & Count Badge + Sort Dropdown + Add Button
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Horizontal scrollable category filters
             Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(end = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                categories.forEach { cat ->
-                    val isSelected = activeCategoryFilter == cat
-                    val bg = if (isSelected) WaterBlue else Charcoal
-                    val txtColor = if (isSelected) Color.Black else Color.White
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(bg)
-                            .clickable { activeCategoryFilter = cat }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Text(cat, fontSize = 11.sp, color = txtColor, fontWeight = FontWeight.Bold)
-                    }
+                Text(
+                    text = "COUNTDOWNS",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    letterSpacing = 0.8.sp
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF1E1E26))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "${filteredCountdowns.size}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = WaterBlue
+                    )
                 }
             }
 
@@ -467,11 +473,11 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 Box {
                     Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(10.dp))
                             .background(Charcoal)
-                            .border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .border(0.5.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
                             .clickable { sortMenuExpanded = true }
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -535,20 +541,66 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     modifier = Modifier
                         .clip(CircleShape)
                         .background(WaterBlue)
-                        .size(36.dp)
+                        .size(34.dp)
                         .testTag("add_countdown_btn")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Add Countdown",
                         tint = Color.Black,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
         }
 
-        // Countdown Grid Layout with Uniform Display Box Sizes
+        // Full-Width Category Filter Pills
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val filterOptions = listOf(
+                "All" to "All (${allCountdowns.size})",
+                "Birthdays" to "🎂 Birthdays (${derivedBirthdayCountdowns.size})",
+                "Anniversaries" to "💍 Anniversaries (${derivedAnniversaryCountdowns.size})",
+                "Festivals" to "🎉 Festivals (${derivedFestivalCountdowns.size})",
+                "Others" to "🎯 Others (${derivedDeadlineCountdowns.size})"
+            )
+            filterOptions.forEach { (catKey, label) ->
+                val isSelected = activeCategoryFilter == catKey
+                val catColor = when (catKey) {
+                    "Birthdays" -> Color(0xFFF48FB1)
+                    "Anniversaries" -> Color(0xFFCE93D8)
+                    "Festivals" -> Color(0xFFFFB74D)
+                    "Others" -> WaterBlue
+                    else -> WaterBlue
+                }
+                val bg = if (isSelected) catColor else Color(0xFF131317)
+                val txtColor = if (isSelected) Color.Black else Color(0xFFD6D6DE)
+                val borderStroke = if (isSelected) BorderStroke(1.dp, catColor) else BorderStroke(1.dp, Color(0xFF24242E))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = bg,
+                    border = borderStroke,
+                    modifier = Modifier.clickable { activeCategoryFilter = catKey }
+                ) {
+                    Text(
+                        text = label,
+                        fontSize = 11.5.sp,
+                        color = txtColor,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+
+        // Countdown Sleek Compact List
         if (filteredCountdowns.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -557,197 +609,234 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 Text("No upcoming countdowns in this category.", color = Color.Gray, fontSize = 13.sp)
             }
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 250.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 72.dp)
             ) {
-                items(filteredCountdowns) { item ->
+                items(filteredCountdowns, key = { it.id }) { item ->
                     val diffMs = item.targetTimestamp - System.currentTimeMillis()
-                    val daysRemaining = maxOf(0, ((diffMs + 12 * 3600 * 1000L) / (24 * 3600 * 1000L)).toInt()) // robust round up of fractional day boundary
+                    val daysRemaining = maxOf(0, ((diffMs + 12 * 3600 * 1000L) / (24 * 3600 * 1000L)).toInt())
 
-                    val catBg = when (item.category) {
-                        "Festivals" -> Color(0xFFAB47BC).copy(alpha = 0.2f)
-                        "Birthdays" -> Color(0xFFEC407A).copy(alpha = 0.2f)
-                        "Anniversaries" -> Color(0xFF7E57C2).copy(alpha = 0.2f)
-                        else -> WaterBlue.copy(alpha = 0.15f)
-                    }
-                    val catText = when (item.category) {
-                        "Festivals" -> Color(0xFFCE93D8)
+                    val catColor = when (item.category) {
+                        "Festivals" -> Color(0xFFFFB74D)
                         "Birthdays" -> Color(0xFFF48FB1)
-                        "Anniversaries" -> Color(0xFFB39DDB)
+                        "Anniversaries" -> Color(0xFFCE93D8)
                         else -> WaterBlue
                     }
+                    val iconBgGradient = when (item.category) {
+                        "Festivals" -> Brush.linearGradient(listOf(Color(0xFF382309), Color(0xFF1F1405)))
+                        "Birthdays" -> Brush.linearGradient(listOf(Color(0xFF3B1527), Color(0xFF220C17)))
+                        "Anniversaries" -> Brush.linearGradient(listOf(Color(0xFF2E173E), Color(0xFF1A0D24)))
+                        else -> Brush.linearGradient(listOf(Color(0xFF0F2633), Color(0xFF081720)))
+                    }
+                    val iconEmoji = when (item.category) {
+                        "Festivals" -> "🎉"
+                        "Birthdays" -> "🎂"
+                        "Anniversaries" -> "💍"
+                        else -> "⏳"
+                    }
 
-                    // Uniform Fixed-Height Display Box
+                    val displayTitle = when {
+                        item.category == "Birthdays" && item.name.contains("'s Birthday") -> item.name.substringBefore("'s Birthday").trim()
+                        item.category == "Anniversaries" && item.name.contains("'s Anniversary") -> item.name.substringBefore("'s Anniversary").trim()
+                        item.name.contains(" (") -> item.name.substringBefore(" (").trim()
+                        else -> item.name
+                    }
+
+                    val ageOrDetail = when {
+                        item.category == "Birthdays" -> {
+                            val age = Regex("\\((\\d+.*?)\\)").find(item.name)?.groupValues?.get(1)
+                            listOfNotNull(age, item.originalDateStr.ifBlank { null }).joinToString(" · ")
+                        }
+                        item.category == "Anniversaries" -> {
+                            val anniv = Regex("\\((\\d+.*?)\\)").find(item.name)?.groupValues?.get(1)
+                            listOfNotNull(anniv, item.originalDateStr.ifBlank { null }).joinToString(" · ")
+                        }
+                        else -> {
+                            listOfNotNull(item.category, item.originalDateStr.ifBlank { null }).joinToString(" · ")
+                        }
+                    }
+
+                    val progressValue = remember(daysRemaining) {
+                        if (item.category in listOf("Festivals", "Birthdays", "Anniversaries")) {
+                            val percent = (365f - daysRemaining) / 365f
+                            maxOf(0.05f, minOf(1.0f, percent))
+                        } else {
+                            val totalSampleDays = 30f
+                            val percent = (totalSampleDays - daysRemaining) / totalSampleDays
+                            maxOf(0.08f, minOf(1.0f, percent))
+                        }
+                    }
+
+                    // Sleek, compact, high-visibility card
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(172.dp)
                             .clickable {
                                 selectedItemForDetail = item
                                 detailEditMode = false
                                 detailNameEdit = item.name
                                 detailDateEdit = item.originalDateStr
                             },
-                        colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f)),
-                        shape = RoundedCornerShape(12.dp)
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF111116)),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (daysRemaining <= 3) catColor.copy(alpha = 0.5f)
+                            else if (daysRemaining <= 7) catColor.copy(alpha = 0.25f)
+                            else Color(0xFF1E1E26)
+                        )
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Top Row: Category Tag badge + Category Icon & Action
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(catBg)
-                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Text(item.category.uppercase(), color = catText, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                }
-
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    when (item.category) {
-                                        "Festivals" -> {
-                                            Text("🎉", fontSize = 15.sp)
-                                            if (item.isDbBacked) {
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                IconButton(
-                                                    onClick = {
-                                                        viewModel.deleteDeadline(Deadline(id = item.dbId, name = item.name, targetTimestamp = item.targetTimestamp))
-                                                    },
-                                                    modifier = Modifier.size(22.dp)
-                                                ) {
-                                                    Icon(Icons.Default.Close, contentDescription = "Delete", tint = Color.Gray, modifier = Modifier.size(12.dp))
-                                                }
-                                            }
-                                        }
-                                        "Birthdays" -> {
-                                            Text("🎂", fontSize = 15.sp)
-                                        }
-                                        "Anniversaries" -> {
-                                            Text("💍", fontSize = 15.sp)
-                                        }
-                                        else -> {
-                                            if (item.isDbBacked) {
-                                                IconButton(
-                                                    onClick = {
-                                                        viewModel.deleteDeadline(Deadline(id = item.dbId, name = item.name, targetTimestamp = item.targetTimestamp))
-                                                    },
-                                                    modifier = Modifier.size(22.dp)
-                                                ) {
-                                                    Icon(Icons.Default.Close, contentDescription = "Delete", tint = Color.Gray, modifier = Modifier.size(12.dp))
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Middle: Uniform Title & Age Section (Fixed height for strict consistency)
+                            // Left Icon Squircle
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(38.dp),
-                                contentAlignment = Alignment.CenterStart
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(iconBgGradient)
+                                    .border(1.dp, catColor.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                if (item.name.contains(" (")) {
-                                    val index = item.name.indexOf(" (")
-                                    val mainPart = item.name.substring(0, index)
-                                    val agePart = item.name.substring(index).trim()
-                                    Column {
-                                        Text(
-                                            text = mainPart,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            fontSize = 14.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = agePart,
-                                            fontWeight = FontWeight.Medium,
-                                            color = if (item.category == "Birthdays") Color(0xFFF48FB1) else WaterBlue,
-                                            fontSize = 11.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                } else {
-                                    Text(
-                                        text = item.name,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        fontSize = 14.sp,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        lineHeight = 18.sp
-                                    )
-                                }
+                                Text(text = iconEmoji, fontSize = 20.sp)
                             }
 
-                            // Bottom: Countdown digits & Progress bar
-                            Column(modifier = Modifier.fillMaxWidth()) {
-                                Row(
-                                    verticalAlignment = Alignment.Bottom,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Text(
-                                        text = "$daysRemaining",
-                                        fontSize = 28.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = when (item.category) {
-                                            "Festivals" -> Color(0xFFCE93D8)
-                                            "Birthdays" -> Color(0xFFF48FB1)
-                                            "Anniversaries" -> Color(0xFFB39DDB)
-                                            else -> WaterBlue
-                                        }
-                                    )
-                                    Text(
-                                        text = if (daysRemaining == 1) "day left" else if (daysRemaining == 0) "today!" else "days left",
-                                        color = Color.Gray,
-                                        fontSize = 11.sp,
-                                        modifier = Modifier.padding(bottom = 3.dp)
-                                    )
-                                }
+                            Spacer(modifier = Modifier.width(12.dp))
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                            // Middle: Title + Subtitle details + Slim accent progress
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = displayTitle,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
 
-                                val progressValue = remember(daysRemaining) {
-                                    if (item.category in listOf("Festivals", "Birthdays", "Anniversaries")) {
-                                        val percent = (365f - daysRemaining) / 365f
-                                        maxOf(0.05f, minOf(1.0f, percent))
-                                    } else {
-                                        val totalSampleDays = 30f
-                                        val percent = (totalSampleDays - daysRemaining) / totalSampleDays
-                                        maxOf(0.1f, minOf(1.0f, percent))
-                                    }
-                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+
+                                Text(
+                                    text = if (ageOrDetail.isNotBlank()) ageOrDetail else item.category,
+                                    fontSize = 11.5.sp,
+                                    color = if (daysRemaining <= 3) catColor else Color(0xFF9E9EA8),
+                                    fontWeight = if (daysRemaining <= 3) FontWeight.SemiBold else FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+
+                                Spacer(modifier = Modifier.height(5.dp))
 
                                 LinearProgressIndicator(
                                     progress = progressValue,
-                                    color = when (item.category) {
-                                        "Festivals" -> Color(0xFFAB47BC)
-                                        "Birthdays" -> Color(0xFFEC407A)
-                                        "Anniversaries" -> Color(0xFF7E57C2)
-                                        else -> WaterBlue
-                                    },
-                                    trackColor = Color.LightGray.copy(alpha = 0.1f),
+                                    color = catColor,
+                                    trackColor = Color.White.copy(alpha = 0.06f),
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
+                                        .width(72.dp)
+                                        .height(2.5.dp)
+                                        .clip(RoundedCornerShape(1.5.dp))
                                 )
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            // Right: High-Visibility Countdown Capsule
+                            if (daysRemaining == 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            Brush.horizontalGradient(listOf(Color(0xFFE91E63), Color(0xFFFF5722)))
+                                        )
+                                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "TODAY! 🥳",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color.White
+                                    )
+                                }
+                            } else if (daysRemaining == 1) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(catColor.copy(alpha = 0.15f))
+                                        .border(1.dp, catColor.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = "1 DAY",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = catColor
+                                        )
+                                        Text(
+                                            text = "tomorrow",
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color.LightGray
+                                        )
+                                    }
+                                }
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFF09090D),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (daysRemaining <= 7) catColor.copy(alpha = 0.45f)
+                                        else Color(0xFF22222B)
+                                    ),
+                                    modifier = Modifier.defaultMinSize(minWidth = 54.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(
+                                            text = "$daysRemaining",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = if (daysRemaining <= 7) catColor else Color.White
+                                        )
+                                        Text(
+                                            text = "DAYS",
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (daysRemaining <= 7) catColor.copy(alpha = 0.85f) else Color.Gray,
+                                            letterSpacing = 0.5.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (item.isDbBacked) {
+                                IconButton(
+                                    onClick = {
+                                        viewModel.deleteDeadline(Deadline(id = item.dbId, name = item.name, targetTimestamp = item.targetTimestamp))
+                                    },
+                                    modifier = Modifier.size(26.dp).padding(start = 2.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Delete",
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
                             }
                         }
                     }

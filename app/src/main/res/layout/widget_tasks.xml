@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_black_glass"
+    android:orientation="vertical"
+    android:paddingLeft="12dp"
+    android:paddingRight="12dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <!-- Header bar -->
+    <LinearLayout
+        android:id="@+id/tasks_header_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="6dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tasks_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TASKS"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <TextView
+                android:id="@+id/tasks_count_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/bg_countdown_pill_upcoming"
+                android:text="0"
+                android:textColor="#38BDF8"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:paddingLeft="6dp"
+                android:paddingRight="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp" />
+        </LinearLayout>
+
+        <!-- Quick Date Range Switcher Pill -->
+        <LinearLayout
+            android:id="@+id/btn_task_date_cycle"
+            android:layout_width="wrap_content"
+            android:layout_height="26dp"
+            android:background="@drawable/bg_widget_pill_filter"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:layout_marginEnd="6dp">
+
+            <TextView
+                android:id="@+id/txt_task_date_filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TODAY"
+                android:textColor="#38BDF8"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Settings / Filter Button -->
+        <ImageView
+            android:id="@+id/btn_task_settings"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:background="@drawable/bg_countdown_widget_circle_btn"
+            android:src="@drawable/ic_widget_filter"
+            android:tint="#CBD5E1"
+            android:scaleType="centerInside"
+            android:padding="5dp"
+            android:contentDescription="Task Widget Settings"
+            android:layout_marginEnd="4dp" />
+
+        <!-- Add Task Button -->
+        <ImageView
+            android:id="@+id/btn_task_add"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:background="@drawable/bg_countdown_widget_circle_btn"
+            android:src="@drawable/ic_widget_add"
+            android:tint="#38BDF8"
+            android:scaleType="centerInside"
+            android:padding="5dp"
+            android:contentDescription="New Task"
+            android:layout_marginEnd="4dp" />
+
+        <!-- Refresh button -->
+        <ImageView
+            android:id="@+id/btn_task_refresh"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:background="@drawable/bg_countdown_widget_circle_btn"
+            android:src="@drawable/ic_widget_refresh"
+            android:tint="#94A3B8"
+            android:scaleType="centerInside"
+            android:padding="5dp"
+            android:contentDescription="Refresh tasks" />
+    </LinearLayout>
+
+    <!-- Sub-Filter Indicator (e.g., Folder: Work · Done: ON) -->
+    <TextView
+        android:id="@+id/tasks_sub_filter_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#64748B"
+        android:textSize="9.5sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:paddingBottom="4dp"
+        android:visibility="gone" />
+
+    <!-- Scrollable ListView for Tasks -->
+    <ListView
+        android:id="@+id/tasks_widget_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:dividerHeight="5dp"
+        android:scrollbars="vertical"
+        android:nestedScrollingEnabled="true" />
+
+    <!-- Empty State -->
+    <TextView
+        android:id="@+id/tasks_empty_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="All tasks completed! 🎉"
+        android:textColor="#71717A"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
+</LinearLayout>

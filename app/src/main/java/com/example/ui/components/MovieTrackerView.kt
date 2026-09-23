@@ -313,7 +313,7 @@ fun MovieTrackerView(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(filteredList, key = { it.id }) { item ->
+                    itemsIndexed(filteredList, key = { idx, item -> "${item.id}_$idx" }) { _, item ->
                         MovieCard(
                             item = item,
                             onClick = { selectedMovieForDetail = item },
@@ -1524,7 +1524,7 @@ fun UpcomingAiringCalendarCompose(
                 }
             }
         } else {
-            items(seriesList, key = { it.id }) { item ->
+            itemsIndexed(seriesList, key = { idx, item -> "${item.id}_$idx" }) { _, item ->
                 val nextEp = item.nextEpisode
                 val seasonNum = nextEp?.seasonNumber ?: (if (item.totalSeasons > 0) item.totalSeasons else 1)
                 val epNum = nextEp?.episodeNumber ?: (item.watchedEpisodesCalculated + 1)

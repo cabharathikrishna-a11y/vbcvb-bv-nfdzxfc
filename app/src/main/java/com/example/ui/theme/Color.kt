@@ -5,7 +5,7 @@ import androidx.compose.ui.graphics.Color
 val WaterBlue = Color(0xFFFFB300) // Arena Prestige Gold
 val WaterBlueAccent = Color(0xFFFF8F00) // Arena Gold Accent
 val TickTickBlue = Color(0xFFFFB300)
-val DeepSlate = Color(0xFF0F0F11) // Arena Deep Obsidian Background
+val DeepSlate = Color(0xFF0F0F11) // Arena Deep Dark Background
 val Charcoal = Color(0xFF16161A) // Arena Midnight Card Background
 val SurfaceCard = Color(0xFF202026) // Slightly lighter dark surface
 val TextPrimary = Color(0xFFE2E2E2)

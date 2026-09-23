@@ -14,6 +14,9 @@ import kotlinx.coroutines.launch
 class ChatReplyReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+            return
+        }
         if (intent.action == "com.example.action.REPLY_CHAT") {
             val results = RemoteInput.getResultsFromIntent(intent)
             val replyText = results?.getCharSequence("key_text_reply")?.toString()

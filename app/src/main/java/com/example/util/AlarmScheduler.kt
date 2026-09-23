@@ -20,7 +20,33 @@ object AlarmScheduler {
     const val BEDTIME_REMINDER_REQUEST_CODE = 20001
     const val WAKEUP_ALARM_REQUEST_CODE = 20002
 
+    fun cancelAllAlarms(context: Context) {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val taskIntent = Intent(context, TaskReminderReceiver::class.java)
+            
+            // Bedtime & wakeup
+            cancelSpecificAlarm(context, alarmManager, taskIntent, BEDTIME_REMINDER_REQUEST_CODE)
+            cancelSpecificAlarm(context, alarmManager, taskIntent, WAKEUP_ALARM_REQUEST_CODE)
+            
+            // All-day & on this day
+            cancelSpecificAlarm(context, alarmManager, taskIntent, 9999)
+            cancelSpecificAlarm(context, alarmManager, taskIntent, 10001)
+            
+            // Timer end
+            cancelTimerEndAlarm(context)
+            
+            Log.d(TAG, "Successfully cancelled and purged all alarms.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cancelling all alarms: ${e.message}")
+        }
+    }
+
     fun scheduleBedtimeReminder(context: Context) {
+        if (!AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d(TAG, "Suppressed bedtime reminder scheduling: User is not logged in.")
+            return
+        }
         val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         val enabled = prefs.getBoolean("bedtime_reminder_enabled", true)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
@@ -71,6 +97,10 @@ object AlarmScheduler {
     }
 
     fun scheduleWakeUpAlarm(context: Context) {
+        if (!AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d(TAG, "Suppressed wakeup alarm scheduling: User is not logged in.")
+            return
+        }
         val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         val enabled = prefs.getBoolean("wakeup_alarm_enabled", false)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
@@ -123,6 +153,11 @@ object AlarmScheduler {
     fun scheduleReminder(context: Context, task: Task) {
         // First cancel all previous alarms for this task so they don't leak or duplicate
         cancelReminder(context, task.id)
+
+        if (!AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d(TAG, "Suppressed task reminder scheduling: User is not logged in.")
+            return
+        }
 
         if (task.isCompleted) {
             return
@@ -255,6 +290,10 @@ object AlarmScheduler {
 
     fun scheduleHabitReminder(context: Context, habit: Habit) {
         cancelHabitReminder(context, habit.id)
+        if (!AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d(TAG, "Suppressed habit reminder scheduling: User is not logged in.")
+            return
+        }
         if (!habit.isReminderEnabled) return
 
         val triggerTimeMs = calculateNextNotificationTimeMs(habit.scheduledTime) ?: return
@@ -350,6 +389,10 @@ object AlarmScheduler {
     }
 
     fun scheduleAllDayNotification(context: Context) {
+        if (!AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d(TAG, "Suppressed all-day notification scheduling: User is not logged in.")
+            return
+        }
         val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         val enabled = prefs.getBoolean("all_day_notification_enabled", false)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
@@ -425,6 +468,10 @@ object AlarmScheduler {
     }
 
     fun scheduleOnThisDayNotification(context: Context) {
+        if (!AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d(TAG, "Suppressed on-this-day notification scheduling: User is not logged in.")
+            return
+        }
         val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         val enabled = prefs.getBoolean("on_this_day_notification_enabled", false)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
@@ -547,6 +594,10 @@ object AlarmScheduler {
     const val TIMER_ALARM_REQUEST_CODE = 99999
 
     fun scheduleTimerEndAlarm(context: Context, durationSeconds: Int, isFocusPhase: Boolean = true) {
+        if (!AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d(TAG, "Suppressed timer end alarm scheduling: User is not logged in.")
+            return
+        }
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
         val intent = Intent(context, com.example.receiver.TimerAlertReceiver::class.java).apply {

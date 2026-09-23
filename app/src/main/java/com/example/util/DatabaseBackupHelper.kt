@@ -2217,12 +2217,21 @@ object DatabaseBackupHelper {
      */
     fun wipeAllLocalUserData(context: Context, database: AppDatabase) {
         try {
-            // 1. Terminate all background services & listeners
+            // 1. Terminate all background services, alarms & listeners
+            try {
+                com.example.util.AlarmScheduler.cancelAllAlarms(context)
+            } catch (_: Throwable) {}
+            try {
+                com.example.service.KeepAliveService.stop(context)
+            } catch (_: Throwable) {}
             try {
                 context.stopService(android.content.Intent(context, com.example.service.KeepAliveService::class.java))
             } catch (_: Throwable) {}
             try {
                 context.stopService(android.content.Intent(context, com.example.service.FocusForegroundService::class.java))
+            } catch (_: Throwable) {}
+            try {
+                context.stopService(android.content.Intent(context, com.example.service.GoogleDriveSyncService::class.java))
             } catch (_: Throwable) {}
             try {
                 context.stopService(android.content.Intent(context, com.example.service.MediaPlaybackService::class.java))

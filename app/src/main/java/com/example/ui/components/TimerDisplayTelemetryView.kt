@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -656,7 +657,7 @@ fun TimerDisplayTelemetryPage(
                     }
                 }
             } else {
-                items(dateGroupedRecords, key = { it.first }) { (dateString, entriesForDate) ->
+                itemsIndexed(dateGroupedRecords, key = { idx, pair -> "${pair.first}_$idx" }) { _, (dateString, entriesForDate) ->
                     val isCollapsed = collapsedDateMap[dateString] ?: false
                     val isToday = dateString == todayDateStr
                     val focusingCount = entriesForDate.count { it.status.equals("FOCUSING", ignoreCase = true) }

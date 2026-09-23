@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -532,7 +533,7 @@ fun ModelCatalogScreen(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(ModelRepository.catalog, key = { it.id }) { model ->
+            itemsIndexed(ModelRepository.catalog, key = { idx, model -> "${model.id}_$idx" }) { _, model ->
                 val compatibility = remember(model, deviceSpecs) { model.evaluateCompatibility(deviceSpecs) }
                 val isDownloaded = downloadedModelIds.contains(model.id)
                 val isActive = activeModelId == model.id

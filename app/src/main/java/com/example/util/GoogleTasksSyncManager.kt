@@ -1525,8 +1525,11 @@ object GoogleContactsSyncManager {
     private const val CONTACTS_SCOPE = "oauth2:https://www.googleapis.com/auth/contacts"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(25, java.util.concurrent.TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .retryOnConnectionFailure(true)
         .build()
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
@@ -1632,6 +1635,20 @@ object GoogleContactsSyncManager {
                         matchedLocal.photoUri
                     }
 
+                    val updatedAttached = mutableListOf<String>()
+                    if (matchedLocal.attachedFilesJson.isNotEmpty()) {
+                        try {
+                            val arr = org.json.JSONArray(matchedLocal.attachedFilesJson)
+                            for (i in 0 until arr.length()) {
+                                val itm = arr.getString(i)
+                                if (itm.isNotBlank() && !updatedAttached.contains(itm)) updatedAttached.add(itm)
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    if (!resolvedPhoto.isNullOrEmpty() && !updatedAttached.contains(resolvedPhoto)) {
+                        updatedAttached.add(0, resolvedPhoto)
+                    }
+
                     val updated = matchedLocal.copy(
                         firstName = if (gContact.firstName.isNotEmpty()) gContact.firstName else matchedLocal.firstName,
                         middleName = if (gContact.middleName.isNotEmpty()) gContact.middleName else matchedLocal.middleName,
@@ -1646,18 +1663,24 @@ object GoogleContactsSyncManager {
                         additionalFieldsJson = mergedCustomFields,
                         additionalDatesJson = if (gContact.additionalDatesJson.isNotEmpty()) gContact.additionalDatesJson else matchedLocal.additionalDatesJson,
                         folder = gContact.folder, // Fully synchronized label/folder
-                        googleContactId = gContact.resourceName
+                        googleContactId = gContact.resourceName,
+                        attachedFilesJson = org.json.JSONArray(updatedAttached).toString()
                     )
                     contactDao.updateContact(updated)
                 } else {
                     // Create new local contact
+                    val newPhoto = localPhotoPath ?: gContact.photoUrl
+                    val initialAttached = mutableListOf<String>()
+                    if (!newPhoto.isNullOrEmpty()) {
+                        initialAttached.add(newPhoto)
+                    }
                     val newContact = Contact(
                         firstName = gContact.firstName,
                         middleName = gContact.middleName,
                         lastName = gContact.lastName,
                         phone = gContact.phone,
                         dobString = gContact.dobString,
-                        photoUri = localPhotoPath ?: gContact.photoUrl,
+                        photoUri = newPhoto,
                         email = gContact.email,
                         address = gContact.address,
                         jobTitle = gContact.jobTitle,
@@ -1665,7 +1688,8 @@ object GoogleContactsSyncManager {
                         additionalFieldsJson = gContact.additionalFieldsJson,
                         additionalDatesJson = gContact.additionalDatesJson,
                         folder = gContact.folder, // Fully synchronized label/folder
-                        googleContactId = gContact.resourceName
+                        googleContactId = gContact.resourceName,
+                        attachedFilesJson = org.json.JSONArray(initialAttached).toString()
                     )
                     contactDao.insertContact(newContact)
                 }
@@ -2031,262 +2055,285 @@ object GoogleContactsSyncManager {
     }
 
     private suspend fun fetchGoogleConnections(token: String, groupMap: Map<String, String>): List<GoogleContactDetails> {
-        val url = "https://people.googleapis.com/v1/people/me/connections?personFields=names,phoneNumbers,birthdays,photos,emailAddresses,addresses,organizations,events,memberships,userDefined,urls,biographies&pageSize=1000"
-        val request = Request.Builder()
-            .url(url)
-            .header("Authorization", "Bearer $token")
-            .get()
-            .build()
-
         val list = mutableListOf<GoogleContactDetails>()
+        var pageToken: String? = null
+        var pageCount = 0
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Failed to fetch connections: code=${response.code}, msg=${response.message}")
-                return emptyList()
+        do {
+            pageCount++
+            val urlBuilder = StringBuilder("https://people.googleapis.com/v1/people/me/connections?personFields=names,phoneNumbers,birthdays,photos,emailAddresses,addresses,organizations,events,memberships,userDefined,urls,biographies&pageSize=1000")
+            if (!pageToken.isNullOrEmpty()) {
+                urlBuilder.append("&pageToken=").append(java.net.URLEncoder.encode(pageToken, "UTF-8"))
             }
-            val bodyStr = response.body?.string() ?: ""
-            val json = JSONObject(bodyStr)
-            val connections = json.optJSONArray("connections") ?: return emptyList()
 
-            for (i in 0 until connections.length()) {
-                val conn = connections.getJSONObject(i)
-                val resourceName = conn.optString("resourceName")
-                val etag = conn.optString("etag")
+            val request = Request.Builder()
+                .url(urlBuilder.toString())
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
 
-                // 2. Phone parsing
-                var phone = ""
-                val phoneNumbers = conn.optJSONArray("phoneNumbers")
-                if (phoneNumbers != null && phoneNumbers.length() > 0) {
-                    phone = phoneNumbers.getJSONObject(0).optString("value", "")
-                }
+            var nextToken: String? = null
 
-                // 5. Email parsing
-                var email = ""
-                val emailAddresses = conn.optJSONArray("emailAddresses")
-                if (emailAddresses != null && emailAddresses.length() > 0) {
-                    email = emailAddresses.getJSONObject(0).optString("value", "")
-                }
-
-                // 1. Name parsing with display name fallback
-                var firstName = ""
-                var lastName = ""
-                var middleName = ""
-                val names = conn.optJSONArray("names")
-                if (names != null && names.length() > 0) {
-                    val nameObj = names.getJSONObject(0)
-                    firstName = nameObj.optString("givenName", "").trim()
-                    lastName = nameObj.optString("familyName", "").trim()
-                    middleName = nameObj.optString("middleName", "").trim()
-                    
-                    if (firstName.isEmpty() && lastName.isEmpty()) {
-                        val displayName = nameObj.optString("displayName", "").trim()
-                        if (displayName.isNotEmpty()) {
-                            val parts = displayName.split(" ", limit = 2)
-                            firstName = parts.first()
-                            lastName = parts.getOrNull(1) ?: ""
-                        }
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "Failed to fetch connections page $pageCount: code=${response.code}, msg=${response.message}")
+                        return@use
                     }
-                }
+                    val bodyStr = response.body?.string() ?: ""
+                    val json = JSONObject(bodyStr)
+                    val connections = json.optJSONArray("connections")
+                    if (connections != null) {
+                        for (i in 0 until connections.length()) {
+                            val conn = connections.getJSONObject(i)
+                            val resourceName = conn.optString("resourceName")
+                            val etag = conn.optString("etag")
 
-                if (firstName.isEmpty() && lastName.isEmpty()) {
-                    if (phone.isNotEmpty()) {
-                        firstName = phone
-                    } else if (email.isNotEmpty()) {
-                        firstName = email.substringBefore("@")
-                    } else {
-                        firstName = "Unnamed Google Contact"
-                    }
-                }
+                            // 2. Phone parsing
+                            var phone = ""
+                            val phoneNumbers = conn.optJSONArray("phoneNumbers")
+                            if (phoneNumbers != null && phoneNumbers.length() > 0) {
+                                phone = phoneNumbers.getJSONObject(0).optString("value", "")
+                            }
 
-                // 3. Birthday / DOB parsing
-                var dobString = ""
-                val birthdays = conn.optJSONArray("birthdays")
-                if (birthdays != null && birthdays.length() > 0) {
-                    val bdayObj = birthdays.getJSONObject(0)
-                    val dateObj = bdayObj.optJSONObject("date")
-                    if (dateObj != null) {
-                        val y = dateObj.optInt("year", 0)
-                        val m = dateObj.optInt("month", 0)
-                        val d = dateObj.optInt("day", 0)
-                        if (y > 0 && m > 0 && d > 0) {
-                            dobString = String.format(Locale.US, "%04d-%02d-%02d", y, m, d)
-                        } else if (m > 0 && d > 0) {
-                            dobString = String.format(Locale.US, "%02d-%02d", m, d)
-                        }
-                    } else {
-                        val text = bdayObj.optString("text", "").trim()
-                        if (text.isNotEmpty()) {
-                            dobString = text
-                        }
-                    }
-                }
+                            // 5. Email parsing
+                            var email = ""
+                            val emailAddresses = conn.optJSONArray("emailAddresses")
+                            if (emailAddresses != null && emailAddresses.length() > 0) {
+                                email = emailAddresses.getJSONObject(0).optString("value", "")
+                            }
 
-                // 4. Photo parsing - prioritize custom non-default user photo and high resolution
-                var photoUrl: String? = null
-                val photos = conn.optJSONArray("photos")
-                if (photos != null && photos.length() > 0) {
-                    // First try to find a user-provided photo (not marked default)
-                    for (p in 0 until photos.length()) {
-                        val pObj = photos.optJSONObject(p) ?: continue
-                        val isDefault = pObj.optBoolean("default", false)
-                        val rawUrl = pObj.optString("url", "").trim()
-                        if (rawUrl.isNotEmpty() && !isDefault) {
-                            photoUrl = rawUrl
-                            break
-                        }
-                    }
-                    // If no explicit non-default photo, accept any valid photo URL that is not a placeholder silhouette
-                    if (photoUrl.isNullOrEmpty()) {
-                        for (p in 0 until photos.length()) {
-                            val pObj = photos.optJSONObject(p) ?: continue
-                            val rawUrl = pObj.optString("url", "").trim()
-                            if (rawUrl.isNotEmpty() && !rawUrl.contains("default_user") && !rawUrl.contains("silhouette")) {
-                                photoUrl = rawUrl
-                                break
+                            // 1. Name parsing with display name fallback
+                            var firstName = ""
+                            var lastName = ""
+                            var middleName = ""
+                            val names = conn.optJSONArray("names")
+                            if (names != null && names.length() > 0) {
+                                val nameObj = names.getJSONObject(0)
+                                firstName = nameObj.optString("givenName", "").trim()
+                                lastName = nameObj.optString("familyName", "").trim()
+                                middleName = nameObj.optString("middleName", "").trim()
+                                
+                                if (firstName.isEmpty() && lastName.isEmpty()) {
+                                    val displayName = nameObj.optString("displayName", "").trim()
+                                    if (displayName.isNotEmpty()) {
+                                        val parts = displayName.split(" ", limit = 2)
+                                        firstName = parts.first()
+                                        lastName = parts.getOrNull(1) ?: ""
+                                    }
+                                }
+                            }
+
+                            if (firstName.isEmpty() && lastName.isEmpty()) {
+                                if (phone.isNotEmpty()) {
+                                    firstName = phone
+                                } else if (email.isNotEmpty()) {
+                                    firstName = email.substringBefore("@")
+                                } else {
+                                    firstName = "Unnamed Google Contact"
+                                }
+                            }
+
+                            // 3. Birthday / DOB parsing
+                            var dobString = ""
+                            val birthdays = conn.optJSONArray("birthdays")
+                            if (birthdays != null && birthdays.length() > 0) {
+                                val bdayObj = birthdays.getJSONObject(0)
+                                val dateObj = bdayObj.optJSONObject("date")
+                                if (dateObj != null) {
+                                    val y = dateObj.optInt("year", 0)
+                                    val m = dateObj.optInt("month", 0)
+                                    val d = dateObj.optInt("day", 0)
+                                    if (y > 0 && m > 0 && d > 0) {
+                                        dobString = String.format(Locale.US, "%04d-%02d-%02d", y, m, d)
+                                    } else if (m > 0 && d > 0) {
+                                        dobString = String.format(Locale.US, "%02d-%02d", m, d)
+                                    }
+                                } else {
+                                    val text = bdayObj.optString("text", "").trim()
+                                    if (text.isNotEmpty()) {
+                                        dobString = text
+                                    }
+                                }
+                            }
+
+                            // 4. Photo parsing - prioritize custom non-default user photo and high resolution
+                            var photoUrl: String? = null
+                            val photos = conn.optJSONArray("photos")
+                            if (photos != null && photos.length() > 0) {
+                                for (p in 0 until photos.length()) {
+                                    val pObj = photos.optJSONObject(p) ?: continue
+                                    val isDefault = pObj.optBoolean("default", false)
+                                    val rawUrl = pObj.optString("url", "").trim()
+                                    if (rawUrl.isNotEmpty() && !isDefault) {
+                                        photoUrl = rawUrl
+                                        break
+                                    }
+                                }
+                                if (photoUrl.isNullOrEmpty()) {
+                                    for (p in 0 until photos.length()) {
+                                        val pObj = photos.optJSONObject(p) ?: continue
+                                        val rawUrl = pObj.optString("url", "").trim()
+                                        if (rawUrl.isNotEmpty() && !rawUrl.contains("default_user") && !rawUrl.contains("silhouette")) {
+                                            photoUrl = rawUrl
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                            if (!photoUrl.isNullOrEmpty()) {
+                                photoUrl = getHighResPhotoUrl(photoUrl, 256)
+                            }
+
+                            // 6. Address parsing
+                            var address = ""
+                            val addresses = conn.optJSONArray("addresses")
+                            if (addresses != null && addresses.length() > 0) {
+                                address = addresses.getJSONObject(0).optString("formattedValue", "")
+                            }
+
+                            // 7. Job Title parsing
+                            var jobTitle = ""
+                            val organizations = conn.optJSONArray("organizations")
+                            if (organizations != null && organizations.length() > 0) {
+                                jobTitle = organizations.getJSONObject(0).optString("title", "")
+                            }
+
+                            // 8. Anniversary and other dates parsing
+                            var anniversaryString = ""
+                            val additionalDatesList = mutableListOf<String>()
+                            val events = conn.optJSONArray("events")
+                            if (events != null) {
+                                for (j in 0 until events.length()) {
+                                    val eventObj = events.getJSONObject(j)
+                                    val type = eventObj.optString("type", "")
+                                    val formattedType = eventObj.optString("formattedType", type.replaceFirstChar { it.uppercase() })
+                                    val dateObj = eventObj.optJSONObject("date")
+                                    var dateStr = ""
+                                    if (dateObj != null) {
+                                        val y = dateObj.optInt("year", 0)
+                                        val m = dateObj.optInt("month", 0)
+                                        val d = dateObj.optInt("day", 0)
+                                        if (y > 0 && m > 0 && d > 0) {
+                                            dateStr = String.format(Locale.US, "%04d-%02d-%02d", y, m, d)
+                                        } else if (m > 0 && d > 0) {
+                                            dateStr = String.format(Locale.US, "%02d-%02d", m, d)
+                                        }
+                                    } else {
+                                        dateStr = eventObj.optString("text", "").trim()
+                                    }
+
+                                    if (dateStr.isNotEmpty()) {
+                                        if (type == "anniversary") {
+                                            anniversaryString = dateStr
+                                        } else {
+                                            val label = if (formattedType.isNotEmpty()) formattedType else "Event"
+                                            additionalDatesList.add("$label:$dateStr")
+                                        }
+                                    }
+                                }
+                            }
+                            val additionalDatesJson = additionalDatesList.joinToString(";")
+
+                            // 9. Custom Fields
+                            val customFieldsList = mutableListOf<Pair<String, String>>()
+                            val userDefined = conn.optJSONArray("userDefined")
+                            if (userDefined != null) {
+                                for (k in 0 until userDefined.length()) {
+                                    val ud = userDefined.getJSONObject(k)
+                                    val key = ud.optString("key", "").trim()
+                                    val value = ud.optString("value", "").trim()
+                                    if (key.isNotEmpty() && value.isNotEmpty()) {
+                                        customFieldsList.add(key to value)
+                                    }
+                                }
+                            }
+
+                            val urls = conn.optJSONArray("urls")
+                            if (urls != null) {
+                                for (u in 0 until urls.length()) {
+                                    val uObj = urls.getJSONObject(u)
+                                    val valStr = uObj.optString("value", "").trim()
+                                    val formattedType = uObj.optString("formattedType", "").trim()
+                                    val type = uObj.optString("type", "").trim()
+                                    val label = when {
+                                        formattedType.isNotEmpty() -> formattedType
+                                        type.isNotEmpty() -> type.replaceFirstChar { it.uppercase() }
+                                        valStr.contains("instagram.com", ignoreCase = true) -> "Instagram Link"
+                                        valStr.contains("snapchat.com", ignoreCase = true) -> "Snapchat Link"
+                                        else -> "Website"
+                                    }
+                                    if (valStr.isNotEmpty() && !customFieldsList.any { it.second == valStr }) {
+                                        customFieldsList.add(label to valStr)
+                                    }
+                                }
+                            }
+
+                            val bios = conn.optJSONArray("biographies")
+                            if (bios != null && bios.length() > 0) {
+                                val bioVal = bios.getJSONObject(0).optString("value", "").trim()
+                                if (bioVal.isNotEmpty() && !customFieldsList.any { it.first.equals("Notes", ignoreCase = true) }) {
+                                    customFieldsList.add("Notes" to bioVal)
+                                }
+                            }
+
+                            val additionalFieldsJson = com.example.util.ContactSocialHelper.serializeCustomFields(customFieldsList)
+
+                            // 10. Membership parsing for group/label mapping to folder
+                            var folder = "All"
+                            val memberships = conn.optJSONArray("memberships")
+                            if (memberships != null) {
+                                for (m in 0 until memberships.length()) {
+                                    val mObj = memberships.getJSONObject(m)
+                                    val cgMembership = mObj.optJSONObject("contactGroupMembership")
+                                    if (cgMembership != null) {
+                                        val cgResName = cgMembership.optString("contactGroupResourceName")
+                                        val mappedGroupName = groupMap[cgResName]
+                                        if (!mappedGroupName.isNullOrEmpty() && mappedGroupName != "myContacts" && mappedGroupName != "starred") {
+                                            folder = mappedGroupName
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (resourceName.isNotEmpty()) {
+                                list.add(
+                                    GoogleContactDetails(
+                                        resourceName = resourceName,
+                                        etag = etag,
+                                        firstName = firstName,
+                                        lastName = lastName,
+                                        middleName = middleName,
+                                        phone = phone,
+                                        dobString = dobString,
+                                        photoUrl = photoUrl,
+                                        email = email,
+                                        address = address,
+                                        jobTitle = jobTitle,
+                                        anniversaryString = anniversaryString,
+                                        additionalFieldsJson = additionalFieldsJson,
+                                        additionalDatesJson = additionalDatesJson,
+                                        folder = folder
+                                    )
+                                )
                             }
                         }
                     }
-                }
-                if (!photoUrl.isNullOrEmpty()) {
-                    photoUrl = getHighResPhotoUrl(photoUrl, 256)
-                }
-
-                // 6. Address parsing
-                var address = ""
-                val addresses = conn.optJSONArray("addresses")
-                if (addresses != null && addresses.length() > 0) {
-                    address = addresses.getJSONObject(0).optString("formattedValue", "")
-                }
-
-                // 7. Job Title parsing
-                var jobTitle = ""
-                val organizations = conn.optJSONArray("organizations")
-                if (organizations != null && organizations.length() > 0) {
-                    jobTitle = organizations.getJSONObject(0).optString("title", "")
-                }
-
-                // 8. Anniversary and other dates parsing
-                var anniversaryString = ""
-                val additionalDatesList = mutableListOf<String>()
-                val events = conn.optJSONArray("events")
-                if (events != null) {
-                    for (j in 0 until events.length()) {
-                        val eventObj = events.getJSONObject(j)
-                        val type = eventObj.optString("type", "")
-                        val formattedType = eventObj.optString("formattedType", type.replaceFirstChar { it.uppercase() })
-                        val dateObj = eventObj.optJSONObject("date")
-                        var dateStr = ""
-                        if (dateObj != null) {
-                            val y = dateObj.optInt("year", 0)
-                            val m = dateObj.optInt("month", 0)
-                            val d = dateObj.optInt("day", 0)
-                            if (y > 0 && m > 0 && d > 0) {
-                                dateStr = String.format(Locale.US, "%04d-%02d-%02d", y, m, d)
-                            } else if (m > 0 && d > 0) {
-                                dateStr = String.format(Locale.US, "%02d-%02d", m, d)
-                            }
-                        } else {
-                            dateStr = eventObj.optString("text", "").trim()
-                        }
-
-                        if (dateStr.isNotEmpty()) {
-                            if (type == "anniversary") {
-                                anniversaryString = dateStr
-                            } else {
-                                val label = if (formattedType.isNotEmpty()) formattedType else "Event"
-                                additionalDatesList.add("$label:$dateStr")
-                            }
-                        }
+                    val tokenStr = json.optString("nextPageToken", "").trim()
+                    if (tokenStr.isNotEmpty()) {
+                        nextToken = tokenStr
                     }
                 }
-                val additionalDatesJson = additionalDatesList.joinToString(";")
-
-                // 9. Custom Fields (userDefined, urls, biographies for Instagram, Snapchat, and other custom fields)
-                val customFieldsList = mutableListOf<Pair<String, String>>()
-                val userDefined = conn.optJSONArray("userDefined")
-                if (userDefined != null) {
-                    for (k in 0 until userDefined.length()) {
-                        val ud = userDefined.getJSONObject(k)
-                        val key = ud.optString("key", "").trim()
-                        val value = ud.optString("value", "").trim()
-                        if (key.isNotEmpty() && value.isNotEmpty()) {
-                            customFieldsList.add(key to value)
-                        }
-                    }
-                }
-
-                val urls = conn.optJSONArray("urls")
-                if (urls != null) {
-                    for (u in 0 until urls.length()) {
-                        val uObj = urls.getJSONObject(u)
-                        val valStr = uObj.optString("value", "").trim()
-                        val formattedType = uObj.optString("formattedType", "").trim()
-                        val type = uObj.optString("type", "").trim()
-                        val label = when {
-                            formattedType.isNotEmpty() -> formattedType
-                            type.isNotEmpty() -> type.replaceFirstChar { it.uppercase() }
-                            valStr.contains("instagram.com", ignoreCase = true) -> "Instagram Link"
-                            valStr.contains("snapchat.com", ignoreCase = true) -> "Snapchat Link"
-                            else -> "Website"
-                        }
-                        if (valStr.isNotEmpty() && !customFieldsList.any { it.second == valStr }) {
-                            customFieldsList.add(label to valStr)
-                        }
-                    }
-                }
-
-                val bios = conn.optJSONArray("biographies")
-                if (bios != null && bios.length() > 0) {
-                    val bioVal = bios.getJSONObject(0).optString("value", "").trim()
-                    if (bioVal.isNotEmpty() && !customFieldsList.any { it.first.equals("Notes", ignoreCase = true) }) {
-                        customFieldsList.add("Notes" to bioVal)
-                    }
-                }
-
-                val additionalFieldsJson = com.example.util.ContactSocialHelper.serializeCustomFields(customFieldsList)
-
-                // 10. Membership parsing for group/label mapping to folder
-                var folder = "All"
-                val memberships = conn.optJSONArray("memberships")
-                if (memberships != null) {
-                    for (m in 0 until memberships.length()) {
-                        val mObj = memberships.getJSONObject(m)
-                        val cgMembership = mObj.optJSONObject("contactGroupMembership")
-                        if (cgMembership != null) {
-                            val cgResName = cgMembership.optString("contactGroupResourceName")
-                            val mappedGroupName = groupMap[cgResName]
-                            if (!mappedGroupName.isNullOrEmpty() && mappedGroupName != "myContacts" && mappedGroupName != "starred") {
-                                folder = mappedGroupName
-                                break
-                            }
-                        }
-                    }
-                }
-
-                if (resourceName.isNotEmpty()) {
-                    list.add(
-                        GoogleContactDetails(
-                            resourceName = resourceName,
-                            etag = etag,
-                            firstName = firstName,
-                            lastName = lastName,
-                            middleName = middleName,
-                            phone = phone,
-                            dobString = dobString,
-                            photoUrl = photoUrl,
-                            email = email,
-                            address = address,
-                            jobTitle = jobTitle,
-                            anniversaryString = anniversaryString,
-                            additionalFieldsJson = additionalFieldsJson,
-                            additionalDatesJson = additionalDatesJson,
-                            folder = folder
-                        )
-                    )
-                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception during connections fetch page $pageCount", e)
+                break
             }
-        }
+
+            pageToken = nextToken
+        } while (pageToken != null && pageCount < 50)
+
+        Log.d(TAG, "Fetched total ${list.size} contacts across $pageCount page(s)")
         return list
     }
 
@@ -2699,6 +2746,16 @@ object GoogleDriveSyncManager {
         context: Context,
         onAuthResolutionRequired: (Intent) -> Unit = {}
     ): Pair<Boolean, String> = GoogleDriveReadManager.restoreFocusData(context, onAuthResolutionRequired)
+
+    suspend fun backupAppSettingsToDrive(
+        context: Context,
+        onAuthResolutionRequired: (Intent) -> Unit = {}
+    ): Pair<Boolean, String> = GoogleDriveWriteManager.backupAppSettingsToDrive(context, onAuthResolutionRequired)
+
+    suspend fun restoreAppSettingsFromDrive(
+        context: Context,
+        onAuthResolutionRequired: (Intent) -> Unit = {}
+    ): Pair<Boolean, String> = GoogleDriveReadManager.restoreAppSettingsFromDrive(context, onAuthResolutionRequired)
 
     suspend fun backupAllAppData(
         context: Context,

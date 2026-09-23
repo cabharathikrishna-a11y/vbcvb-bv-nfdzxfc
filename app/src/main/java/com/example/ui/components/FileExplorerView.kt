@@ -296,6 +296,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     val arr = org.json.JSONArray(contact.attachedFilesJson)
                     for (i in 0 until arr.length()) {
                         val path = arr.getString(i)
+                        if (path == contact.photoUri) continue
                         val name = path.substringAfterLast("/")
                         val type = if (name.lowercase().endsWith(".png") || name.lowercase().endsWith(".jpg") || name.lowercase().endsWith(".jpeg") || name.lowercase().endsWith(".webp")) {
                             "image"
@@ -983,7 +984,12 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
 
                         // App Data Folder Card
-                        val appDataCount = folderJournalFiles.size + folderTaskFiles.size + folderContactFiles.size + folderFavoriteFiles.size
+                        val appDataFilesList = remember(folderJournalFiles, folderTaskFiles, folderContactFiles) {
+                            (folderJournalFiles + folderTaskFiles + folderContactFiles)
+                                .filter { it.fileMime != "inode/directory" }
+                                .distinctBy { it.path.ifEmpty { it.name } + it.timestamp }
+                        }
+                        val appDataCount = appDataFilesList.size
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1025,6 +1031,10 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
 
                         // Personal Folder Card
+                        val personalFilesList = remember(folderGeneralFiles) {
+                            folderGeneralFiles.filter { it.fileMime != "inode/directory" }
+                        }
+                        val personalCount = personalFilesList.size
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1050,7 +1060,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(text = "Personal", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    Text(text = "User uploads localized to device & personal Google Drive (${folderGeneralFiles.size} items)", color = Color.Gray, fontSize = 11.sp)
+                                    Text(text = "User uploads localized to device & personal Google Drive ($personalCount items)", color = Color.Gray, fontSize = 11.sp)
                                 }
                                 Box(
                                     modifier = Modifier
@@ -1093,7 +1103,10 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             )
                         }
 
-                        val sharedCount = folderFriendsFiles.size + googleDriveFiles.size + googleDocs.size + googleSheets.size
+                        val sharedFriendsCount = remember(folderFriendsFiles) {
+                            folderFriendsFiles.count { it.fileMime != "inode/directory" }
+                        }
+                        val sharedCount = sharedFriendsCount + googleDriveFiles.size + googleDocs.size + googleSheets.size
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1143,15 +1156,31 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)
                         )
 
+                        val friendsCleanCount = remember(folderFriendsFiles) {
+                            folderFriendsFiles.count { it.fileMime != "inode/directory" }
+                        }
+                        val journalCleanCount = remember(folderJournalFiles) {
+                            folderJournalFiles.count { it.fileMime != "inode/directory" }
+                        }
+                        val tasksCleanCount = remember(folderTaskFiles) {
+                            folderTaskFiles.count { it.fileMime != "inode/directory" }
+                        }
+                        val contactsCleanCount = remember(folderContactFiles) {
+                            folderContactFiles.count { it.fileMime != "inode/directory" }
+                        }
+                        val keepNotesCleanCount = remember(folderGoogleNotesFiles) {
+                            folderGoogleNotesFiles.count { it.fileMime != "inode/directory" }
+                        }
+
                         val quickCategories = listOf(
-                            Triple("Journal", folderJournalFiles.size, Color(0xFFE57373)),
-                            Triple("Tasks", folderTaskFiles.size, Color(0xFF81C784)),
-                            Triple("Contacts", folderContactFiles.size, Color(0xFF64B5F6)),
-                            Triple("Friends", folderFriendsFiles.size, Color(0xFFAB47BC)),
+                            Triple("Journal", journalCleanCount, Color(0xFFE57373)),
+                            Triple("Tasks", tasksCleanCount, Color(0xFF81C784)),
+                            Triple("Contacts", contactsCleanCount, Color(0xFF64B5F6)),
+                            Triple("Friends", friendsCleanCount, Color(0xFFAB47BC)),
                             Triple("Google Drive", googleDriveFiles.size, Color(0xFFF4B400)),
                             Triple("Google Docs", googleDocs.size, Color(0xFF4285F4)),
                             Triple("Google Sheets", googleSheets.size, Color(0xFF0F9D58)),
-                            Triple("Keep Notes", folderGoogleNotesFiles.size, Color(0xFFFF9E0F))
+                            Triple("Keep Notes", keepNotesCleanCount, Color(0xFFFF9E0F))
                         )
 
                         quickCategories.chunked(2).forEach { pair ->
@@ -1218,9 +1247,9 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     )
                                 }
                                 val currentFolderFiles: List<ExplorerFile> = when (activeFolder) {
-                                    "Private / App Data" -> folderJournalFiles + folderTaskFiles + folderContactFiles + folderFavoriteFiles
+                                    "Private / App Data" -> (folderJournalFiles + folderTaskFiles + folderContactFiles).distinctBy { it.path.ifEmpty { it.name } + it.timestamp }
                                     "Private / Personal" -> folderGeneralFiles
-                                    "Shared" -> folderFriendsFiles + googleExplorerFiles
+                                    "Shared" -> (folderFriendsFiles.filter { it.fileMime != "inode/directory" } + googleExplorerFiles).distinctBy { it.path.ifEmpty { it.name } + it.timestamp }
                                     "Journal" -> folderJournalFiles
                                     "Tasks" -> folderTaskFiles
                                     "Contacts" -> folderContactFiles
@@ -7108,79 +7137,241 @@ fun FriendsFolderView(
 
         // Determine current sub-folders or files to list
         if (friendsPathStack.isEmpty()) {
-            // Level 1: Subfolders of Friends: "General" & "CA Inter"
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Folder Card: General
-                val generalCount = folderFriendsFiles.count { file ->
-                    val p = file.appFileRef?.path ?: ""
-                    p == "Friends/General:General" || p.startsWith("Friends/General")
+            // Level 1: Subfolders of Friends: "General", "CA Inter", custom folders, and direct files
+            val generalFiles = remember(folderFriendsFiles) {
+                folderFriendsFiles.filter { file ->
+                    val p = file.appFileRef?.path ?: file.path
+                    file.fileMime != "inode/directory" && (
+                        p.equals("Friends/General:General", ignoreCase = true) ||
+                        p.equals("Friends/General", ignoreCase = true) ||
+                        p.startsWith("Friends/General/", ignoreCase = true) ||
+                        p.equals("General", ignoreCase = true) ||
+                        p.startsWith("General/", ignoreCase = true)
+                    )
                 }
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { friendsPathStack.add("General:General") }
-                        .testTag("friends_general_folder"),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceCard),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            }
+            val generalCount = generalFiles.size
+
+            val caFiles = remember(folderFriendsFiles) {
+                folderFriendsFiles.filter { file ->
+                    val p = file.appFileRef?.path ?: file.path
+                    file.fileMime != "inode/directory" && (
+                        p.contains("CA Inter", ignoreCase = true) ||
+                        p.contains("CAInter", ignoreCase = true)
+                    )
+                }
+            }
+            val caCount = caFiles.size
+
+            val customFolders = remember(folderFriendsFiles) {
+                folderFriendsFiles.filter { file ->
+                    (file.fileMime == "inode/directory" || file.fileMime == "application/vnd.google-apps.folder-link") &&
+                    (file.appFileRef?.path == "Friends" || file.path == "Friends" || file.path.isBlank()) &&
+                    !file.name.equals("General", ignoreCase = true) &&
+                    !file.name.contains("CA Inter", ignoreCase = true)
+                }
+            }
+
+            val directRootFiles = remember(folderFriendsFiles) {
+                folderFriendsFiles.filter { file ->
+                    val p = file.appFileRef?.path ?: file.path
+                    file.fileMime != "inode/directory" && (p == "Friends" || p == "Friends/" || p.isBlank())
+                }
+            }
+
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                item {
+                    // Folder Card: General
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { friendsPathStack.add("General:General") }
+                            .testTag("friends_general_folder"),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFAB47BC).copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Folder, contentDescription = null, tint = Color(0xFFAB47BC))
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFFAB47BC).copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Folder, contentDescription = null, tint = Color(0xFFAB47BC))
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("General", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                Text("$generalCount resources", color = Color.Gray, fontSize = 11.sp)
+                            }
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("General", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("$generalCount resources", color = Color.Gray, fontSize = 11.sp)
-                        }
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
                     }
                 }
 
-                // Folder Card: CA Inter
-                val caCount = folderFriendsFiles.count { file ->
-                    val p = file.appFileRef?.path ?: ""
-                    p.startsWith("Friends/CA Inter") || p.contains("CA Inter") || p.contains("CAInter")
-                }
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { friendsPathStack.add("CA Inter:CAInter") }
-                        .testTag("friends_cainter_folder"),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceCard),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                item {
+                    // Folder Card: CA Inter
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { friendsPathStack.add("CA Inter:CAInter") }
+                            .testTag("friends_cainter_folder"),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFAB47BC).copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.School, contentDescription = null, tint = Color(0xFFAB47BC))
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFFAB47BC).copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.School, contentDescription = null, tint = Color(0xFFAB47BC))
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("CA Inter", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                Text("$caCount resources organized dynamically", color = Color.Gray, fontSize = 11.sp)
+                            }
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("CA Inter", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("$caCount resources organized dynamically", color = Color.Gray, fontSize = 11.sp)
+                    }
+                }
+
+                // Custom User-Created Folders inside Friends
+                if (customFolders.isNotEmpty()) {
+                    itemsIndexed(customFolders, key = { idx, folder -> "custom_folder_${folder.name}_$idx" }) { _, folder ->
+                        val folderChildCount = folderFriendsFiles.count { file ->
+                            if (file.fileMime == "inode/directory") return@count false
+                            val p = file.appFileRef?.path ?: file.path
+                            p.contains(folder.name, ignoreCase = true)
                         }
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { friendsPathStack.add("${folder.name}:${folder.name}") }
+                                .testTag("custom_folder_${folder.name}"),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF00ACC1).copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.FolderSpecial, contentDescription = null, tint = Color(0xFF00ACC1))
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(folder.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text("$folderChildCount resources", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+
+                // Direct files placed at the root of Friends folder
+                if (directRootFiles.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "DIRECT SHARED FILES (${directRootFiles.size})",
+                            color = WaterBlue,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                        )
+                    }
+
+                    itemsIndexed(directRootFiles, key = { idx, fileNode -> "direct_friends_${fileNode.name}_${fileNode.path}_${fileNode.timestamp}_$idx" }) { _, fileNode ->
+                        FileGridItemCard(
+                            fileNode = fileNode,
+                            onClick = {
+                                when (fileNode.fileMime) {
+                                    "application/vnd.google-apps.folder-link" -> onOpenSharedLink(fileNode)
+                                    "text/plain" -> onOpenTextDoc(fileNode)
+                                    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/ogg" -> onOpenAudioPlayer(fileNode)
+                                    else -> onPreviewFile(fileNode)
+                                }
+                            },
+                            onLongClick = { onLongClickFile(fileNode) },
+                            onOptionsClick = { onOptionsClick(fileNode) }
+                        )
                     }
                 }
             }
-        } else if (friendsPathStack.size == 1 && friendsPathStack.first() == "CA Inter:CAInter") {
+        } else if (friendsPathStack.size == 1 && (friendsPathStack.first() == "General:General" || friendsPathStack.first() == "General")) {
+            // Level 2: Listing files inside Friends/General
+            val generalFiles = remember(folderFriendsFiles) {
+                folderFriendsFiles.filter { file ->
+                    val p = file.appFileRef?.path ?: file.path
+                    file.fileMime != "inode/directory" && (
+                        p.equals("Friends/General:General", ignoreCase = true) ||
+                        p.equals("Friends/General", ignoreCase = true) ||
+                        p.startsWith("Friends/General/", ignoreCase = true) ||
+                        p.equals("General", ignoreCase = true) ||
+                        p.startsWith("General/", ignoreCase = true)
+                    )
+                }
+            }
+
+            if (generalFiles.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color.Gray.copy(alpha = 0.5f), modifier = Modifier.size(56.dp))
+                        Text("No shared files in General folder yet.", color = Color.Gray, fontSize = 13.sp)
+                        Text("Tap the (+) button on bottom-right to create study docs, link Google Drive folders, or upload files instantly!", color = Color.Gray.copy(alpha = 0.7f), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    itemsIndexed(generalFiles, key = { idx, fileNode -> "${fileNode.name}_${fileNode.path}_${fileNode.timestamp}_$idx" }) { _, fileNode ->
+                        FileGridItemCard(
+                            fileNode = fileNode,
+                            onClick = {
+                                when (fileNode.fileMime) {
+                                    "application/vnd.google-apps.folder-link" -> onOpenSharedLink(fileNode)
+                                    "text/plain" -> onOpenTextDoc(fileNode)
+                                    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/ogg" -> onOpenAudioPlayer(fileNode)
+                                    else -> onPreviewFile(fileNode)
+                                }
+                            },
+                            onLongClick = { onLongClickFile(fileNode) },
+                            onOptionsClick = { onOptionsClick(fileNode) }
+                        )
+                    }
+                }
+            }
+        } else if (friendsPathStack.size == 1 && (friendsPathStack.first() == "CA Inter:CAInter" || friendsPathStack.first().contains("CA Inter"))) {
             // Level 2: List CA Inter subjects dynamically ordered by Paper Number
             val subjects = listOf(
                 "General",
@@ -7191,18 +7382,30 @@ fun FriendsFolderView(
                 "Paper 5: Auditing and Ethics",
                 "Paper 6: Financial Management & SM"
             )
+
+            val directCaFiles = remember(folderFriendsFiles) {
+                folderFriendsFiles.filter { file ->
+                    val p = file.appFileRef?.path ?: file.path
+                    file.fileMime != "inode/directory" && (p == "Friends/CA Inter" || p == "Friends/CA Inter:CAInter" || p == "CA Inter")
+                }
+            }
+
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 itemsIndexed(subjects, key = { idx, subject -> "${subject}_$idx" }) { _, subject ->
                     val subjectPath = "Friends/CA Inter:CAInter/$subject:$subject"
                     val subCount = folderFriendsFiles.count { file ->
-                        val p = file.appFileRef?.path ?: ""
-                        p.startsWith(subjectPath) || p.contains("Friends/CA Inter:CAInter/$subject") || p.contains(subject) ||
-                        (subject.contains("Paper 1") && (p.contains("Advanced Accounting") || p.contains("Accounts"))) ||
-                        (subject.contains("Paper 2") && p.contains("Law")) ||
-                        (subject.contains("Paper 3") && (p.contains("Income Tax") || p.contains("Taxation"))) ||
-                        (subject.contains("Paper 4") && p.contains("Cost")) ||
-                        (subject.contains("Paper 5") && p.contains("Audit")) ||
-                        (subject.contains("Paper 6") && p.contains("Financial Management"))
+                        if (file.fileMime == "inode/directory") return@count false
+                        val p = (file.appFileRef?.path ?: file.path).lowercase()
+                        val subLow = subject.lowercase()
+                        val paperMatch = Regex("paper\\s*(\\d+)").find(subLow)?.groupValues?.get(1)
+                        p.contains(subLow) ||
+                        (paperMatch != null && p.contains("paper $paperMatch")) ||
+                        (subLow.contains("accounting") && (p.contains("accounting") || p.contains("accounts"))) ||
+                        (subLow.contains("law") && (p.contains("law") || p.contains("corporate"))) ||
+                        (subLow.contains("tax") && (p.contains("tax") || p.contains("gst"))) ||
+                        (subLow.contains("cost") && (p.contains("cost") || p.contains("costing"))) ||
+                        (subLow.contains("audit") && (p.contains("audit") || p.contains("auditing"))) ||
+                        (subLow.contains("financial") && (p.contains("financial") || p.contains("fm") || p.contains("sm")))
                     }
                     Card(
                         modifier = Modifier
@@ -7234,8 +7437,36 @@ fun FriendsFolderView(
                         }
                     }
                 }
+
+                if (directCaFiles.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "DIRECT CA INTER FILES (${directCaFiles.size})",
+                            color = WaterBlue,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                        )
+                    }
+
+                    itemsIndexed(directCaFiles, key = { idx, fileNode -> "direct_ca_${fileNode.name}_${fileNode.path}_${fileNode.timestamp}_$idx" }) { _, fileNode ->
+                        FileGridItemCard(
+                            fileNode = fileNode,
+                            onClick = {
+                                when (fileNode.fileMime) {
+                                    "application/vnd.google-apps.folder-link" -> onOpenSharedLink(fileNode)
+                                    "text/plain" -> onOpenTextDoc(fileNode)
+                                    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/ogg" -> onOpenAudioPlayer(fileNode)
+                                    else -> onPreviewFile(fileNode)
+                                }
+                            },
+                            onLongClick = { onLongClickFile(fileNode) },
+                            onOptionsClick = { onOptionsClick(fileNode) }
+                        )
+                    }
+                }
             }
-        } else if (friendsPathStack.size == 2 && friendsPathStack.first() == "CA Inter:CAInter") {
+        } else if (friendsPathStack.size == 2 && friendsPathStack.first().contains("CA Inter")) {
             // Level 3: List chapters dynamically
             val subjectSelected = friendsPathStack[1].substringBefore(":")
             val chapters = when {
@@ -7325,13 +7556,21 @@ fun FriendsFolderView(
                 )
             }
 
+            val directSubjectFiles = remember(folderFriendsFiles, subjectSelected) {
+                folderFriendsFiles.filter { file ->
+                    val p = file.appFileRef?.path ?: file.path
+                    file.fileMime != "inode/directory" && (p.contains(subjectSelected, ignoreCase = true) && !chapters.any { ch -> p.contains(ch.substringBefore(":").trim(), ignoreCase = true) })
+                }
+            }
+
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 itemsIndexed(chapters, key = { idx, chapter -> "${chapter}_$idx" }) { _, chapter ->
                     val cleanChapterName = chapter.replace(":", "-").replace("/", "-")
                     val chapterPath = "Friends/CA Inter:CAInter/${friendsPathStack[1]}/$chapter:$cleanChapterName"
                     val fileCount = folderFriendsFiles.count { file ->
-                        val p = file.appFileRef?.path ?: ""
-                        p == chapterPath || p.startsWith("$chapterPath/") || p.contains(cleanChapterName) || (chapter.length > 5 && p.contains(chapter.substring(0, minOf(15, chapter.length))))
+                        if (file.fileMime == "inode/directory") return@count false
+                        val p = file.appFileRef?.path ?: file.path
+                        p == chapterPath || p.startsWith("$chapterPath/") || p.contains(cleanChapterName, ignoreCase = true) || (chapter.length > 5 && p.contains(chapter.substring(0, minOf(15, chapter.length)), ignoreCase = true))
                     }
                     
                     Card(
@@ -7364,11 +7603,45 @@ fun FriendsFolderView(
                         }
                     }
                 }
+
+                if (directSubjectFiles.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "DIRECT SUBJECT FILES (${directSubjectFiles.size})",
+                            color = WaterBlue,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                        )
+                    }
+
+                    itemsIndexed(directSubjectFiles, key = { idx, fileNode -> "direct_subj_${fileNode.name}_${fileNode.path}_${fileNode.timestamp}_$idx" }) { _, fileNode ->
+                        FileGridItemCard(
+                            fileNode = fileNode,
+                            onClick = {
+                                when (fileNode.fileMime) {
+                                    "application/vnd.google-apps.folder-link" -> onOpenSharedLink(fileNode)
+                                    "text/plain" -> onOpenTextDoc(fileNode)
+                                    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/ogg" -> onOpenAudioPlayer(fileNode)
+                                    else -> onPreviewFile(fileNode)
+                                }
+                            },
+                            onLongClick = { onLongClickFile(fileNode) },
+                            onOptionsClick = { onOptionsClick(fileNode) }
+                        )
+                    }
+                }
             }
         } else {
-            // Level 4: List files matching the current nested path stack
+            // Level 4 / Custom Path: List files matching the current nested path stack
             val filteredFiles = remember(folderFriendsFiles, currentPath) {
-                folderFriendsFiles.filter { it.appFileRef?.path == currentPath }
+                val curNormalized = currentPath.replace(":", "/").replace("//", "/").trimEnd('/')
+                val lastSegment = friendsPathStack.lastOrNull()?.substringBefore(":") ?: ""
+                folderFriendsFiles.filter { file ->
+                    if (file.fileMime == "inode/directory") return@filter false
+                    val p = (file.appFileRef?.path ?: file.path).replace(":", "/").replace("//", "/").trimEnd('/')
+                    p == curNormalized || p.startsWith("$curNormalized/") || (lastSegment.isNotBlank() && p.contains(lastSegment, ignoreCase = true))
+                }
             }
 
             if (filteredFiles.isEmpty()) {

@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.Habit
@@ -158,7 +159,7 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
     val displayedHabits = if (activeTab == "Today") displayedHabitsToday else displayedHabitsAll
 
-    Column(modifier = modifier.fillMaxSize().padding(if (isTablet) 16.dp else 4.dp)) {
+    Column(modifier = modifier.fillMaxSize().padding(horizontal = if (isTablet) 20.dp else 16.dp, vertical = 8.dp)) {
         // Sub-Header panel replacing secondary titles
         Row(
             modifier = Modifier
@@ -192,7 +193,7 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(10.dp))
                 .background(Color(0xFF161618))
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -200,10 +201,10 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(if (activeTab == "Today") WaterBlue else Color.Transparent)
                     .clickable { activeTab = "Today" }
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -217,10 +218,10 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(if (activeTab == "All") WaterBlue else Color.Transparent)
                     .clickable { activeTab = "All" }
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -239,11 +240,11 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             // Checklist grid card
             Card(
                 modifier = Modifier.fillMaxSize(),
-                colors = CardDefaults.cardColors(containerColor = if (isTablet) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f) else Color.Black),
+                colors = CardDefaults.cardColors(containerColor = if (isTablet) androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f) else Color.Transparent),
                 border = if (isTablet) BorderStroke(1.dp, Color(0xFF222222)) else null,
                 shape = if (isTablet) RoundedCornerShape(12.dp) else RoundedCornerShape(0.dp)
             ) {
-                Column(modifier = Modifier.padding(if (isTablet) 16.dp else 12.dp)) {
+                Column(modifier = Modifier.padding(if (isTablet) 16.dp else 0.dp)) {
                     // Time filters
                     Row(
                         modifier = Modifier
@@ -256,14 +257,14 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             text = if (activeTab == "Today") "ACTIVE TODAY" else "ALL HABITS",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.Gray
+                            color = Color(0xFFA1A1AA)
                         )
 
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(start = 8.dp)
+                                .padding(start = 12.dp)
                                 .horizontalScroll(rememberScrollState())
                         ) {
                             listOf("All", "Morning", "Afternoon", "Evening", "Night").forEach { timeFilter ->
@@ -271,13 +272,14 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) WaterBlue.copy(alpha = 0.18f) else Color.Transparent)
+                                        .background(if (isSelected) WaterBlue.copy(alpha = 0.18f) else Color(0xFF1E1E22))
+                                        .border(0.5.dp, if (isSelected) WaterBlue.copy(alpha = 0.5f) else Color(0xFF2E2E34), RoundedCornerShape(8.dp))
                                         .clickable { selectedTimeOfDayFilter = timeFilter }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
                                 ) {
                                     Text(
                                         text = timeFilter,
-                                        color = if (isSelected) WaterBlue else Color.Gray,
+                                        color = if (isSelected) WaterBlue else Color(0xFFA1A1AA),
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -318,8 +320,9 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .clip(RoundedCornerShape(12.dp))
                                             .background(SurfaceCard)
+                                            .border(1.dp, Color(0xFF27272A), RoundedCornerShape(12.dp))
                                             .combinedClickable(
                                                 onClick = {
                                                     if (habit.frequency.uppercase() == "WEEKLY" && habit.weeklyDay != currentDayOfWeek) {
@@ -330,32 +333,32 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 },
                                                 onLongClick = { showLongPressOptionsForHabit = habit }
                                             )
-                                            .padding(12.dp),
+                                            .padding(horizontal = 12.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         // 6-dot drag toggle on left
                                         Box(
                                             modifier = Modifier
-                                                .padding(end = 8.dp)
+                                                .padding(end = 10.dp)
                                                 .clickable { showOrderMenuForHabitId = habit.id }
-                                                .padding(4.dp),
+                                                .padding(vertical = 4.dp, horizontal = 2.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Column(
-                                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                                verticalArrangement = Arrangement.spacedBy(2.5.dp),
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
-                                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color.Gray))
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color.Gray))
+                                                Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
+                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
                                                 }
-                                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color.Gray))
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color.Gray))
+                                                Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
+                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
                                                 }
-                                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color.Gray))
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color.Gray))
+                                                Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
+                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
                                                 }
                                             }
 
@@ -400,45 +403,88 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             }
                                         }
 
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(habit.name, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
-                                                Spacer(modifier = Modifier.width(8.dp))
+                                        // Habit Info Column
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .padding(end = 8.dp),
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Text(
+                                                text = habit.name,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color.White,
+                                                fontSize = 15.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+
+                                            Spacer(modifier = Modifier.height(4.dp))
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = when (habit.frequency.uppercase()) {
+                                                        "WEEKLY" -> "Weekly (${getWeeklyDayName(habit.weeklyDay)})"
+                                                        "MONTHLY" -> "Monthly (${habit.monthlyStartDate}-${habit.monthlyEndDate})"
+                                                        "MONTHLY_ONCE" -> "Monthly once (${habit.monthlyStartDate})"
+                                                        else -> "Daily"
+                                                    },
+                                                    color = Color(0xFFA1A1AA),
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1
+                                                )
+
+                                                Text(
+                                                    text = "•",
+                                                    color = Color(0xFF52525B),
+                                                    fontSize = 10.sp
+                                                )
+
                                                 Box(
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(4.dp))
-                                                        .background(Color(0xFF222224))
-                                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        .background(Color(0xFF27272A))
+                                                        .padding(horizontal = 5.dp, vertical = 2.dp)
                                                 ) {
-                                                    Text(habit.timeOfDay, color = Color.Gray, fontSize = 9.sp)
+                                                    Text(
+                                                        text = habit.timeOfDay,
+                                                        color = Color(0xFFD4D4D8),
+                                                        fontSize = 9.5.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        maxLines = 1
+                                                    )
                                                 }
-                                                if (selectedListName.equals("all", ignoreCase = true)) {
-                                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                                if (selectedListName.equals("all", ignoreCase = true) && habit.listCategory.isNotBlank()) {
+                                                    Text(
+                                                        text = "•",
+                                                        color = Color(0xFF52525B),
+                                                        fontSize = 10.sp
+                                                    )
+
                                                     Box(
                                                         modifier = Modifier
                                                             .clip(RoundedCornerShape(4.dp))
                                                             .background(WaterBlue.copy(alpha = 0.15f))
-                                                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                            .padding(horizontal = 5.dp, vertical = 2.dp)
                                                     ) {
-                                                        Text(habit.listCategory, color = WaterBlue, fontSize = 9.sp)
+                                                        Text(
+                                                            text = habit.listCategory,
+                                                            color = WaterBlue,
+                                                            fontSize = 9.5.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
                                                     }
                                                 }
                                             }
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Text(
-                                                    text = when (habit.frequency.uppercase()) {
-                                                        "WEEKLY" -> "Weekly (${getWeeklyDayName(habit.weeklyDay)})"
-                                                        "MONTHLY" -> "Monthly (Mth ${habit.monthlyStartDate}-${habit.monthlyEndDate})"
-                                                        "MONTHLY_ONCE" -> "Monthly once (Mth ${habit.monthlyStartDate})"
-                                                        else -> "Daily"
-                                                    },
-                                                    color = Color.LightGray,
-                                                    fontSize = 11.sp
-                                                )
-                                            }
+
                                             if (habit.actionType.isNotEmpty()) {
-                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Spacer(modifier = Modifier.height(5.dp))
                                                 val parsedAction = remember(habit.actionType, habit.actionContactName, habit.actionContactPhone, habit.actionMessage) {
                                                     TaskActionHelper.parseActionData(habit)
                                                 }
@@ -451,7 +497,8 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 Box(
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(4.dp))
-                                                        .background(actColor.copy(alpha = 0.2f))
+                                                        .background(actColor.copy(alpha = 0.15f))
+                                                        .border(0.5.dp, actColor.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
                                                         .clickable {
                                                             TaskActionHelper.executeAction(context, parsedAction)
                                                         }
@@ -461,21 +508,29 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                         text = "$actIcon $actLabel",
                                                         color = actColor,
                                                         fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
                                             }
                                         }
 
+                                        // Right Controls
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
-                                            // Progress Counter clickable
+                                            // Progress Counter clickable pill
                                             Box(
                                                 modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(WaterBlue.copy(alpha = 0.15f))
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (isCompleted) WaterBlue.copy(alpha = 0.18f) else Color(0xFF222226))
+                                                    .border(
+                                                        1.dp,
+                                                        if (isCompleted) WaterBlue.copy(alpha = 0.5f) else Color(0xFF33333C),
+                                                        RoundedCornerShape(8.dp)
+                                                    )
                                                     .clickable {
                                                         if (habit.frequency.uppercase() == "WEEKLY" && habit.weeklyDay != currentDayOfWeek) {
                                                             android.widget.Toast.makeText(context, "Weekly habits can only be updated on their designated day!", android.widget.Toast.LENGTH_SHORT).show()
@@ -483,37 +538,47 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                             countLogTarget = habit
                                                         }
                                                     }
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                                contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
                                                     text = "$progressCount/${habit.targetCount}",
-                                                    color = WaterBlue,
+                                                    color = if (isCompleted) WaterBlue else Color(0xFFE4E4E7),
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 12.sp
                                                 )
                                             }
 
-                                            // Direct checkmark toggle
-                                            IconButton(
-                                                onClick = {
-                                                    if (habit.frequency.uppercase() == "WEEKLY" && habit.weeklyDay != currentDayOfWeek) {
-                                                        android.widget.Toast.makeText(context, "Weekly habits can only be completed on their designated day!", android.widget.Toast.LENGTH_SHORT).show()
-                                                    } else {
-                                                        if (isCompleted) {
-                                                            allCompletions.filter { it.habitId == habit.id && it.dateString == todayDateStr }
-                                                                .forEach { viewModel.toggleHabit(habit, todayDateStr) }
+                                            // Direct circular checkmark toggle
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isCompleted) WaterBlue else Color.Transparent)
+                                                    .border(
+                                                        1.5.dp,
+                                                        if (isCompleted) WaterBlue else Color(0xFF52525B),
+                                                        CircleShape
+                                                    )
+                                                    .clickable {
+                                                        if (habit.frequency.uppercase() == "WEEKLY" && habit.weeklyDay != currentDayOfWeek) {
+                                                            android.widget.Toast.makeText(context, "Weekly habits can only be completed on their designated day!", android.widget.Toast.LENGTH_SHORT).show()
                                                         } else {
-                                                            viewModel.toggleHabit(habit, todayDateStr)
+                                                            if (isCompleted) {
+                                                                allCompletions.filter { it.habitId == habit.id && it.dateString == todayDateStr }
+                                                                    .forEach { viewModel.toggleHabit(habit, todayDateStr) }
+                                                            } else {
+                                                                viewModel.toggleHabit(habit, todayDateStr)
+                                                            }
                                                         }
-                                                    }
-                                                },
-                                                modifier = Modifier.size(32.dp)
+                                                    },
+                                                contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
-                                                    imageVector = if (isCompleted) Icons.Default.CheckCircle else Icons.Default.Check,
+                                                    imageVector = Icons.Default.Check,
                                                     contentDescription = "Complete Toggle",
-                                                    tint = if (isCompleted) WaterBlue else Color.Gray,
-                                                    modifier = Modifier.size(22.dp)
+                                                    tint = if (isCompleted) Color.Black else Color(0xFF71717A),
+                                                    modifier = Modifier.size(18.dp)
                                                 )
                                             }
                                         }
@@ -562,25 +627,29 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clip(RoundedCornerShape(8.dp))
+                                                .clip(RoundedCornerShape(12.dp))
                                                 .background(SurfaceCard)
-                                                .padding(12.dp),
+                                                .border(1.dp, Color(0xFF27272A), RoundedCornerShape(12.dp))
+                                                .padding(horizontal = 14.dp, vertical = 12.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Column(modifier = Modifier.weight(1f)) {
+                                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                                 Text(
                                                     text = task.title,
-                                                    fontWeight = FontWeight.Bold,
+                                                    fontWeight = FontWeight.SemiBold,
                                                     color = Color.White,
-                                                    fontSize = 14.sp
+                                                    fontSize = 15.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                                 if (task.description.isNotBlank()) {
                                                     Text(
                                                         text = task.description,
-                                                        color = Color.Gray,
+                                                        color = Color(0xFFA1A1AA),
                                                         fontSize = 12.sp,
                                                         maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
                                                         modifier = Modifier.padding(top = 2.dp)
                                                     )
                                                 }
@@ -588,12 +657,13 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             // Display Due Date Badge
                                             Box(
                                                 modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .clip(RoundedCornerShape(8.dp))
                                                     .background(Color(0xFFFFB300).copy(alpha = 0.15f))
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    .border(1.dp, Color(0xFFFFB300).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                    .padding(horizontal = 9.dp, vertical = 5.dp)
                                             ) {
                                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color(0xFFFFB300), modifier = Modifier.size(10.dp))
+                                                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color(0xFFFFB300), modifier = Modifier.size(11.dp))
                                                     Text(
                                                         text = task.dueDateString,
                                                         color = Color(0xFFFFB300),
@@ -626,12 +696,15 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 showCreateEditDialog = true
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("add_habit_btn")
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("add_habit_btn")
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Add New Habit", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("Add New Habit", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

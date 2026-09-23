@@ -2665,43 +2665,63 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         // Main Journal Dashboard Layout representation with Sidebar Toggle control
         Box(modifier = modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Top header bar containing plus action only
+                // Top header bar containing sidebar toggle, scope selector, and modernized action tools
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 12.dp),
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { isSidebarExpanded = !isSidebarExpanded }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Toggle Sidebar Manager", tint = Color.White)
+                    // Left: Sidebar toggle and Journal Scope selector
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        IconButton(
+                            onClick = { isSidebarExpanded = !isSidebarExpanded },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF16161A))
+                                .border(1.dp, Color(0xFF262630), RoundedCornerShape(10.dp))
+                        ) {
+                            Icon(
+                                Icons.Default.Menu,
+                                contentDescription = "Toggle Sidebar Manager",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         var topScopeDropdownExpanded by remember { mutableStateOf(false) }
                         Box {
                             Row(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFF1B1B22))
-                                    .border(1.dp, WaterBlue.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                    .height(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF16161A))
+                                    .border(1.dp, Color(0xFF262630), RoundedCornerShape(10.dp))
                                     .clickable { topScopeDropdownExpanded = true }
-                                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                                    .padding(horizontal = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = if (selectedJournalScope == "Personal Journal") Icons.Default.Person else Icons.Default.Group,
                                     contentDescription = null,
                                     tint = WaterBlue,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = selectedJournalScope,
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 120.dp)
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Icon(
@@ -2762,106 +2782,16 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 )
                             }
                         }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "- ${currentJournalTab.uppercase()}",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.LightGray
-                        )
                     }
 
+                    // Right: Modernized and organized tool cluster (Calendar, AI Summary, Voice Mic, Add Entry)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         var isSummarizing by remember { mutableStateOf(false) }
-                        
-                        IconButton(
-                            onClick = {
-                                isSummarizing = true
-                                viewModel.summarizeDayIntoJournalEntry { outcome ->
-                                    isSummarizing = false
-                                    Toast.makeText(context, "AI Daily Summary Added to Journal!", Toast.LENGTH_LONG).show()
-                                }
-                            },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color(0xFF0F2622))
-                                .size(40.dp)
-                                .testTag("summarize_today_btn")
-                        ) {
-                            if (isSummarizing) {
-                                CircularProgressIndicator(
-                                    color = Color(0xFF00BFA5),
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Face,
-                                    contentDescription = "AI Summarize Today",
-                                    tint = Color(0xFF00BFA5)
-                                )
-                            }
-                        }
 
-                        // AI Voice Journal Note Button
-                        IconButton(
-                            onClick = {
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                                    requestPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
-                                }
-                                showVoiceJournalDialog = true
-                            },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color(0xFFFF5252))
-                                .size(40.dp)
-                                .testTag("ai_voice_journal_btn")
-                        ) {
-                            Icon(Icons.Default.Mic, contentDescription = "AI Voice Journal Note", tint = Color.White)
-                        }
-
-                        // Large Plus icon triggering inserting new draft
-                        IconButton(
-                            onClick = {
-                                val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                                val sdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
-                                val nowStrDate = sdfDate.format(Date())
-                                val nowStrTime = sdfTime.format(Date())
-                                val initialText = ""
-                                val autoLoc = viewModel.getAutoLocationGeotag()
-                                val initialAttachments = if (autoLoc.isNotEmpty()) listOf(autoLoc) else emptyList()
-
-                                scope.launch {
-                                    val generatedId = viewModel.createJournalEntryWithId(
-                                        title = "",
-                                        text = initialText,
-                                        dateString = nowStrDate,
-                                        timestamp = System.currentTimeMillis(),
-                                        attachments = initialAttachments.joinToString(";;")
-                                    )
-                                    activeEditingEntryId = generatedId
-                                    editingTitle = ""
-                                    editingTextValue = TextFieldValue(initialText)
-                                    editingDate = nowStrDate
-                                    editingTime = nowStrTime
-                                    editingAttachments = initialAttachments
-                                    showEditorScreen = true
-                                }
-                            },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(WaterBlue)
-                                .size(40.dp)
-                                .testTag("create_diary_btn")
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add Diary entry", tint = Color.Black)
-                        }
-
-                        // Calendar date picker button
+                        // 1. Calendar Date Picker
                         IconButton(
                             onClick = {
                                 val calendar = java.util.Calendar.getInstance()
@@ -2935,15 +2865,114 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 datePickerDialog.show()
                             },
                             modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color(0xFF232D37))
-                                .size(40.dp)
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF16161A))
+                                .border(1.dp, Color(0xFF262630), RoundedCornerShape(10.dp))
                                 .testTag("journal_calendar_picker_btn")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DateRange,
                                 contentDescription = "Select Date",
-                                tint = WaterBlue
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+
+                        // 2. AI Summarize Today
+                        IconButton(
+                            onClick = {
+                                isSummarizing = true
+                                viewModel.summarizeDayIntoJournalEntry { outcome ->
+                                    isSummarizing = false
+                                    Toast.makeText(context, "AI Daily Summary Added to Journal!", Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF0D221E))
+                                .border(1.dp, Color(0xFF00BFA5).copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                                .testTag("summarize_today_btn")
+                        ) {
+                            if (isSummarizing) {
+                                CircularProgressIndicator(
+                                    color = Color(0xFF00BFA5),
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "AI Summarize Today",
+                                    tint = Color(0xFF00BFA5),
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+                        }
+
+                        // 3. AI Voice Journal Note (Mic)
+                        IconButton(
+                            onClick = {
+                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                    requestPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                                }
+                                showVoiceJournalDialog = true
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF261416))
+                                .border(1.dp, Color(0xFFFF4D4D).copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                .testTag("ai_voice_journal_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "AI Voice Journal Note",
+                                tint = Color(0xFFFF5252),
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
+
+                        // 4. Primary Action: Add Diary Entry (+)
+                        IconButton(
+                            onClick = {
+                                val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                                val sdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
+                                val nowStrDate = sdfDate.format(Date())
+                                val nowStrTime = sdfTime.format(Date())
+                                val initialText = ""
+                                val autoLoc = viewModel.getAutoLocationGeotag()
+                                val initialAttachments = if (autoLoc.isNotEmpty()) listOf(autoLoc) else emptyList()
+
+                                scope.launch {
+                                    val generatedId = viewModel.createJournalEntryWithId(
+                                        title = "",
+                                        text = initialText,
+                                        dateString = nowStrDate,
+                                        timestamp = System.currentTimeMillis(),
+                                        attachments = initialAttachments.joinToString(";;")
+                                    )
+                                    activeEditingEntryId = generatedId
+                                    editingTitle = ""
+                                    editingTextValue = TextFieldValue(initialText)
+                                    editingDate = nowStrDate
+                                    editingTime = nowStrTime
+                                    editingAttachments = initialAttachments
+                                    showEditorScreen = true
+                                }
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(WaterBlue)
+                                .testTag("create_diary_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Add Diary entry",
+                                tint = Color.Black,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }

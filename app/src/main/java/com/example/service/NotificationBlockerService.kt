@@ -17,6 +17,7 @@ class NotificationBlockerService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
         if (sbn == null) return
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) return
 
         val context = applicationContext
         val packageName = sbn.packageName ?: return

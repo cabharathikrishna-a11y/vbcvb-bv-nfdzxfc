@@ -477,365 +477,147 @@ object AppUpdateManager {
                 return@withContext
             }
 
-            val errorLogs = mutableListOf<String>()
             try {
-                val packageCode = getCurrentVersionCode(context)
-                val currentCode = packageCode
-                
-                // 1. Fetch update config from Firebase
+                val currentCode = getCurrentVersionCode(context)
                 var targetVersionCode = -1
                 var apkFileId: String? = null
-                
-                // Attempt to fetch via official Firebase Realtime Database SDK first (handles auth seamlessly)
+
+                // 1. Direct query to RTDB UPDATE_CONFIG endpoint via Firebase Database SDK
                 try {
                     com.example.api.Firebase.ensureAuthenticated(context)
                     val dbUrl = com.example.api.FirebaseConfig.getDatabaseUrl(context)
                     if (dbUrl.isNotEmpty()) {
-                        val sdkResult = suspendCoroutine<Pair<Int, String?>?> { continuation ->
-                            val database = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
-                            val ref = database.getReference("UPDATE_CONFIG")
-                            ref.addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
-                                override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
-                                    if (snapshot.exists()) {
-                                        val vId = snapshot.child("Version_no").getValue(Int::class.java) ?: -1
-                                        val fId = snapshot.child("Full_Apk_Url").getValue(String::class.java) ?: ""
-                                        
-                                        val owner = snapshot.child("githubOwner").getValue(String::class.java) ?: ""
-                                        val repo = snapshot.child("githubRepo").getValue(String::class.java) ?: ""
-                                        if (owner.isNotEmpty()) {
-                                            setGithubOwner(context, owner)
-                                        }
-                                        if (repo.isNotEmpty()) {
-                                            setGithubRepo(context, repo)
-                                        }
-                                        
-                                        val fileId = if (fId != "null" && fId.isNotEmpty()) fId else null
-                                        continuation.resume(Pair(vId, fileId))
-                                    } else {
+                        val snapshot = withTimeoutOrNull(2500L) {
+                            suspendCoroutine<com.google.firebase.database.DataSnapshot?> { continuation ->
+                                val database = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+                                val ref = database.getReference("UPDATE_CONFIG")
+                                ref.addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
+                                    override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
+                                        continuation.resume(snapshot)
+                                    }
+                                    override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
                                         continuation.resume(null)
                                     }
-                                }
-
-                                override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
-                                    continuation.resume(null)
-                                }
-                            })
-                        }
-                        
-                        if (sdkResult != null) {
-                            val (vId, fId) = sdkResult
-                            if (vId > targetVersionCode) {
-                                targetVersionCode = vId
-                                apkFileId = fId
-                                Log.d(TAG, "Successfully fetched update config from Firebase SDK: Version_no = $vId, Full_Apk_Url = $fId")
+                                })
                             }
+                        }
+                        if (snapshot != null && snapshot.exists()) {
+                            targetVersionCode = snapshot.child("Version_no").getValue(Int::class.java)
+                                ?: snapshot.child("versionId").getValue(Int::class.java)
+                                ?: -1
+                            val fId = snapshot.child("Full_Apk_Url").getValue(String::class.java)
+                                ?: snapshot.child("apkFileId").getValue(String::class.java)
+                            if (!fId.isNullOrBlank() && fId != "null") {
+                                apkFileId = fId
+                            }
+                            val owner = snapshot.child("githubOwner").getValue(String::class.java) ?: ""
+                            val repo = snapshot.child("githubRepo").getValue(String::class.java) ?: ""
+                            if (owner.isNotEmpty()) setGithubOwner(context, owner)
+                            if (repo.isNotEmpty()) setGithubRepo(context, repo)
+                            Log.d(TAG, "Fetched UPDATE_CONFIG from RTDB SDK: Version_no = $targetVersionCode, Full_Apk_Url = $apkFileId")
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to query Firebase Database via SDK, falling back to REST", e)
-                }
-                
-                // Let's try multiple potential paths in Firebase to find the highest/latest update version and its apkFileId
-                val pathsToTry = listOf(
-                    "UPDATE_CONFIG.json",
-                    "versions.json",
-                    "releases.json",
-                    "updates.json",
-                    "update_history.json",
-                    "UPDATE_CONFIG/versions.json",
-                    "UPDATE_CONFIG/history.json"
-                )
-
-                val deferreds = pathsToTry.map { path ->
-                    async(Dispatchers.IO) {
-                        withTimeoutOrNull(3000L) {
-                            try {
-                                val url = "${com.example.api.Firebase.activeUrl}$path"
-                                val request = Request.Builder()
-                                    .url(url)
-                                    .header("Cache-Control", "no-cache")
-                                    .header("Pragma", "no-cache")
-                                    .get()
-                                    .build()
-                                client.newCall(request).execute().use { response ->
-                                    if (response.isSuccessful) {
-                                        val body = response.body?.string()
-                                        if (!body.isNullOrBlank() && body != "null" && !body.contains("\"error\"")) {
-                                            body to path
-                                        } else null
-                                    } else null
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Failed to check Firebase path: $path", e)
-                                null
-                            }
-                        }
-                    }
+                    Log.e(TAG, "RTDB SDK update check fallback to fast REST: ${e.message}")
                 }
 
-                val results = deferreds.awaitAll().filterNotNull()
-
-                for ((body, path) in results) {
-                    try {
-                        if (path == "update_config.json" || path == "UPDATE_CONFIG.json") {
-                            val json = JSONObject(body)
-                            val vId = json.optInt("Version_no", json.optInt("versionId", json.optInt("version_id", -1)))
-                            val fId = json.optString("Full_Apk_Url", json.optString("apkFileId", json.optString("apk_file_id", "")))
-                            if (vId > targetVersionCode) {
-                                targetVersionCode = vId
-                                apkFileId = if (fId != "null" && fId.isNotEmpty()) fId else null
-                            }
-                            
-                            // Learn owner and repository names dynamically from Firebase
-                            val owner = json.optString("githubOwner", json.optString("github_owner", ""))
-                            val repo = json.optString("githubRepo", json.optString("github_repo", ""))
-                            if (owner.isNotEmpty()) {
-                                setGithubOwner(context, owner)
-                                Log.d(TAG, "Dynamically synced GitHub owner from Firebase config: $owner")
-                            }
-                            if (repo.isNotEmpty()) {
-                                setGithubRepo(context, repo)
-                                Log.d(TAG, "Dynamically synced GitHub repository from Firebase config: $repo")
-                            }
-                        }
-                        
-                        val historyResult = findHighestVersionInJson(body)
-                        if (historyResult != null && historyResult.first > targetVersionCode) {
-                            targetVersionCode = historyResult.first
-                            apkFileId = historyResult.second
-                            Log.d(TAG, "Found higher version ${historyResult.first} with file ID ${historyResult.second} from Firebase path: $path")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to parse body for path: $path", e)
+                // 2. Direct fast REST fallback if SDK did not return valid version
+                if (targetVersionCode < 0) {
+                    val activeUrl = com.example.api.Firebase.activeUrl.ifEmpty {
+                        val dbUrl = com.example.api.FirebaseConfig.getDatabaseUrl(context)
+                        if (dbUrl.isNotEmpty()) "$dbUrl/" else ""
                     }
-                }
-
-                // If update_config was empty or failed, try fetching versionId.json directly
-                if (targetVersionCode == -1) {
-                    val fallbackUrl = "${com.example.api.Firebase.activeUrl}versionId.json"
-                    val fallbackRequest = Request.Builder()
-                        .url(fallbackUrl)
-                        .header("Cache-Control", "no-cache")
-                        .header("Pragma", "no-cache")
-                        .get()
-                        .build()
-                    try {
-                        client.newCall(fallbackRequest).execute().use { response ->
-                            if (response.isSuccessful) {
-                                val body = response.body?.string()
-                                if (!body.isNullOrBlank() && body != "null") {
-                                    if (body.contains("\"error\"")) {
-                                        errorLogs.add("Firebase fallback returned error: $body")
-                                    } else {
-                                        targetVersionCode = body.trim().toIntOrNull() ?: -1
-                                    }
-                                } else {
-                                    errorLogs.add("Empty response body from versionId.json")
-                                }
-                            } else {
-                                errorLogs.add("HTTP ${response.code} ${response.message} for versionId.json")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to fetch versionId.json", e)
-                        errorLogs.add("Failed to fetch versionId.json: ${e.localizedMessage ?: e.toString()}")
-                    }
-                }
-
-                // If we have a target version, but no apkFileId yet, try to find the specific version's apkFileId from previous versions list
-                if (targetVersionCode != -1 && apkFileId == null) {
-                    val specificPaths = listOf(
-                        "versions/$targetVersionCode.json",
-                        "releases/$targetVersionCode.json",
-                        "updates/$targetVersionCode.json",
-                        "UPDATE_CONFIG/versions/$targetVersionCode.json",
-                        "UPDATE_CONFIG/history/$targetVersionCode.json"
-                    )
-
-                    val specificDeferreds = specificPaths.map { path ->
-                        async(Dispatchers.IO) {
-                            withTimeoutOrNull(3000L) {
-                                try {
-                                    val url = "${com.example.api.Firebase.activeUrl}$path"
-                                    val request = Request.Builder()
-                                        .url(url)
-                                        .header("Cache-Control", "no-cache")
-                                        .header("Pragma", "no-cache")
-                                        .get()
-                                        .build()
-                                    client.newCall(request).execute().use { response ->
-                                        if (response.isSuccessful) {
-                                            val body = response.body?.string()
-                                            if (!body.isNullOrBlank() && body != "null" && !body.contains("\"error\"")) {
-                                                body to path
-                                            } else null
-                                        } else null
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Failed specific path check $path", e)
-                                    null
-                                }
-                            }
-                        }
-                    }
-
-                    val specificResults = specificDeferreds.awaitAll().filterNotNull()
-                    for ((body, path) in specificResults) {
+                    if (activeUrl.isNotEmpty()) {
+                        val restUrl = if (activeUrl.endsWith("/")) "${activeUrl}UPDATE_CONFIG.json" else "$activeUrl/UPDATE_CONFIG.json"
                         try {
-                            val trimmed = body.trim()
-                            if (trimmed.startsWith("{")) {
-                                val json = JSONObject(trimmed)
-                                val fId = json.optString("Full_Apk_Url", json.optString("apkFileId", json.optString("apk_file_id", json.optString("fileId", ""))))
-                                if (!fId.isNullOrBlank() && fId != "null") {
-                                    apkFileId = fId
-                                    Log.d(TAG, "Found file ID $apkFileId for target version $targetVersionCode at specific path: $path")
-                                    break
-                                }
-                            } else if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
-                                val fId = trimmed.substring(1, trimmed.length - 1)
-                                if (fId.isNotEmpty() && fId != "null") {
-                                    apkFileId = fId
-                                    Log.d(TAG, "Found direct file ID string $apkFileId for target version $targetVersionCode at specific path: $path")
-                                    break
-                                }
-                            } else if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) {
-                                if (trimmed.isNotEmpty() && trimmed != "null") {
-                                    apkFileId = trimmed
-                                    Log.d(TAG, "Found plain file ID $apkFileId for target version $targetVersionCode at specific path: $path")
-                                    break
+                            val request = Request.Builder()
+                                .url(restUrl)
+                                .header("Cache-Control", "no-cache")
+                                .header("Pragma", "no-cache")
+                                .get()
+                                .build()
+                            client.newCall(request).execute().use { response ->
+                                if (response.isSuccessful) {
+                                    val body = response.body?.string()
+                                    if (!body.isNullOrBlank() && body != "null" && !body.contains("\"error\"")) {
+                                        val json = JSONObject(body)
+                                        targetVersionCode = json.optInt("Version_no", json.optInt("versionId", json.optInt("version_id", -1)))
+                                        val fId = json.optString("Full_Apk_Url", json.optString("apkFileId", json.optString("apk_file_id", "")))
+                                        if (fId.isNotEmpty() && fId != "null") {
+                                            apkFileId = fId
+                                        }
+                                        val owner = json.optString("githubOwner", "")
+                                        val repo = json.optString("githubRepo", "")
+                                        if (owner.isNotEmpty()) setGithubOwner(context, owner)
+                                        if (repo.isNotEmpty()) setGithubRepo(context, repo)
+                                        Log.d(TAG, "Fetched UPDATE_CONFIG from REST: Version_no = $targetVersionCode, Full_Apk_Url = $apkFileId")
+                                    }
                                 }
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "Failed parsing specific path result for $path", e)
+                            Log.e(TAG, "REST RTDB update check error: ${e.message}")
                         }
                     }
                 }
 
-                // 2. Fetch update config from GitHub Releases
-                var githubVersionCode = -1
-                var githubApkUrl: String? = null
-                val githubOwner = getGithubOwner(context)
-                val githubRepo = getGithubRepo(context)
-                val githubUrl = "https://api.github.com/repos/$githubOwner/$githubRepo/releases/latest"
-                val githubRequest = Request.Builder()
-                    .url(githubUrl)
-                    .header("User-Agent", "Life-OS-Android-App")
-                    .header("Cache-Control", "no-cache")
-                    .header("Pragma", "no-cache")
-                    .get()
-                    .build()
-                
-                try {
-                    client.newCall(githubRequest).execute().use { response ->
-                        if (response.isSuccessful) {
-                            val body = response.body?.string()
-                            if (!body.isNullOrBlank()) {
-                                val json = JSONObject(body)
-                                val tag = json.optString("tag_name", "")
-                                val buildNum = tag.substringAfterLast(".").toIntOrNull() 
-                                    ?: Regex("""\d+""").findAll(tag).lastOrNull()?.value?.toIntOrNull()
-                                if (buildNum != null) {
-                                    githubVersionCode = buildNum
-                                    val assets = json.optJSONArray("assets")
-                                    if (assets != null) {
-                                        for (i in 0 until assets.length()) {
-                                            val asset = assets.getJSONObject(i)
-                                            val assetName = asset.optString("name", "")
-                                            if (assetName.endsWith(".apk")) {
-                                                githubApkUrl = asset.optString("browser_download_url", "")
-                                                break
-                                            }
-                                        }
-                                    }
-                                    Log.d(TAG, "GitHub latest release check: Version Code $githubVersionCode, APK URL: $githubApkUrl")
-                                } else {
-                                    errorLogs.add("Could not parse version code from GitHub tag: $tag")
-                                }
-                            } else {
-                                errorLogs.add("Empty response body from GitHub API")
-                            }
-                        } else {
-                            errorLogs.add("GitHub API HTTP ${response.code} ${response.message}")
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to fetch from GitHub API", e)
-                    errorLogs.add("GitHub API error: ${e.localizedMessage ?: e.toString()}")
-                }
+                Log.d(TAG, "Current Version: $currentCode, RTDB Cloud Version: $targetVersionCode")
 
-                // 1.5. Fetch update from Firebase App Distribution if SDK is available
-                var appDistributionVersionCode = -1
-                try {
-                    val appDist = com.google.firebase.appdistribution.FirebaseAppDistribution.getInstance()
-                    if (appDist.isTesterSignedIn) {
-                        val task = appDist.checkForNewRelease()
-                        val release = com.google.android.gms.tasks.Tasks.await(task)
-                        if (release != null) {
-                            appDistributionVersionCode = release.versionCode.toInt()
-                            Log.d(TAG, "Firebase App Distribution latest release code: $appDistributionVersionCode")
-                        }
-                    }
-                } catch (e: Throwable) {
-                    Log.d(TAG, "Firebase App Distribution check skipped or failed: ${e.localizedMessage}")
-                }
-
-                var finalTargetVersionCode = targetVersionCode
-                var finalApkFileId = apkFileId
-
-                if (appDistributionVersionCode > finalTargetVersionCode) {
-                    finalTargetVersionCode = appDistributionVersionCode
-                    // Keep existing APK file ID if available, or fall back to App Distribution in-app installer
-                }
-
-                if (githubVersionCode > finalTargetVersionCode) {
-                    finalTargetVersionCode = githubVersionCode
-                    finalApkFileId = githubApkUrl
-                } else if (githubVersionCode == finalTargetVersionCode && !githubApkUrl.isNullOrBlank()) {
-                    // Prefer the verified, direct GitHub asset download URL returned by the official API
-                    Log.d(TAG, "GitHub version matches target version ($finalTargetVersionCode). Using verified GitHub asset URL: $githubApkUrl")
-                    finalApkFileId = githubApkUrl
-                }
-
-                Log.d(TAG, "Current Code: $currentCode, Firebase Target Code: $targetVersionCode, App Distribution Code: $appDistributionVersionCode, GitHub Target Code: $githubVersionCode, Chosen Target Code: $finalTargetVersionCode")
-
-                if (finalTargetVersionCode > currentCode) {
-                    if (com.example.util.AppCrashRollbackManager.isVersionFailed(context, finalTargetVersionCode)) {
-                        Log.w(TAG, "Target version $finalTargetVersionCode was previously marked failed on startup. Bypassing version $finalTargetVersionCode.")
+                // 3. Compare RTDB cloud version against current version and tell result
+                if (targetVersionCode > currentCode) {
+                    if (com.example.util.AppCrashRollbackManager.isVersionFailed(context, targetVersionCode)) {
+                        Log.w(TAG, "Target version $targetVersionCode was previously marked failed on startup. Bypassing version $targetVersionCode.")
                         _updateStatus.value = UpdateStatus.NoUpdateAvailable(
-                            cloudVersion = finalTargetVersionCode,
+                            cloudVersion = targetVersionCode,
                             localVersion = currentCode
                         )
                         return@withContext
                     }
-                    setPendingUpdateVersion(context, finalTargetVersionCode)
+                    setPendingUpdateVersion(context, targetVersionCode)
                     _updateStatus.value = UpdateStatus.NewVersionAvailable(
-                        versionId = finalTargetVersionCode,
+                        versionId = targetVersionCode,
                         currentVersionCode = currentCode,
-                        apkFileId = finalApkFileId
+                        apkFileId = apkFileId
                     )
-                    
-                    if ((isAutoUpdateEnabled(context) || manualCheck) && !finalApkFileId.isNullOrBlank()) {
-                        Log.i(TAG, "Auto-update or manual check active. Initiating download...")
-                        startDownloadAndInstall(context, finalApkFileId)
+                    if (manualCheck) {
+                        withContext(Dispatchers.Main) {
+                            try {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "✨ New Update Available: Build $targetVersionCode (Installed: Build $currentCode)",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            } catch (_: Exception) {}
+                        }
                     }
-                } else if (finalTargetVersionCode >= 0) {
+                } else if (targetVersionCode in 1..currentCode) {
                     clearPendingUpdateVersion(context)
                     _updateStatus.value = UpdateStatus.NoUpdateAvailable(
-                        cloudVersion = finalTargetVersionCode,
+                        cloudVersion = targetVersionCode,
                         localVersion = currentCode
                     )
-                    Log.i(TAG, "Cloud version ($finalTargetVersionCode) is same as or lower than app version ($currentCode). Skipping APK download.")
+                    if (manualCheck) {
+                        withContext(Dispatchers.Main) {
+                            try {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "✅ Life OS is up to date (Build $currentCode)",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            } catch (_: Exception) {}
+                        }
+                    }
                 } else {
-                    // All requests failed to get a valid version code
-                    if (errorLogs.isNotEmpty()) {
-                        val errorMsg = "Could not fetch updates from Firebase/GitHub:\n" + errorLogs.joinToString("\n")
-                        _updateStatus.value = UpdateStatus.Error(errorMsg)
-                    } else {
-                        clearPendingUpdateVersion(context)
-                        _updateStatus.value = UpdateStatus.NoUpdateAvailable(
-                            cloudVersion = -1,
-                            localVersion = currentCode
-                        )
+                    _updateStatus.value = UpdateStatus.Error("Unable to read update configuration from RTDB.")
+                    if (manualCheck) {
+                        withContext(Dispatchers.Main) {
+                            try {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "⚠️ Could not fetch update configuration from RTDB.",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            } catch (_: Exception) {}
+                        }
                     }
                 }
             } catch (e: Exception) {

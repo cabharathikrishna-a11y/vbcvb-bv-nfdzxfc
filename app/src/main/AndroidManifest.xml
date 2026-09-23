@@ -561,6 +561,12 @@
                 android:value="Reliable wake-state tracking and background scheduler core daemon" />
         </service>
 
+        <!-- Google Drive Cloud Sync & Backup Foreground Service -->
+        <service
+            android:name=".service.GoogleDriveSyncService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
         <service
             android:name=".service.FocusForegroundService"
             android:foregroundServiceType="specialUse|dataSync"
@@ -727,6 +733,118 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/photo_shower_widget_info" />
         </receiver>
+
+        <receiver
+            android:name=".widget.CountdownWidgetProvider"
+            android:label="@string/widget_name_countdowns"
+            android:description="@string/widget_desc_countdowns"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.ACTION_COUNTDOWN_SCROLL_TOP" />
+                <action android:name="com.example.widget.ACTION_REFRESH_COUNTDOWNS" />
+                <action android:name="android.intent.action.TIME_TICK" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/countdown_widget_info" />
+        </receiver>
+
+        <service
+            android:name=".widget.CountdownWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
+        <!-- Tasks Interactive Home Screen Widget -->
+        <receiver
+            android:name=".widget.TasksWidgetProvider"
+            android:label="@string/widget_name_tasks"
+            android:description="@string/widget_desc_tasks"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.ACTION_TASK_LIST_ITEM_CLICK" />
+                <action android:name="com.example.widget.ACTION_TASK_CYCLE_DATE_FILTER" />
+                <action android:name="com.example.widget.ACTION_REFRESH_TASKS" />
+                <action android:name="android.intent.action.TIME_TICK" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tasks_widget_info" />
+        </receiver>
+
+        <service
+            android:name=".widget.TasksWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
+        <activity
+            android:name=".widget.TasksWidgetConfigActivity"
+            android:theme="@style/Theme.MyApplication"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Today's Habits Interactive Home Screen Widget -->
+        <receiver
+            android:name=".widget.HabitsWidgetProvider"
+            android:label="@string/widget_name_habits"
+            android:description="@string/widget_desc_habits"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.ACTION_HABIT_LIST_ITEM_CLICK" />
+                <action android:name="com.example.widget.ACTION_REFRESH_HABITS" />
+                <action android:name="android.intent.action.TIME_TICK" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/habits_widget_info" />
+        </receiver>
+
+        <service
+            android:name=".widget.HabitsWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
+        <!-- Individual Habit Interactive Home Screen Widget -->
+        <receiver
+            android:name=".widget.SingleHabitWidgetProvider"
+            android:label="@string/widget_name_single_habit"
+            android:description="@string/widget_desc_single_habit"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.ACTION_TOGGLE_SINGLE_HABIT" />
+                <action android:name="android.intent.action.TIME_TICK" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/single_habit_widget_info" />
+        </receiver>
+
+        <activity
+            android:name=".widget.SingleHabitWidgetConfigActivity"
+            android:theme="@style/Theme.MyApplication"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
 
         <!-- Native Android Launcher Shortcut Creators -->
         <activity

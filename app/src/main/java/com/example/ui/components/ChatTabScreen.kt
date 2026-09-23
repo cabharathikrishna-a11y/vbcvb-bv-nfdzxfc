@@ -1523,7 +1523,7 @@ fun ChatTabScreen(
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(pinnedMessages, key = { it.id }) { message ->
+                            itemsIndexed(pinnedMessages, key = { idx, message -> "${message.id}_$idx" }) { _, message ->
                                 val isOutgoing = message.senderId == currentUserId || message.senderId == "me"
                                 val dateHeader = remember(message.createdAt, message.timestamp) {
                                     formatChatFullDateTime(message.createdAt, message.timestamp)

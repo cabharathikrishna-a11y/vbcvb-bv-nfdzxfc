@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_black_glass"
+    android:orientation="vertical"
+    android:paddingLeft="12dp"
+    android:paddingRight="12dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <!-- Header bar -->
+    <LinearLayout
+        android:id="@+id/habits_header_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="6dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/habits_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TODAY'S HABITS"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <TextView
+                android:id="@+id/habits_progress_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/bg_countdown_pill_upcoming"
+                android:text="0/0"
+                android:textColor="#22C55E"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:paddingLeft="6dp"
+                android:paddingRight="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp" />
+        </LinearLayout>
+
+        <!-- Refresh button -->
+        <ImageView
+            android:id="@+id/btn_habits_refresh"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:background="@drawable/bg_countdown_widget_circle_btn"
+            android:src="@drawable/ic_widget_refresh"
+            android:tint="#94A3B8"
+            android:scaleType="centerInside"
+            android:padding="5dp"
+            android:contentDescription="Refresh habits" />
+    </LinearLayout>
+
+    <!-- Scrollable ListView for Habits -->
+    <ListView
+        android:id="@+id/habits_widget_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:dividerHeight="5dp"
+        android:scrollbars="vertical"
+        android:nestedScrollingEnabled="true" />
+
+    <!-- Empty State -->
+    <TextView
+        android:id="@+id/habits_empty_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="No habits scheduled for today 🎉"
+        android:textColor="#71717A"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
+</LinearLayout>

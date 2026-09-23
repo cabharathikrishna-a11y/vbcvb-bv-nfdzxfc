@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -2136,7 +2137,7 @@ fun SpotifyOnlineSearchView(
                     .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(tracks, key = { it.id }) { track ->
+                itemsIndexed(tracks, key = { idx, track -> "${track.id}_$idx" }) { _, track ->
                     val isCurrent = activeTrack?.id == track.id
                     val downloaded = isTrackDownloaded(track.title, track.artist)
 

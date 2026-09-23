@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/countdown_item_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_countdown_item_card"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingLeft="10dp"
+    android:paddingRight="10dp"
+    android:paddingTop="7dp"
+    android:paddingBottom="7dp">
+
+    <!-- Emoji / Category Icon -->
+    <TextView
+        android:id="@+id/item_emoji"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🎂"
+        android:textSize="18sp"
+        android:layout_marginEnd="9dp" />
+
+    <!-- Title and Subtitle info -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/item_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Event Title"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/item_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Category · Date"
+            android:textColor="#9E9EA8"
+            android:textSize="10.5sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:layout_marginTop="1dp" />
+    </LinearLayout>
+
+    <!-- Countdown status badge / capsule -->
+    <TextView
+        android:id="@+id/item_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_countdown_pill_upcoming"
+        android:text="5 DAYS"
+        android:textColor="#E2E8F0"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:layout_marginStart="8dp"
+        android:paddingLeft="9dp"
+        android:paddingRight="9dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:gravity="center" />
+
+</LinearLayout>

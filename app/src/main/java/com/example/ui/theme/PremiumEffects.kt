@@ -19,11 +19,11 @@ import androidx.compose.ui.unit.dp
 
 // Create a modern set of Compose premium graphics and animation helpers
 object PremiumEffects {
-    // 1. Premium bouncy spring press reaction with 500ms default debounce protection
+    // 1. Ultra-responsive bouncy spring press reaction with immediate feedback and instant click response
     fun Modifier.bouncyClick(
-        stiffness: Float = Spring.StiffnessMediumLow,
-        dampingRatio: Float = Spring.DampingRatioMediumBouncy,
-        debounceIntervalMs: Long = 500L,
+        stiffness: Float = Spring.StiffnessMedium,
+        dampingRatio: Float = Spring.DampingRatioLowBouncy,
+        debounceIntervalMs: Long = 80L,
         onClick: () -> Unit
     ): Modifier = composed {
         var isPressed by remember { mutableStateOf(false) }

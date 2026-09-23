@@ -12,6 +12,10 @@ import com.example.util.LiveTimerNotificationManager
 class TimerNotificationReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent?) {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d("TimerNotificationReceiver", "TimerNotificationReceiver onReceive aborted: User is not logged in.")
+            return
+        }
         val action = intent?.action ?: return
         Log.d("TimerNotificationReceiver", "onReceive triggered with action: $action")
         LiveTimerNotificationManager.dispatchCommand(context, action)

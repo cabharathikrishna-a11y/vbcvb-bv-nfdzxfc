@@ -313,6 +313,18 @@ object LiveFcmSyncManager {
                 }
             }
 
+            "APP_SETTINGS_UPDATE", "SETTINGS_UPDATE" -> {
+                val originDeviceId = json.optString("originDeviceId", "")
+                val updatedAt = json.optLong("updatedAt", System.currentTimeMillis())
+                SameUserMultiDeviceSyncManager.applyIncomingSettingsJson(
+                    context = context,
+                    json = json,
+                    originDeviceId = originDeviceId,
+                    timestamp = updatedAt
+                )
+                Log.i(TAG, "Applied FCM live delta: $payloadType from device $originDeviceId")
+            }
+
             else -> {
                 Log.d(TAG, "Received custom FCM live sync delta [$payloadType]: $json")
             }

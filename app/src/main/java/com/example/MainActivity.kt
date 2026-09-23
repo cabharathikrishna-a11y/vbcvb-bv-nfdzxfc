@@ -704,7 +704,9 @@ class MainActivity : ComponentActivity() {
                     val tabBarOrientation by viewModel.tabBarOrientation.collectAsStateWithLifecycle()
                     val showHistoryScreen by viewModel.showHistoryScreen.collectAsStateWithLifecycle()
                     val unreadChatCount by viewModel.unreadChatCount.collectAsStateWithLifecycle()
-                    val navItems = getNavigationItems(tabOrder.filterNot { hiddenTabs.contains(it) || nestedTabParents.containsKey(it) })
+                    val hasDuplicateContacts by viewModel.hasDuplicateContacts.collectAsStateWithLifecycle()
+                    val navItems = getNavigationItems(tabOrder.filterNot { hiddenTabs.contains(it) || nestedTabParents.containsKey(it) || it == Screen.HEALTH || it == Screen.ARENA })
+                    var showMoreMenuSheet by remember { mutableStateOf(false) }
 
                     val keyboardController = LocalSoftwareKeyboardController.current
                     val focusManager = LocalFocusManager.current
@@ -815,13 +817,13 @@ class MainActivity : ComponentActivity() {
                                         Screen.SEARCH to "Search",
                                         Screen.ANALYTICS to "Analytics",
                                         Screen.SETTINGS to "Settings",
-                                        Screen.HEALTH to "Health",
+                                        Screen.HEALTH to "Fitness & Wellness",
                                         Screen.LIVE_SPHERE to "Friends Focus",
-                                        Screen.ARENA to "Arena",
+                                        Screen.ARENA to "Arena & Syllabus",
                                         Screen.FOCUS_LOCKER to "Locker",
                                         Screen.MESSAGES to "Messages",
-                                        Screen.FLEX_GRID_STUDIO to "Layout Studio",
-                                        Screen.MOVIE_TRACKER to "Movies"
+                                        Screen.MOVIE_TRACKER to "Movies",
+                                        Screen.SHOPPING_CART to "Shopping List"
                                     )
                                 }
                                 val screenIcons = remember {
@@ -845,8 +847,8 @@ class MainActivity : ComponentActivity() {
                                         Screen.ANALYTICS to Icons.Default.Star,
                                         Screen.SETTINGS to Icons.Default.Settings,
                                         Screen.HEALTH to Icons.Default.Favorite,
-                                        Screen.FLEX_GRID_STUDIO to Icons.Default.Dashboard,
-                                        Screen.MOVIE_TRACKER to Icons.Default.Movie
+                                        Screen.MOVIE_TRACKER to Icons.Default.Movie,
+                                        Screen.SHOPPING_CART to Icons.Default.ShoppingCart
                                     )
                                 }
 
@@ -904,23 +906,22 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            // Render screen container with premium fluid transition animations
+                            // Render screen container with ultra-fast fluid transition animations
                             Box(modifier = Modifier.fillMaxSize().background(Color.Transparent)) {
                                 AnimatedContent(
                                     targetState = currentScreen,
                                     transitionSpec = {
                                         val isForward = targetState.ordinal > initialState.ordinal
-                                        val duration = 350
+                                        val duration = 120
                                         (fadeIn(animationSpec = tween(duration)) +
                                          slideInHorizontally(
-                                             initialOffsetX = { if (isForward) it / 6 else -it / 6 },
+                                             initialOffsetX = { if (isForward) it / 16 else -it / 16 },
                                              animationSpec = tween(duration, easing = FastOutSlowInEasing)
-                                         ) +
-                                         scaleIn(initialScale = 0.97f, animationSpec = tween(duration)))
+                                         ))
                                         .togetherWith(
-                                            fadeOut(animationSpec = tween(200)) +
+                                            fadeOut(animationSpec = tween(80)) +
                                             slideOutHorizontally(
-                                                targetOffsetX = { if (isForward) -it / 6 else it / 6 },
+                                                targetOffsetX = { if (isForward) -it / 16 else it / 16 },
                                                 animationSpec = tween(duration, easing = FastOutSlowInEasing)
                                             )
                                         )
@@ -953,14 +954,11 @@ class MainActivity : ComponentActivity() {
                                             Screen.ANALYTICS -> AnalyticsView(viewModel = viewModel)
                                             Screen.SETTINGS -> SettingsView(viewModel = viewModel)
                                             Screen.HEALTH -> com.example.ui.components.HealthView(viewModel = viewModel)
-                                            Screen.FLEX_GRID_STUDIO -> com.example.ui.components.FlexGridStudioView(viewModel = viewModel)
                                             Screen.INSTAGRAM_WEB_APP -> com.example.ui.components.InstagramWebBrowserScreen(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.SETTINGS) })
                                             Screen.YOUTUBE_WEB_APP -> com.example.ui.components.YouTubeWebBrowserScreen(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.SETTINGS) })
                                             Screen.SPOTIFY_WEB_APP -> com.example.ui.components.SpotifyWebBrowserScreen(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.SETTINGS) })
-                                            Screen.OBSIDIAN_ARCHITECTURE -> com.example.ui.components.ObsidianArchitectureView(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.SETTINGS) })
                                             Screen.GOOGLE_DRIVE_SYNC -> com.example.ui.components.GoogleDriveSyncView(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.SETTINGS) })
                                             Screen.MOVIE_TRACKER -> com.example.ui.components.MovieTrackerView(viewModel = viewModel)
-                                            Screen.MULTI_WINDOW_DESKTOP -> viewModel.navigateTo(Screen.DEEPA_AI)
                                             Screen.SHOPPING_CART -> com.example.ui.components.ShoppingCartView(viewModel = viewModel, onBack = { viewModel.navigateTo(Screen.DEEPA_AI) })
                                         }
                                     }
@@ -1018,91 +1016,152 @@ class MainActivity : ComponentActivity() {
                                         .fillMaxWidth()
                                         .padding(horizontal = 16.dp, vertical = 8.dp)
                                 ) {
-                                Row(
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(56.dp)
                                         .clip(RoundedCornerShape(28.dp))
                                         .background(Color.White.copy(alpha = 0.1f))
-                                        .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(28.dp))
-                                        .horizontalScroll(rememberScrollState()),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(28.dp)),
+                                    contentAlignment = Alignment.CenterStart
                                 ) {
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Text(
-                                        text = "LIFE OS",
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = WaterBlue,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    )
-
-                                    navItems.forEach { item ->
-                                        val isSelected = currentScreen == item.screen
-                                        val iconScale by animateFloatAsState(
-                                            targetValue = if (isSelected) 1.25f else 1.0f,
-                                            animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
-                                            label = "nav_item_scale_top"
-                                        )
-                                        val tint by animateColorAsState(
-                                            targetValue = if (isSelected) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
-                                            animationSpec = tween(300),
-                                            label = "nav_item_tint_top"
-                                        )
-                                        val bgAlpha by animateFloatAsState(
-                                            targetValue = if (isSelected) 0.15f else 0.0f,
-                                            animationSpec = tween(300),
-                                            label = "nav_item_bg_alpha_top"
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .fillMaxHeight()
+                                            .horizontalScroll(rememberScrollState()),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Text(
+                                            text = "LIFE OS",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = WaterBlue,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.padding(end = 4.dp)
                                         )
 
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(WaterBlue.copy(alpha = bgAlpha))
-                                                .let { m ->
-                                                    if (isSelected) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
-                                                    else m
-                                                }
-                                                .bouncyClick { viewModel.navigateTo(item.screen) }
-                                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                                                .testTag("nav_item_${item.label.lowercase()}"),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Box {
-                                                Icon(
-                                                    imageVector = item.icon,
-                                                    contentDescription = item.label,
-                                                    tint = tint,
-                                                    modifier = Modifier
-                                                        .size(16.dp)
-                                                        .graphicsLayer {
-                                                            scaleX = iconScale
-                                                            scaleY = iconScale
-                                                        }
-                                                )
-                                                if (item.screen == Screen.MESSAGES && unreadChatCount > 0) {
-                                                    Box(
+                                        navItems.forEach { item ->
+                                            val isSelected = currentScreen == item.screen
+                                            val iconScale by animateFloatAsState(
+                                                targetValue = if (isSelected) 1.2f else 1.0f,
+                                                animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioLowBouncy),
+                                                label = "nav_item_scale_top"
+                                            )
+                                            val tint by animateColorAsState(
+                                                targetValue = if (isSelected) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
+                                                animationSpec = tween(120),
+                                                label = "nav_item_tint_top"
+                                            )
+                                            val bgAlpha by animateFloatAsState(
+                                                targetValue = if (isSelected) 0.15f else 0.0f,
+                                                animationSpec = tween(120),
+                                                label = "nav_item_bg_alpha_top"
+                                            )
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(WaterBlue.copy(alpha = bgAlpha))
+                                                    .let { m ->
+                                                        if (isSelected) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
+                                                        else m
+                                                    }
+                                                    .bouncyClick { viewModel.navigateTo(item.screen) }
+                                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                                                    .testTag("nav_item_${item.label.lowercase()}"),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Box {
+                                                    Icon(
+                                                        imageVector = item.icon,
+                                                        contentDescription = item.label,
+                                                        tint = tint,
                                                         modifier = Modifier
-                                                            .align(Alignment.TopEnd)
-                                                            .offset(x = 6.dp, y = (-6).dp)
-                                                            .size(if (unreadChatCount > 9) 16.dp else 12.dp)
-                                                            .clip(CircleShape)
-                                                            .background(Color(0xFFE53935)),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text(
-                                                            text = if (unreadChatCount > 99) "99+" else unreadChatCount.toString(),
-                                                            color = Color.White,
-                                                            fontSize = 8.sp,
-                                                            fontWeight = FontWeight.Bold
+                                                            .size(16.dp)
+                                                            .graphicsLayer {
+                                                                scaleX = iconScale
+                                                                scaleY = iconScale
+                                                            }
+                                                    )
+                                                    if (item.screen == Screen.MESSAGES && unreadChatCount > 0) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .offset(x = 6.dp, y = (-6).dp)
+                                                                .size(if (unreadChatCount > 9) 16.dp else 12.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xFFE53935)),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Text(
+                                                                text = if (unreadChatCount > 99) "99+" else unreadChatCount.toString(),
+                                                                color = Color.White,
+                                                                fontSize = 8.sp,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
+                                                    } else if ((item.screen == Screen.SETTINGS || item.screen == Screen.CONTACTS) && hasDuplicateContacts) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .offset(x = 4.dp, y = (-4).dp)
+                                                                .size(8.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xFFE53935))
                                                         )
                                                     }
                                                 }
                                             }
                                         }
+
+                                        // 3-Dot More Menu as the LAST option in task bar (not fixed)
+                                        val isMoreSelectedTop = showMoreMenuSheet || currentScreen == Screen.SHOPPING_CART || currentScreen == Screen.MOVIE_TRACKER || currentScreen == Screen.SPOTIFY_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.GOOGLE_DRIVE_SYNC || currentScreen == Screen.FOCUS_LOCKER || currentScreen == Screen.HEALTH || currentScreen == Screen.ARENA
+                                        val moreIconScaleTop by animateFloatAsState(
+                                            targetValue = if (isMoreSelectedTop) 1.2f else 1.0f,
+                                            animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioLowBouncy),
+                                            label = "nav_item_more_scale_top"
+                                        )
+                                        val moreTintTop by animateColorAsState(
+                                            targetValue = if (isMoreSelectedTop) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
+                                            animationSpec = tween(120),
+                                            label = "nav_item_more_tint_top"
+                                        )
+                                        val moreBgAlphaTop by animateFloatAsState(
+                                            targetValue = if (isMoreSelectedTop) 0.15f else 0.0f,
+                                            animationSpec = tween(120),
+                                            label = "nav_item_more_bg_alpha_top"
+                                        )
+
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(WaterBlue.copy(alpha = moreBgAlphaTop))
+                                                .let { m ->
+                                                    if (isMoreSelectedTop) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
+                                                    else m
+                                                }
+                                                .bouncyClick { showMoreMenuSheet = true }
+                                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                                                .testTag("nav_item_more_menu"),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = "More Apps & Tools",
+                                                tint = moreTintTop,
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .graphicsLayer {
+                                                        scaleX = moreIconScaleTop
+                                                        scaleY = moreIconScaleTop
+                                                    }
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(16.dp))
                                     }
-                                    Spacer(modifier = Modifier.width(16.dp))
                                 }
                             }
                             }
@@ -1120,91 +1179,152 @@ class MainActivity : ComponentActivity() {
                                         .fillMaxWidth()
                                         .padding(horizontal = 16.dp, vertical = 8.dp)
                                 ) {
-                                Row(
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(56.dp)
                                         .clip(RoundedCornerShape(28.dp))
                                         .background(Color.White.copy(alpha = 0.1f))
-                                        .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(28.dp))
-                                        .horizontalScroll(rememberScrollState()),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(28.dp)),
+                                    contentAlignment = Alignment.CenterStart
                                 ) {
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Text(
-                                        text = "LIFE OS",
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = WaterBlue,
-                                        fontSize = 12.sp,
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    )
-
-                                    navItems.forEach { item ->
-                                        val isSelected = currentScreen == item.screen
-                                        val iconScale by animateFloatAsState(
-                                            targetValue = if (isSelected) 1.25f else 1.0f,
-                                            animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
-                                            label = "nav_item_scale_bottom"
-                                        )
-                                        val tint by animateColorAsState(
-                                            targetValue = if (isSelected) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
-                                            animationSpec = tween(300),
-                                            label = "nav_item_tint_bottom"
-                                        )
-                                        val bgAlpha by animateFloatAsState(
-                                            targetValue = if (isSelected) 0.15f else 0.0f,
-                                            animationSpec = tween(300),
-                                            label = "nav_item_bg_alpha_bottom"
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .fillMaxHeight()
+                                            .horizontalScroll(rememberScrollState()),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Text(
+                                            text = "LIFE OS",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = WaterBlue,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.padding(end = 4.dp)
                                         )
 
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(WaterBlue.copy(alpha = bgAlpha))
-                                                .let { m ->
-                                                    if (isSelected) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
-                                                    else m
-                                                }
-                                                .bouncyClick { viewModel.navigateTo(item.screen) }
-                                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                                                .testTag("nav_item_${item.label.lowercase()}"),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Box {
-                                                Icon(
-                                                    imageVector = item.icon,
-                                                    contentDescription = item.label,
-                                                    tint = tint,
-                                                    modifier = Modifier
-                                                        .size(16.dp)
-                                                        .graphicsLayer {
-                                                            scaleX = iconScale
-                                                            scaleY = iconScale
-                                                        }
-                                                )
-                                                if (item.screen == Screen.MESSAGES && unreadChatCount > 0) {
-                                                    Box(
+                                        navItems.forEach { item ->
+                                            val isSelected = currentScreen == item.screen
+                                            val iconScale by animateFloatAsState(
+                                                targetValue = if (isSelected) 1.2f else 1.0f,
+                                                animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioLowBouncy),
+                                                label = "nav_item_scale_bottom"
+                                            )
+                                            val tint by animateColorAsState(
+                                                targetValue = if (isSelected) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
+                                                animationSpec = tween(120),
+                                                label = "nav_item_tint_bottom"
+                                            )
+                                            val bgAlpha by animateFloatAsState(
+                                                targetValue = if (isSelected) 0.15f else 0.0f,
+                                                animationSpec = tween(120),
+                                                label = "nav_item_bg_alpha_bottom"
+                                            )
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(WaterBlue.copy(alpha = bgAlpha))
+                                                    .let { m ->
+                                                        if (isSelected) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
+                                                        else m
+                                                    }
+                                                    .bouncyClick { viewModel.navigateTo(item.screen) }
+                                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                                                    .testTag("nav_item_${item.label.lowercase()}"),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Box {
+                                                    Icon(
+                                                        imageVector = item.icon,
+                                                        contentDescription = item.label,
+                                                        tint = tint,
                                                         modifier = Modifier
-                                                            .align(Alignment.TopEnd)
-                                                            .offset(x = 6.dp, y = (-6).dp)
-                                                            .size(if (unreadChatCount > 9) 16.dp else 12.dp)
-                                                            .clip(CircleShape)
-                                                            .background(Color(0xFFE53935)),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text(
-                                                            text = if (unreadChatCount > 99) "99+" else unreadChatCount.toString(),
-                                                            color = Color.White,
-                                                            fontSize = 8.sp,
-                                                            fontWeight = FontWeight.Bold
+                                                            .size(16.dp)
+                                                            .graphicsLayer {
+                                                                scaleX = iconScale
+                                                                scaleY = iconScale
+                                                            }
+                                                    )
+                                                    if (item.screen == Screen.MESSAGES && unreadChatCount > 0) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .offset(x = 6.dp, y = (-6).dp)
+                                                                .size(if (unreadChatCount > 9) 16.dp else 12.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xFFE53935)),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Text(
+                                                                text = if (unreadChatCount > 99) "99+" else unreadChatCount.toString(),
+                                                                color = Color.White,
+                                                                fontSize = 8.sp,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
+                                                    } else if ((item.screen == Screen.SETTINGS || item.screen == Screen.CONTACTS) && hasDuplicateContacts) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .offset(x = 4.dp, y = (-4).dp)
+                                                                .size(8.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xFFE53935))
                                                         )
                                                     }
                                                 }
                                             }
                                         }
+
+                                        // 3-Dot More Menu as the LAST option in task bar (not fixed)
+                                        val isMoreSelectedBottom = showMoreMenuSheet || currentScreen == Screen.SHOPPING_CART || currentScreen == Screen.MOVIE_TRACKER || currentScreen == Screen.SPOTIFY_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.GOOGLE_DRIVE_SYNC || currentScreen == Screen.FOCUS_LOCKER || currentScreen == Screen.HEALTH || currentScreen == Screen.ARENA
+                                        val moreIconScaleBottom by animateFloatAsState(
+                                            targetValue = if (isMoreSelectedBottom) 1.2f else 1.0f,
+                                            animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioLowBouncy),
+                                            label = "nav_item_more_scale_bottom"
+                                        )
+                                        val moreTintBottom by animateColorAsState(
+                                            targetValue = if (isMoreSelectedBottom) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
+                                            animationSpec = tween(120),
+                                            label = "nav_item_more_tint_bottom"
+                                        )
+                                        val moreBgAlphaBottom by animateFloatAsState(
+                                            targetValue = if (isMoreSelectedBottom) 0.15f else 0.0f,
+                                            animationSpec = tween(120),
+                                            label = "nav_item_more_bg_alpha_bottom"
+                                        )
+
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(WaterBlue.copy(alpha = moreBgAlphaBottom))
+                                                .let { m ->
+                                                    if (isMoreSelectedBottom) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
+                                                    else m
+                                                }
+                                                .bouncyClick { showMoreMenuSheet = true }
+                                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                                                .testTag("nav_item_more_menu"),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = "More Apps & Tools",
+                                                tint = moreTintBottom,
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .graphicsLayer {
+                                                        scaleX = moreIconScaleBottom
+                                                        scaleY = moreIconScaleBottom
+                                                    }
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(16.dp))
                                     }
-                                    Spacer(modifier = Modifier.width(16.dp))
                                 }
                             }
                             }
@@ -1243,19 +1363,19 @@ class MainActivity : ComponentActivity() {
 
                                     navItems.forEach { item ->
                                         val isSelected = currentScreen == item.screen
-                                        val iconScale by animateFloatAsState(
-                                            targetValue = if (isSelected) 1.25f else 1.0f,
-                                            animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+                                         val iconScale by animateFloatAsState(
+                                            targetValue = if (isSelected) 1.2f else 1.0f,
+                                            animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioLowBouncy),
                                             label = "nav_item_scale_right"
                                         )
                                         val tint by animateColorAsState(
                                             targetValue = if (isSelected) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
-                                            animationSpec = tween(300),
+                                            animationSpec = tween(120),
                                             label = "nav_item_tint_right"
                                         )
                                         val bgAlpha by animateFloatAsState(
                                             targetValue = if (isSelected) 0.15f else 0.0f,
-                                            animationSpec = tween(300),
+                                            animationSpec = tween(120),
                                             label = "nav_item_bg_alpha_right"
                                         )
 
@@ -1307,9 +1427,48 @@ class MainActivity : ComponentActivity() {
                                                                 fontWeight = FontWeight.Bold
                                                             )
                                                         }
+                                                    } else if ((item.screen == Screen.SETTINGS || item.screen == Screen.CONTACTS) && hasDuplicateContacts) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .offset(x = 4.dp, y = (-4).dp)
+                                                                .size(8.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xFFE53935))
+                                                        )
                                                     }
                                                 }
                                             }
+                                        }
+                                    }
+
+                                    // 3-Dot More Menu
+                                    val isMoreSelectedRight = showMoreMenuSheet || currentScreen == Screen.SHOPPING_CART || currentScreen == Screen.MOVIE_TRACKER || currentScreen == Screen.SPOTIFY_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.GOOGLE_DRIVE_SYNC || currentScreen == Screen.FOCUS_LOCKER || currentScreen == Screen.HEALTH || currentScreen == Screen.ARENA
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .bouncyClick { showMoreMenuSheet = true }
+                                            .padding(vertical = 8.dp)
+                                            .testTag("nav_item_more_menu"),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(height = 36.dp, width = 56.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (isMoreSelectedRight) WaterBlue.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
+                                                .let { m ->
+                                                    if (isMoreSelectedRight) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
+                                                    else m.border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(12.dp))
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = "More Apps & Tools",
+                                                tint = if (isMoreSelectedRight) WaterBlue else Color.White,
+                                                modifier = Modifier.size(20.dp)
+                                            )
                                         }
                                     }
 
@@ -1320,6 +1479,7 @@ class MainActivity : ComponentActivity() {
 
                             MainScaffoldContent(scaffoldModifier = Modifier.weight(1f).fillMaxHeight())
                         }
+                    } else {
                         Row(modifier = outerModifier) {
                             if (!isKeyboardVisible && !isFileExplorerF11Active && currentScreen != Screen.LOGIN && currentScreen != Screen.PROFILE_SETUP && currentScreen != Screen.PERMISSION_ONBOARDING && currentScreen != Screen.CALENDAR_OPTIMIZATION_ONBOARDING) {
                             // Left-hand vertical tabs column (Floating Glass Rail)
@@ -1352,18 +1512,18 @@ class MainActivity : ComponentActivity() {
                                     navItems.forEach { item ->
                                         val isSelected = currentScreen == item.screen
                                         val iconScale by animateFloatAsState(
-                                            targetValue = if (isSelected) 1.25f else 1.0f,
-                                            animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+                                            targetValue = if (isSelected) 1.2f else 1.0f,
+                                            animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioLowBouncy),
                                             label = "nav_item_scale_left"
                                         )
                                         val tint by animateColorAsState(
                                             targetValue = if (isSelected) WaterBlue else Color.LightGray.copy(alpha = 0.6f),
-                                            animationSpec = tween(300),
+                                            animationSpec = tween(120),
                                             label = "nav_item_tint_left"
                                         )
                                         val bgAlpha by animateFloatAsState(
                                             targetValue = if (isSelected) 0.15f else 0.0f,
-                                            animationSpec = tween(300),
+                                            animationSpec = tween(120),
                                             label = "nav_item_bg_alpha_left"
                                         )
 
@@ -1415,9 +1575,48 @@ class MainActivity : ComponentActivity() {
                                                                 fontWeight = FontWeight.Bold
                                                             )
                                                         }
+                                                    } else if ((item.screen == Screen.SETTINGS || item.screen == Screen.CONTACTS) && hasDuplicateContacts) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .offset(x = 4.dp, y = (-4).dp)
+                                                                .size(8.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xFFE53935))
+                                                        )
                                                     }
                                                 }
                                             }
+                                        }
+                                    }
+
+                                    // 3-Dot More Menu
+                                    val isMoreSelectedLeft = showMoreMenuSheet || currentScreen == Screen.SHOPPING_CART || currentScreen == Screen.MOVIE_TRACKER || currentScreen == Screen.SPOTIFY_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.GOOGLE_DRIVE_SYNC || currentScreen == Screen.FOCUS_LOCKER || currentScreen == Screen.HEALTH || currentScreen == Screen.ARENA
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .bouncyClick { showMoreMenuSheet = true }
+                                            .padding(vertical = 8.dp)
+                                            .testTag("nav_item_more_menu"),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(height = 36.dp, width = 56.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (isMoreSelectedLeft) WaterBlue.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
+                                                .let { m ->
+                                                    if (isMoreSelectedLeft) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
+                                                    else m.border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(12.dp))
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = "More Apps & Tools",
+                                                tint = if (isMoreSelectedLeft) WaterBlue else Color.White,
+                                                modifier = Modifier.size(20.dp)
+                                            )
                                         }
                                     }
 
@@ -1430,6 +1629,13 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+
+                if (showMoreMenuSheet) {
+                    MoreAppsBottomSheet(
+                        viewModel = viewModel,
+                        onDismiss = { showMoreMenuSheet = false }
+                    )
                 }
                 } else {
                     com.example.ui.components.AppLockOverlay(
@@ -1972,6 +2178,13 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        if (action == "com.example.action.OPEN_COUNTDOWN_TAB" || 
+            navigateTo.equals("COUNTDOWN", ignoreCase = true) || 
+            intent.getBooleanExtra("SHOW_COUNTDOWN_PAGE", false)) {
+            viewModel.navigateTo(Screen.COUNTDOWN)
+            return
+        }
+
         if (intent.getBooleanExtra("OPEN_INSTAGRAM_WEB_APP", false) || 
             navigateTo.equals("INSTAGRAM_WEB_APP", ignoreCase = true) ||
             action == "com.example.action.OPEN_INSTAGRAM_WEB") {
@@ -2022,6 +2235,8 @@ class MainActivity : ComponentActivity() {
             viewModel.navigateTo(Screen.KEEP_NOTES)
         } else if (navigateTo.equals("TASKS", ignoreCase = true) || intent.getBooleanExtra("SHOW_TASKS_PAGE", false)) {
             viewModel.navigateTo(Screen.TASKS)
+        } else if (navigateTo.equals("COUNTDOWN", ignoreCase = true) || intent.getBooleanExtra("SHOW_COUNTDOWN_PAGE", false)) {
+            viewModel.navigateTo(Screen.COUNTDOWN)
         } else if (navigateTo.equals("TIMER", ignoreCase = true) || intent.getBooleanExtra("SHOW_TIMER_PAGE", false) || intent.getBooleanExtra("SHOW_FULL_SCREEN_TIMER", false)) {
             viewModel.navigateTo(Screen.TIMER)
         } else {
@@ -2303,7 +2518,7 @@ class MainActivity : ComponentActivity() {
             Screen.CALENDAR to NavigationItem(Screen.CALENDAR, Icons.Default.DateRange, "Calendar"),
             Screen.TIMER to NavigationItem(Screen.TIMER, Icons.Default.PlayArrow, "Timer"),
             Screen.LIVE_SPHERE to NavigationItem(Screen.LIVE_SPHERE, Icons.Default.Share, "Friends Focus Details"),
-            Screen.ARENA to NavigationItem(Screen.ARENA, Icons.Default.EmojiEvents, "Arena"),
+            Screen.ARENA to NavigationItem(Screen.ARENA, Icons.Default.EmojiEvents, "Arena & Syllabus"),
             Screen.FOCUS_LOCKER to NavigationItem(Screen.FOCUS_LOCKER, Icons.Default.Lock, "Locker"),
             Screen.HABITS to NavigationItem(Screen.HABITS, Icons.Default.CheckCircle, "Habits"),
             Screen.COUNTDOWN to NavigationItem(Screen.COUNTDOWN, Icons.Default.Notifications, "Countdown"),
@@ -2317,10 +2532,9 @@ class MainActivity : ComponentActivity() {
             Screen.SEARCH to NavigationItem(Screen.SEARCH, Icons.Default.Search, "Search"),
             Screen.ANALYTICS to NavigationItem(Screen.ANALYTICS, Icons.Default.Star, "Analytics"),
             Screen.SETTINGS to NavigationItem(Screen.SETTINGS, Icons.Default.Settings, "Settings"),
-            Screen.HEALTH to NavigationItem(Screen.HEALTH, Icons.Default.Favorite, "Health"),
-            Screen.FLEX_GRID_STUDIO to NavigationItem(Screen.FLEX_GRID_STUDIO, Icons.Default.Dashboard, "Layout Studio"),
+            Screen.HEALTH to NavigationItem(Screen.HEALTH, Icons.Default.Favorite, "Fitness & Wellness"),
             Screen.MOVIE_TRACKER to NavigationItem(Screen.MOVIE_TRACKER, Icons.Default.Movie, "Movie Tracker"),
-            Screen.SHOPPING_CART to NavigationItem(Screen.SHOPPING_CART, Icons.Default.ShoppingCart, "Shopping Cart")
+            Screen.SHOPPING_CART to NavigationItem(Screen.SHOPPING_CART, Icons.Default.ShoppingCart, "Shopping List")
         )
         return order.mapNotNull { mapping[it] }
     }
@@ -2776,3 +2990,241 @@ fun PastedLinksHubView(viewModel: AppViewModel) {
 }
 
 data class NavigationItem(val screen: Screen, val icon: ImageVector, val label: String)
+
+data class ToolMenuItem(
+    val screen: Screen,
+    val icon: ImageVector,
+    val title: String,
+    val subtitle: String,
+    val color: Color
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MoreAppsBottomSheet(
+    viewModel: AppViewModel,
+    onDismiss: () -> Unit
+) {
+    val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
+    var searchQuery by remember { mutableStateOf("") }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF14141A),
+        contentColor = Color.White,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = Color.Gray.copy(alpha = 0.5f),
+                width = 40.dp,
+                height = 4.dp
+            )
+        },
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(WaterBlue.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Apps,
+                            contentDescription = null,
+                            tint = WaterBlue,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Apps & Tools Hub",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Quick navigation and utilities",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                placeholder = { Text("Search tools & apps...", fontSize = 13.sp, color = Color.Gray) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color(0xFF1B1B22),
+                    unfocusedContainerColor = Color(0xFF16161D),
+                    focusedBorderColor = WaterBlue,
+                    unfocusedBorderColor = Color(0x22FFFFFF),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                )
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Grid of all app tools
+            val allTools = remember {
+                listOf(
+                    ToolMenuItem(Screen.HEALTH, Icons.Default.Favorite, "Fitness & Wellness", "Health, Vitals & Water Log", Color(0xFFEF4444)),
+                    ToolMenuItem(Screen.ARENA, Icons.Default.EmojiEvents, "Arena & Syllabus", "Battles & Syllabus Tracker", Color(0xFFEC4899)),
+                    ToolMenuItem(Screen.SHOPPING_CART, Icons.Default.ShoppingCart, "Shopping List", "Smart Cart & Wishlist", Color(0xFF00E5FF)),
+                    ToolMenuItem(Screen.MOVIE_TRACKER, Icons.Default.Movie, "Movie Tracker", "Watchlist & Ratings", Color(0xFFFF5252)),
+                    ToolMenuItem(Screen.SPOTIFY_WEB_APP, Icons.Default.MusicNote, "AntiSpotify", "Spotify Web Player", Color(0xFF1DB954)),
+                    ToolMenuItem(Screen.YOUTUBE_WEB_APP, Icons.Default.PlayCircle, "AntiTube", "Clean YouTube Web", Color(0xFFFF0000)),
+                    ToolMenuItem(Screen.INSTAGRAM_WEB_APP, Icons.Default.CameraAlt, "AntiGram", "Clean Instagram Web", Color(0xFFE1306C)),
+                    ToolMenuItem(Screen.GOOGLE_DRIVE_SYNC, Icons.Default.CloudSync, "Google Drive", "Cloud Sync & Backups", Color(0xFF4285F4)),
+                    ToolMenuItem(Screen.FOCUS_LOCKER, Icons.Default.Lock, "Focus Locker", "Distraction Blocker", Color(0xFFF59E0B)),
+                    ToolMenuItem(Screen.LIVE_SPHERE, Icons.Default.Share, "Friends Focus", "Live Sphere Network", Color(0xFF10B981)),
+                    ToolMenuItem(Screen.SETTINGS, Icons.Default.Settings, "Settings", "Preferences & Themes", Color(0xFF94A3B8))
+                )
+            }
+
+            val filteredTools = if (searchQuery.isBlank()) allTools else {
+                allTools.filter { it.title.contains(searchQuery, ignoreCase = true) || it.subtitle.contains(searchQuery, ignoreCase = true) }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                ) {
+                    filteredTools.chunked(2).forEach { rowTools ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowTools.forEach { tool ->
+                                val isCurrent = currentScreen == tool.screen
+                                Surface(
+                                    onClick = {
+                                        onDismiss()
+                                        viewModel.navigateTo(tool.screen)
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("more_menu_item_${tool.screen.name.lowercase()}"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isCurrent) tool.color.copy(alpha = 0.2f) else Color(0xFF1B1B24),
+                                    border = BorderStroke(
+                                        width = 1.dp,
+                                        color = if (isCurrent) tool.color else Color(0x18FFFFFF)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(tool.color.copy(alpha = 0.2f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = tool.icon,
+                                                contentDescription = tool.title,
+                                                tint = tool.color,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = tool.title,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = Color.White,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = tool.subtitle,
+                                                fontSize = 10.sp,
+                                                color = Color.Gray,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            if (rowTools.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -8,6 +8,10 @@ import com.example.util.FocusTimerManager
 
 class TimeChangeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d("TimeChangeReceiver", "TimeChangeReceiver onReceive aborted: User is not logged in.")
+            return
+        }
         val action = intent.action
         Log.d("TimeChangeReceiver", "Received broadcast: $action")
         if (action == Intent.ACTION_TIME_CHANGED || action == Intent.ACTION_TIMEZONE_CHANGED) {

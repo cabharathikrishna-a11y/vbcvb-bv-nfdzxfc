@@ -288,16 +288,32 @@ object GoogleDriveReadManager {
         context: Context,
         onAuthResolutionRequired: (Intent) -> Unit = {}
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Restore", "Preparing", 5, "Connecting to Google Drive...")
         val token = getAccessToken(context, onAuthResolutionRequired)
-            ?: return@withContext Pair(false, "Authorization required. Please connect your Google Drive.")
+        if (token == null) {
+            val msg = "Authorization required. Please connect your Google Drive."
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Restore", "Failed", 0, msg, isFinished = true, isError = true)
+            return@withContext Pair(false, msg)
+        }
 
         try {
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Restore", "Locating", 20, "Searching for focus data backup in Google Drive...")
             val fileId = findBackupFileId(token)
-                ?: return@withContext Pair(false, "No backup file found on your Google Drive. Save a backup first.")
+            if (fileId == null) {
+                val msg = "No backup file found on your Google Drive. Save a backup first."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Restore", "Failed", 0, msg, isFinished = true, isError = true)
+                return@withContext Pair(false, msg)
+            }
 
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Restore", "Downloading", 50, "Downloading focus records from Google Drive...")
             val contentStr = downloadBackupFileContent(token, fileId)
-                ?: return@withContext Pair(false, "Failed to read backup from Google Drive.")
+            if (contentStr.isNullOrBlank()) {
+                val msg = "Failed to read backup from Google Drive."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Restore", "Failed", 0, msg, isFinished = true, isError = true)
+                return@withContext Pair(false, msg)
+            }
 
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Restore", "Restoring", 75, "Parsing and merging focus sessions...")
             val backupJson = JSONObject(contentStr)
             val remoteSerializedRecords = backupJson.optString("focus_records_list", "")
             val remoteTotalMinutes = backupJson.optInt("total_focus_minutes", 0)
@@ -329,10 +345,14 @@ object GoogleDriveReadManager {
                 FocusTimerManager.setTodayPomosCount(finalPomosCount)
             }
 
-            Pair(true, "Successfully restored and merged ${remoteRecords.size} focus records from Google Drive!")
+            val successMsg = "Successfully restored and merged ${remoteRecords.size} focus records from Google Drive!"
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Restore", "Completed", 100, successMsg, isFinished = true)
+            Pair(true, successMsg)
         } catch (e: Exception) {
             Log.e(TAG, "Error restoring focus data: ${e.message}", e)
-            Pair(false, "Restore Error: ${e.localizedMessage ?: "Unknown error"}")
+            val errMsg = "Restore Error: ${e.localizedMessage ?: "Unknown error"}"
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Focus Restore", "Failed", 0, errMsg, isFinished = true, isError = true)
+            Pair(false, errMsg)
         }
     }
 
@@ -344,15 +364,26 @@ object GoogleDriveReadManager {
         database: com.example.data.AppDatabase,
         onAuthResolutionRequired: (Intent) -> Unit = {}
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Preparing", 5, "Preparing Google Drive connection...")
         val token = getAccessToken(context, onAuthResolutionRequired)
-            ?: return@withContext Pair(false, "Authorization required. Please connect your Google Drive.")
+        if (token == null) {
+            val msg = "Authorization required. Please connect your Google Drive."
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Failed", 0, msg, isFinished = true, isError = true)
+            return@withContext Pair(false, msg)
+        }
 
         try {
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Locating", 20, "Locating latest cloud backup in Google Drive...")
             val vault = GoogleDriveUploadManager.ensureVaultStructureAndReadme(token)
             val fileName = "app_data_backup.zip"
             val fileId = (if (vault != null) GoogleDriveUploadManager.findFileInFolder(token, fileName, vault.backupsId) else null)
                 ?: findFileId(token, fileName)
-                ?: return@withContext Pair(false, "No full app data backup found on Google Drive. Save a backup first.")
+            
+            if (fileId == null) {
+                val msg = "No full app data backup found on Google Drive. Save a backup first."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Failed", 0, msg, isFinished = true, isError = true)
+                return@withContext Pair(false, msg)
+            }
 
             val url = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media"
             val request = Request.Builder()
@@ -367,9 +398,37 @@ object GoogleDriveReadManager {
             var downloadSuccess = false
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
-                    response.body?.byteStream()?.use { input ->
+                    val responseBody = response.body
+                    val contentLength = responseBody?.contentLength() ?: -1L
+                    val formattedTotal = if (contentLength > 0) android.text.format.Formatter.formatFileSize(context, contentLength) else "archive"
+
+                    responseBody?.byteStream()?.use { input ->
                         tempFile.outputStream().use { output ->
-                            input.copyTo(output)
+                            val buffer = ByteArray(8192)
+                            var bytesRead: Int
+                            var totalBytesRead = 0L
+                            var lastPercent = -1
+
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                output.write(buffer, 0, bytesRead)
+                                totalBytesRead += bytesRead
+                                if (contentLength > 0) {
+                                    val streamPercent = ((totalBytesRead * 100) / contentLength).toInt().coerceIn(0, 100)
+                                    if (streamPercent != lastPercent) {
+                                        lastPercent = streamPercent
+                                        val overallProgress = 25 + (streamPercent * 45 / 100)
+                                        val readFormatted = android.text.format.Formatter.formatFileSize(context, totalBytesRead)
+                                        GoogleDriveSyncProgressTracker.updateProgress(
+                                            context,
+                                            "Cloud Restore",
+                                            "Downloading",
+                                            overallProgress,
+                                            "Downloading backup package from Google Drive ($streamPercent% | $readFormatted of $formattedTotal)..."
+                                        )
+                                    }
+                                }
+                            }
+                            output.flush()
                         }
                     }
                     downloadSuccess = true
@@ -380,9 +439,12 @@ object GoogleDriveReadManager {
 
             if (!downloadSuccess) {
                 tempFile.delete()
-                return@withContext Pair(false, "Failed to download backup package from Google Drive.")
+                val msg = "Failed to download backup package from Google Drive."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Failed", 0, msg, isFinished = true, isError = true)
+                return@withContext Pair(false, msg)
             }
 
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Extracting & Reading", 75, "Extracting and restoring database records...")
             val importSuccess = tempFile.inputStream().use { fis ->
                 DatabaseBackupHelper.importDataFromStream(context, database, fis)
             }
@@ -392,13 +454,19 @@ object GoogleDriveReadManager {
             if (importSuccess) {
                 val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 prefs.edit().putLong("gd_all_last_sync_timestamp", System.currentTimeMillis()).apply()
-                Pair(true, "Successfully restored all app data and files from Google Drive!")
+                val successMsg = "Successfully restored all app data and files from Google Drive!"
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Completed", 100, successMsg, isFinished = true)
+                Pair(true, successMsg)
             } else {
-                Pair(false, "Failed to restore downloaded backup package.")
+                val errMsg = "Failed to import backup package into local database."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Failed", 0, errMsg, isFinished = true, isError = true)
+                Pair(false, errMsg)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error restoring all app data", e)
-            Pair(false, "Restore Error: ${e.localizedMessage ?: "Unknown error"}")
+            val errMsg = "Restore Error: ${e.localizedMessage ?: "Unknown error"}"
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Failed", 0, errMsg, isFinished = true, isError = true)
+            Pair(false, errMsg)
         }
     }
 
@@ -447,6 +515,70 @@ object GoogleDriveReadManager {
         } catch (e: Exception) {
             Log.e(TAG, "Error in checkAndRetrieveDriveData", e)
             Pair(false, e.localizedMessage ?: "Unknown restore error.")
+        }
+    }
+
+    /**
+     * Restores application settings and preferences from Google Drive.
+     */
+    suspend fun restoreAppSettingsFromDrive(
+        context: Context,
+        onAuthResolutionRequired: (Intent) -> Unit = {}
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val token = getAccessToken(context, onAuthResolutionRequired) ?: return@withContext Pair(false, "Google Drive auth required.")
+        try {
+            val vault = GoogleDriveUploadManager.ensureVaultStructureAndReadme(token)
+            val backupsId = vault?.backupsId
+            val fileName = "app_settings_sync.json"
+            val fileId = if (backupsId != null) {
+                GoogleDriveUploadManager.findFileInFolder(token, fileName, backupsId)
+            } else {
+                findFileId(token, fileName)
+            } ?: return@withContext Pair(false, "No settings backup found on Google Drive.")
+
+            val request = Request.Builder()
+                .url("https://www.googleapis.com/drive/v3/files/$fileId?alt=media")
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+
+            client.newCall(request).execute().use { res ->
+                if (!res.isSuccessful) return@withContext Pair(false, "Failed to download settings (HTTP ${res.code}).")
+                val body = res.body?.string() ?: return@withContext Pair(false, "Empty settings file.")
+                val rootJson = JSONObject(body)
+
+                fun applyJsonToSharedPrefs(prefName: String, jsonKey: String) {
+                    val subObj = rootJson.optJSONObject(jsonKey) ?: return
+                    val editor = context.getSharedPreferences(prefName, Context.MODE_PRIVATE).edit()
+                    val keys = subObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        val v = subObj.get(k)
+                        when (v) {
+                            is Boolean -> editor.putBoolean(k, v)
+                            is Int -> editor.putInt(k, v)
+                            is Long -> editor.putLong(k, v)
+                            is Double -> editor.putFloat(k, v.toFloat())
+                            is String -> editor.putString(k, v)
+                            else -> editor.putString(k, v.toString())
+                        }
+                    }
+                    editor.apply()
+                }
+
+                applyJsonToSharedPrefs("app_prefs", "app_prefs")
+                applyJsonToSharedPrefs("app_settings", "app_settings")
+                applyJsonToSharedPrefs("countdown_settings_prefs", "countdown_settings_prefs")
+                applyJsonToSharedPrefs("strict_mode_prefs", "strict_mode_prefs")
+                applyJsonToSharedPrefs("app_calendar_prefs", "app_calendar_prefs")
+
+                val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                prefs.edit().putLong("gd_settings_last_restore_timestamp", System.currentTimeMillis()).apply()
+
+                Pair(true, "Settings restored successfully from Google Drive.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error restoring settings from Drive", e)
+            Pair(false, "Drive Restore Error: ${e.localizedMessage ?: "Unknown error"}")
         }
     }
 }

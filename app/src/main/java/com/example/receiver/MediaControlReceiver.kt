@@ -18,6 +18,9 @@ class MediaControlReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+            return
+        }
         val action = intent?.action ?: return
 
         when (action) {

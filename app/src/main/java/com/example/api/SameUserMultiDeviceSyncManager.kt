@@ -60,6 +60,9 @@ object SameUserMultiDeviceSyncManager {
     private val _syncInfoState = MutableStateFlow(MultiDeviceSyncInfo())
     val syncInfoState: StateFlow<MultiDeviceSyncInfo> = _syncInfoState.asStateFlow()
 
+    private val _liveSettingsUpdateSignal = MutableStateFlow(0L)
+    val liveSettingsUpdateSignal: StateFlow<Long> = _liveSettingsUpdateSignal.asStateFlow()
+
     private val isListening = AtomicBoolean(false)
     private var activeUserEmail: String = ""
 
@@ -69,7 +72,7 @@ object SameUserMultiDeviceSyncManager {
     private var financeListener: ValueEventListener? = null
     private var keepNotesListener: ValueEventListener? = null
     private var moviesListener: ValueEventListener? = null
-    private var settingsSignalListener: ValueEventListener? = null
+    private var settingsFirestoreListener: com.google.firebase.firestore.ListenerRegistration? = null
     private var connectedInfoListener: ValueEventListener? = null
     private var activeDevicesListener: ValueEventListener? = null
 
@@ -113,6 +116,7 @@ object SameUserMultiDeviceSyncManager {
 
             // Register device presence and active session tracking
             DevicePresenceManager.registerPresence(context, email)
+            PeerFocusFcmNotifier.subscribeToTopics(context, email)
 
             // 1. Connection state (.info/connected) monitor for auto-recovery
             val connListener = object : ValueEventListener {
@@ -241,23 +245,34 @@ object SameUserMultiDeviceSyncManager {
             userRef.child("MOVIES_LIVE").addValueEventListener(movListener)
             moviesListener = movListener
 
-            // 8. SETTINGS_SYNC_SIGNAL Listener
-            val sigListener = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    if (!snapshot.exists()) return
-                    val originDeviceId = snapshot.child("originDeviceId").getValue(String::class.java) ?: ""
-                    val timestamp = snapshot.child("timestamp").getValue(Long::class.java) ?: 0L
-
-                    if (originDeviceId.isNotEmpty() && originDeviceId != deviceKey && timestamp > lastSyncedSettingsTimestamp) {
-                        Log.i(TAG, "Received SETTINGS_SYNC_SIGNAL from device $originDeviceId. Pulling settings...")
-                        pullSettingsFromCloud(context, email)
+            // 9. Real-time Firestore Settings Listener for cloud multi-device sync
+            try {
+                val firestore = FirebaseFirestore.getInstance(FirebaseApp.getInstance(), "main")
+                settingsFirestoreListener?.remove()
+                settingsFirestoreListener = firestore.collection("users")
+                    .document(sanitized)
+                    .collection("user_settings")
+                    .document("settings_config")
+                    .addSnapshotListener { snapshot, error ->
+                        if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                        val originDevice = snapshot.getString("originDeviceId") ?: ""
+                        val updatedAt = snapshot.getLong("updatedAt") ?: 0L
+                        if (originDevice.isNotEmpty() && originDevice != deviceKey && updatedAt > lastSyncedSettingsTimestamp) {
+                            Log.i(TAG, "Live Firestore settings received from device $originDevice (ts=$updatedAt). Applying...")
+                            lastSyncedSettingsTimestamp = updatedAt
+                            applyPrefMap(context, "app_prefs", snapshot.get("app_prefs") as? Map<*, *>)
+                            applyPrefMap(context, "app_settings", snapshot.get("app_settings") as? Map<*, *>)
+                            applyPrefMap(context, "countdown_settings_prefs", snapshot.get("countdown_settings_prefs") as? Map<*, *>)
+                            applyPrefMap(context, "strict_mode_prefs", snapshot.get("strict_mode_prefs") as? Map<*, *>)
+                            applyPrefMap(context, "app_calendar_prefs", snapshot.get("app_calendar_prefs") as? Map<*, *>)
+                            CoroutineScope(Dispatchers.Main).launch {
+                                _liveSettingsUpdateSignal.value = System.currentTimeMillis()
+                            }
+                        }
                     }
-                }
-
-                override fun onCancelled(error: DatabaseError) {}
+            } catch (e: Exception) {
+                Log.w(TAG, "Notice attaching Firestore live settings snapshot listener: ${e.message}")
             }
-            userRef.child("SETTINGS_SYNC_SIGNAL").addValueEventListener(sigListener)
-            settingsSignalListener = sigListener
 
             isListening.set(true)
             Log.d(TAG, "Successfully started SameUserMultiDeviceSyncManager for $sanitized (device=$deviceKey)")
@@ -287,8 +302,9 @@ object SameUserMultiDeviceSyncManager {
                 financeListener?.let { userRef.child("FINANCE_LIVE").removeEventListener(it) }
                 keepNotesListener?.let { userRef.child("KEEP_NOTES").removeEventListener(it) }
                 moviesListener?.let { userRef.child("MOVIES_LIVE").removeEventListener(it) }
-                settingsSignalListener?.let { userRef.child("SETTINGS_SYNC_SIGNAL").removeEventListener(it) }
             }
+            settingsFirestoreListener?.remove()
+            settingsFirestoreListener = null
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping SameUserMultiDeviceSyncManager listeners", e)
         } finally {
@@ -300,7 +316,6 @@ object SameUserMultiDeviceSyncManager {
             financeListener = null
             keepNotesListener = null
             moviesListener = null
-            settingsSignalListener = null
             isListening.set(false)
             activeUserEmail = ""
             updateSyncState(SyncState.DISCONNECTED, "Stopped")
@@ -595,25 +610,80 @@ object SameUserMultiDeviceSyncManager {
                     .set(settingsPayload, SetOptions.merge())
                     .await()
 
-                val dbUrl = FirebaseConfig.getDatabaseUrl(context)
-                if (dbUrl.isNotEmpty()) {
-                    val database = FirebaseDatabase.getInstance(dbUrl)
-                    val signalRef = database.getReference("FOCUS_TIMMER")
-                        .child("USER")
-                        .child(sanitized)
-                        .child("SETTINGS_SYNC_SIGNAL")
+                // Broadcast live settings update directly via FCM (free, lightweight, instantaneous push relay)
+                val settingsJson = org.json.JSONObject().apply {
+                    put("updatedAt", now)
+                    put("originDeviceId", deviceKey)
+                    put("email", email)
 
-                    val signalData = mapOf(
-                        "timestamp" to now,
-                        "originDeviceId" to deviceKey,
-                        "type" to "SETTINGS_UPDATED"
-                    )
+                    fun mapToJson(map: Map<String, *>?): org.json.JSONObject {
+                        val j = org.json.JSONObject()
+                        map?.forEach { (k, v) ->
+                            when (v) {
+                                is Boolean -> j.put(k, v)
+                                is Int -> j.put(k, v)
+                                is Long -> j.put(k, v)
+                                is Float -> j.put(k, v.toDouble())
+                                is Double -> j.put(k, v)
+                                is String -> j.put(k, v)
+                                null -> {}
+                                else -> j.put(k, v.toString())
+                            }
+                        }
+                        return j
+                    }
 
-                    signalRef.setValue(signalData).await()
+                    put("app_prefs", mapToJson(appPrefs))
+                    put("app_settings", mapToJson(appSettings))
+                    put("countdown_settings_prefs", mapToJson(countdownPrefs))
+                    put("strict_mode_prefs", mapToJson(strictPrefs))
+                    put("app_calendar_prefs", mapToJson(calendarPrefs))
                 }
+
+                LiveFcmSyncManager.broadcastLiveDeltaSync(
+                    context = context,
+                    payloadType = "APP_SETTINGS_UPDATE",
+                    payloadData = settingsJson,
+                    recordUuid = "settings_${deviceKey}_$now"
+                )
+                Log.i(TAG, "Broadcasted live settings update via FCM to user $sanitized")
             } catch (e: Exception) {
                 Log.e(TAG, "Error pushing settings to cloud", e)
             }
+        }
+    }
+
+    fun applyIncomingSettingsJson(
+        context: Context,
+        json: org.json.JSONObject,
+        originDeviceId: String = "",
+        timestamp: Long = System.currentTimeMillis()
+    ) {
+        val myDeviceKey = getDeviceId(context)
+        if (originDeviceId.isNotEmpty() && originDeviceId == myDeviceKey && timestamp <= lastSyncedSettingsTimestamp) {
+            return
+        }
+        lastSyncedSettingsTimestamp = timestamp
+
+        fun jsonToMap(obj: org.json.JSONObject?): Map<String, Any?> {
+            if (obj == null) return emptyMap()
+            val map = mutableMapOf<String, Any?>()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                map[key] = obj.opt(key)
+            }
+            return map
+        }
+
+        applyPrefMap(context, "app_prefs", jsonToMap(json.optJSONObject("app_prefs")))
+        applyPrefMap(context, "app_settings", jsonToMap(json.optJSONObject("app_settings")))
+        applyPrefMap(context, "countdown_settings_prefs", jsonToMap(json.optJSONObject("countdown_settings_prefs")))
+        applyPrefMap(context, "strict_mode_prefs", jsonToMap(json.optJSONObject("strict_mode_prefs")))
+        applyPrefMap(context, "app_calendar_prefs", jsonToMap(json.optJSONObject("app_calendar_prefs")))
+
+        CoroutineScope(Dispatchers.Main).launch {
+            _liveSettingsUpdateSignal.value = System.currentTimeMillis()
         }
     }
 
@@ -650,6 +720,7 @@ object SameUserMultiDeviceSyncManager {
                 applyPrefMap(context, "app_calendar_prefs", docSnap.get("app_calendar_prefs") as? Map<*, *>)
 
                 withContext(Dispatchers.Main) {
+                    _liveSettingsUpdateSignal.value = System.currentTimeMillis()
                     onComplete?.invoke()
                 }
             } catch (e: Exception) {

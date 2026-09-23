@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -58,6 +59,10 @@ private val GreenAccent = Color(0xFF00E676)
 private val TextMuted = Color(0xFF8F93A7)
 
 enum class ShoppingTabFilter { ALL, TO_BUY, IN_CART }
+
+fun formatRupees(amount: Double): String {
+    return "₹${String.format(Locale.US, "%,.2f", amount)}"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -265,7 +270,7 @@ fun ShoppingCartView(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(shoppingLists, key = { it.id }) { list ->
+                    itemsIndexed(shoppingLists, key = { idx, list -> "${list.id}_$idx" }) { _, list ->
                         val isSelected = list.id == activeList?.id
                         val borderColor = if (isSelected) CyanAccent else CardBorder
                         val bgColor = if (isSelected) CyanAccent.copy(alpha = 0.15f) else CardBg
@@ -847,7 +852,7 @@ fun ShoppingCartView(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(filteredItems, key = { it.id }) { item ->
+                    itemsIndexed(filteredItems, key = { idx, item -> "${item.id}_$idx" }) { _, item ->
                         ShoppingItemCard(
                             item = item,
                             onTogglePurchased = { viewModel.toggleShoppingItemPurchased(item) },
@@ -1034,8 +1039,6 @@ fun ShoppingTotalTrackingCard(
     onOpenAddManual: () -> Unit,
     onOpenAmazonLink: () -> Unit
 ) {
-    val currencyFormat = NumberFormat.getCurrencyInstance(Locale.US)
-
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = CardBg),
@@ -1099,7 +1102,7 @@ fun ShoppingTotalTrackingCard(
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = currencyFormat.format(totalCost),
+                        text = formatRupees(totalCost),
                         color = Color.White,
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Black
@@ -1160,7 +1163,7 @@ fun ShoppingTotalTrackingCard(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "In Cart / Bought: ${currencyFormat.format(purchasedCost)}",
+                        text = "In Cart / Bought: ${formatRupees(purchasedCost)}",
                         color = Color.LightGray,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -1176,7 +1179,7 @@ fun ShoppingTotalTrackingCard(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "To Buy: ${currencyFormat.format(remainingCost)}",
+                        text = "To Buy: ${formatRupees(remainingCost)}",
                         color = Color.LightGray,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -1201,12 +1204,12 @@ fun ShoppingTotalTrackingCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Budget: ${currencyFormat.format(list.budget)}",
+                            text = "Budget: ${formatRupees(list.budget)}",
                             fontSize = 11.sp,
                             color = TextMuted
                         )
                         Text(
-                            text = if (isOverBudget) "Over budget by ${currencyFormat.format(totalCost - list.budget)}!"
+                            text = if (isOverBudget) "Over budget by ${formatRupees(totalCost - list.budget)}!"
                             else "${((1 - (totalCost / list.budget)) * 100).toInt()}% remaining",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -1242,7 +1245,6 @@ fun ShoppingItemCard(
     onDelete: () -> Unit,
     onOpenUrl: () -> Unit
 ) {
-    val currencyFormat = NumberFormat.getCurrencyInstance(Locale.US)
     val isChecked = item.isPurchased
 
     Card(
@@ -1380,8 +1382,8 @@ fun ShoppingItemCard(
                     // Price breakdown
                     Text(
                         text = if (item.units > 1)
-                            "${currencyFormat.format(item.cost)} ea · Total: ${currencyFormat.format(item.totalCost)}"
-                        else currencyFormat.format(item.totalCost),
+                            "${formatRupees(item.cost)} ea · Total: ${formatRupees(item.totalCost)}"
+                        else formatRupees(item.totalCost),
                         color = if (isChecked) TextMuted else CyanAccent,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
@@ -1624,7 +1626,7 @@ fun PasteAmazonLinkDialog(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = if (parsedProduct.cost > 0.0) "$${parsedProduct.cost}" else "Cost not detected, please enter below",
+                                        text = if (parsedProduct.cost > 0.0) formatRupees(parsedProduct.cost) else "Cost not detected, please enter below",
                                         color = if (parsedProduct.cost > 0.0) GreenAccent else TextMuted,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
@@ -1662,8 +1664,8 @@ fun PasteAmazonLinkDialog(
                                 OutlinedTextField(
                                     value = editableCostText,
                                     onValueChange = { editableCostText = it },
-                                    label = { Text("Unit Cost ($)") },
-                                    placeholder = { Text("29.99") },
+                                    label = { Text("Unit Cost (₹)") },
+                                    placeholder = { Text("2499.00") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                     singleLine = true,
                                     colors = OutlinedTextFieldDefaults.colors(
@@ -1794,8 +1796,8 @@ fun AddManualItemDialog(
                     OutlinedTextField(
                         value = costText,
                         onValueChange = { costText = it },
-                        label = { Text("Cost ($) *") },
-                        placeholder = { Text("4.99") },
+                        label = { Text("Cost (₹) *") },
+                        placeholder = { Text("499.00") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -1971,7 +1973,7 @@ fun EditItemDialog(
                     OutlinedTextField(
                         value = costText,
                         onValueChange = { costText = it },
-                        label = { Text("Cost ($)") },
+                        label = { Text("Cost (₹)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -2166,8 +2168,8 @@ fun CreateOrEditListDialog(
                 OutlinedTextField(
                     value = budgetText,
                     onValueChange = { budgetText = it },
-                    label = { Text("Target Budget ($) (Optional)") },
-                    placeholder = { Text("e.g. 200.00") },
+                    label = { Text("Target Budget (₹) (Optional)") },
+                    placeholder = { Text("e.g. 15000.00") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(

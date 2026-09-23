@@ -123,6 +123,12 @@ class KeepAliveService : Service() {
     override fun onCreate() {
         super.onCreate()
         
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
+            Log.d("KeepAliveService", "KeepAliveService onCreate aborted: User is not logged in.")
+            stopSelf()
+            return
+        }
+
         // 1. INSTANTLY satisfy the Android OS requirement
         LiveTimerNotificationManager.createNotificationChannel(this)
         com.example.util.LiveTimerDisplayRelay.start(this)
@@ -277,6 +283,11 @@ class KeepAliveService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
+            Log.d("KeepAliveService", "KeepAliveService onStartCommand aborted: User is not logged in.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         try {
             // Guarantee that startForeground is called instantly using a safe, up-to-date notification
             LiveTimerNotificationManager.createNotificationChannel(this)
@@ -878,6 +889,10 @@ class KeepAliveService : Service() {
         
         fun start(context: Context) {
             try {
+                if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                    Log.d("KeepAliveService", "Aborting service start - user is not logged in")
+                    return
+                }
                 val prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 if (!prefs.getBoolean("enable_background_activity", true)) {
                     Log.d("KeepAliveService", "Aborting service start - background activity disabled by user")
@@ -899,8 +914,21 @@ class KeepAliveService : Service() {
             }
         }
 
+        fun stop(context: Context) {
+            try {
+                val intent = Intent(context.applicationContext, KeepAliveService::class.java)
+                context.applicationContext.stopService(intent)
+                Log.d("KeepAliveService", "KeepAliveService stop command triggered")
+            } catch (e: Exception) {
+                Log.e("KeepAliveService", "Failed to stop KeepAliveService: ${e.message}")
+            }
+        }
+
         fun updateNotification(context: Context) {
             try {
+                if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                    return
+                }
                 val prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 if (!prefs.getBoolean("enable_background_activity", true)) {
                     return

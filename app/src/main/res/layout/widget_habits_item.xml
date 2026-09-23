@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/habit_item_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_habit_item_card"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingLeft="8dp"
+    android:paddingRight="10dp"
+    android:paddingTop="7dp"
+    android:paddingBottom="7dp">
+
+    <!-- Interactive Checkbox button -->
+    <ImageView
+        android:id="@+id/btn_habit_toggle"
+        android:layout_width="26dp"
+        android:layout_height="26dp"
+        android:background="@drawable/bg_widget_check_inactive"
+        android:src="@drawable/ic_widget_check"
+        android:tint="#FFFFFF"
+        android:scaleType="centerInside"
+        android:padding="5dp"
+        android:contentDescription="Tick off habit"
+        android:layout_marginEnd="9dp" />
+
+    <!-- Clickable Habit Body to open app -->
+    <LinearLayout
+        android:id="@+id/habit_item_click_area"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <!-- Habit Title -->
+        <TextView
+            android:id="@+id/item_habit_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Habit Title"
+            android:textColor="#FFFFFF"
+            android:textSize="12.5sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <!-- Meta info Row: Time / Category -->
+        <TextView
+            android:id="@+id/item_habit_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Morning · Health"
+            android:textColor="#94A3B8"
+            android:textSize="9.5sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <!-- Streak Badge -->
+    <LinearLayout
+        android:id="@+id/item_habit_streak_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_countdown_pill_upcoming"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:layout_marginStart="6dp">
+
+        <ImageView
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:src="@drawable/ic_widget_flame"
+            android:scaleType="centerInside"
+            android:layout_marginEnd="3dp" />
+
+        <TextView
+            android:id="@+id/item_habit_streak_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0d"
+            android:textColor="#F97316"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>

@@ -10,6 +10,10 @@ import androidx.work.WorkManager
 class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+            Log.d("BootReceiver", "BootReceiver onReceive aborted: User is not logged in.")
+            return
+        }
         val action = intent.action
         Log.d("BootReceiver", "Received broadcast: $action")
         

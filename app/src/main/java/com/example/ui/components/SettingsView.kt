@@ -148,6 +148,7 @@ data class SettingsRowData(
     val subtitle: String,
     val icon: ImageVector,
     val iconBgColor: Color,
+    val hasBadge: Boolean = false,
     val action: () -> Unit
 )
 
@@ -164,8 +165,17 @@ fun SettingsPageScope(content: @Composable () -> Unit) {
     }
 }
 
+val LocalSettingsAppViewModel = androidx.compose.runtime.compositionLocalOf<AppViewModel?> { null }
+
 @Composable
 fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalSettingsAppViewModel provides viewModel) {
+        SettingsViewImpl(viewModel = viewModel, modifier = modifier)
+    }
+}
+
+@Composable
+private fun SettingsViewImpl(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
 
     val directToBlocks = remember {
@@ -182,6 +192,11 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     val showLogoutConfirm by viewModel.showLogoutConfirm.collectAsState()
     val logoutFlowState by viewModel.logoutFlowState.collectAsState()
 
+    val targetScrollPercent by viewModel.settingsTargetScrollPercent.collectAsState()
+    val targetHighlight by viewModel.settingsTargetHighlight.collectAsState()
+    val previousScreenBeforeSettings by viewModel.previousScreenBeforeSettings.collectAsState()
+    val mainListState = androidx.compose.foundation.lazy.rememberLazyListState()
+
     val vmActivePage by viewModel.settingsActivePage.collectAsState()
     LaunchedEffect(vmActivePage) {
         if (activePage != vmActivePage) {
@@ -194,6 +209,7 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         }
     }
     val isAdminUser by viewModel.isAdmin.collectAsState()
+    val hasDuplicateContacts by viewModel.hasDuplicateContacts.collectAsState()
 
     var selectedTab by remember { mutableStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
@@ -227,7 +243,7 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    val allCategories = remember(isKeyboardConnected) {
+    val allCategories = remember(isKeyboardConnected, hasDuplicateContacts) {
         listOf(
             SettingsCategoryData(
                 title = "Core Systems & AI",
@@ -261,7 +277,8 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 items = listOf(
                     SettingsRowData("8. COUNTDOWNS & ALERTS", "Background notifications, custom alert parameters", Icons.Default.Notifications, Color(0xFF00E676)) { activePage = 6 },
                     SettingsRowData("9. LIFE JOURNAL", "Storage usage indexers, backup matching constraints", Icons.Default.Book, Color(0xFFE91E63)) { activePage = 7 },
-                    SettingsRowData("10. CONTACTS DIRECTORY", "Full syncing filters, categories pairing, anniversaries", Icons.Default.AccountBox, Color(0xFF03A9F4)) { activePage = 8 }
+                    SettingsRowData("10. CONTACTS DIRECTORY", "Full syncing filters, categories pairing, anniversaries", Icons.Default.AccountBox, Color(0xFF03A9F4), hasBadge = hasDuplicateContacts) { activePage = 8 },
+                    SettingsRowData("CONTACTS TOOL KIT", "Resolve duplicates & merge conflicts with matching phone, name, or Instagram IDs", Icons.Default.MergeType, Color(0xFF00E5FF), hasBadge = hasDuplicateContacts) { activePage = 25 }
                 )
             ),
             SettingsCategoryData(
@@ -481,8 +498,62 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     }
                 }
 
+                LaunchedEffect(activePage, targetScrollPercent) {
+                    if (activePage == 0 && targetScrollPercent != null && targetScrollPercent!! > 0f) {
+                        kotlinx.coroutines.delay(150)
+                        val count = filteredCategories.size
+                        if (count > 0) {
+                            val targetIndex = (count * targetScrollPercent!!).toInt().coerceIn(0, count - 1)
+                            mainListState.animateScrollToItem(targetIndex)
+                        }
+                    }
+                }
+
+                if (targetHighlight != null) {
+                    Surface(
+                        color = Color(0xFF132030),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = WaterBlue,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Found in Settings: $targetHighlight",
+                                color = WaterBlue,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { viewModel.clearSettingsTarget() },
+                                modifier = Modifier.size(20.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Dismiss",
+                                    tint = Color.LightGray,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // LazyColumn for dynamic settings categories
                 LazyColumn(
+                    state = mainListState,
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
@@ -527,6 +598,7 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             subtitle = item.subtitle,
                                             icon = item.icon,
                                             iconBgColor = item.iconBgColor,
+                                            hasBadge = item.hasBadge,
                                             onClick = item.action
                                         )
                                         if (idx < category.items.size - 1) {
@@ -604,6 +676,7 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         8 -> {
             SettingsContactsPage(
                 viewModel = viewModel,
+                onNavigateToToolkit = { activePage = 25 },
                 onBack = { activePage = 0 }
             )
         }
@@ -737,6 +810,13 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             SettingsNotificationPage(
                 viewModel = viewModel,
                 onBack = { activePage = 0 }
+            )
+        }
+
+        25 -> {
+            ContactsToolkitPage(
+                viewModel = viewModel,
+                onBack = { activePage = 8 }
             )
         }
 
@@ -1032,6 +1112,7 @@ fun SettingsRowItem(
     subtitle: String,
     icon: ImageVector,
     iconBgColor: Color,
+    hasBadge: Boolean = false,
     onClick: () -> Unit
 ) {
     Row(
@@ -1057,14 +1138,24 @@ fun SettingsRowItem(
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                if (hasBadge) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE53935))
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(1.dp))
             Text(
                 text = subtitle,
@@ -1089,6 +1180,22 @@ fun SettingsSubpageWorkspace(
     onBack: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val vm = LocalSettingsAppViewModel.current
+    val targetScrollPercent by (vm?.settingsTargetScrollPercent ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
+    val targetHighlight by (vm?.settingsTargetHighlight ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
+    val scrollState = rememberScrollState()
+
+    LaunchedEffect(targetScrollPercent) {
+        if (targetScrollPercent != null && targetScrollPercent!! > 0f) {
+            kotlinx.coroutines.delay(200)
+            val maxScroll = scrollState.maxValue
+            if (maxScroll > 0) {
+                val targetOffset = (maxScroll * targetScrollPercent!!).toInt().coerceIn(0, maxScroll)
+                scrollState.animateScrollTo(targetOffset)
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1127,12 +1234,55 @@ fun SettingsSubpageWorkspace(
                 )
             }
         }
+
+        if (targetHighlight != null) {
+            Surface(
+                color = Color(0xFF132030),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.5f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = WaterBlue,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Navigated to: $targetHighlight",
+                        color = WaterBlue,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { vm?.clearSettingsTarget() },
+                        modifier = Modifier.size(20.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = Color.LightGray,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+        }
+
         HorizontalDivider(color = Color(0xFF1A1A1E), thickness = 1.dp)
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             content = content
         )
@@ -2692,7 +2842,9 @@ fun LifeOSBackupSection(viewModel: AppViewModel) {
                 }
 
                 if (hasDrivePermission) {
-                    if (isOperating) {
+                    val syncStatus by viewModel.driveSyncStatus.collectAsState()
+
+                    if (isOperating && !syncStatus.isRunning) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.Center,
@@ -2707,32 +2859,85 @@ fun LifeOSBackupSection(viewModel: AppViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Button(
-                                onClick = {
-                                    isOperating = true
-                                    gdMessage = "Pulling latest data from Google Drive..."
-                                    viewModel.restoreAllDataFromGoogleDrive(context, { intent ->
-                                        authResolutionLauncher.launch(intent)
-                                    }) { restoreSuccess, restoreMsg ->
-                                        if (restoreSuccess || restoreMsg.contains("No full app data backup found") || restoreMsg.contains("No existing backup files found")) {
-                                            gdMessage = "Pushing latest data to Google Drive..."
-                                            viewModel.backupAllDataToGoogleDrive(context, { intent ->
-                                                authResolutionLauncher.launch(intent)
-                                            }) { backupSuccess, backupMsg ->
-                                                isOperating = false
-                                                if (backupSuccess) {
-                                                    gdMessage = "Sync completed! Pulled and pushed all data successfully."
-                                                    lastSyncTs = prefs.getLong("gd_all_last_sync_timestamp", 0L)
-                                                } else {
-                                                    gdMessage = "Pull succeeded, but Push failed: $backupMsg"
-                                                }
+                            if (syncStatus.isRunning) {
+                                Surface(
+                                    color = Color(0xFF141E33),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, WaterBlue.copy(alpha = 0.5f)),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(14.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = WaterBlue
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "${syncStatus.operationType} • ${syncStatus.phase}",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = WaterBlue
+                                                )
                                             }
-                                        } else {
-                                            isOperating = false
-                                            gdMessage = "Pull failed: $restoreMsg"
+                                            Text(
+                                                text = "${syncStatus.progress}%",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+
+                                        LinearProgressIndicator(
+                                            progress = { (syncStatus.progress / 100f).coerceIn(0f, 1f) },
+                                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                            color = WaterBlue,
+                                            trackColor = Color(0xFF1E293B)
+                                        )
+
+                                        Text(
+                                            text = syncStatus.statusMessage,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFFCBD5E1),
+                                            maxLines = 2
+                                        )
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(top = 2.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.CloudSync,
+                                                contentDescription = null,
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Background task running with silent progress notifications — safe to exit app",
+                                                fontSize = 9.sp,
+                                                color = Color(0xFF94A3B8),
+                                                lineHeight = 11.sp
+                                            )
                                         }
                                     }
+                                }
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.triggerGoogleDriveFullSync(context)
                                 },
+                                enabled = !syncStatus.isRunning,
                                 colors = ButtonDefaults.buttonColors(containerColor = WaterBlue),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.fillMaxWidth().height(38.dp).testTag("drive_full_sync_btn")
@@ -2748,18 +2953,9 @@ fun LifeOSBackupSection(viewModel: AppViewModel) {
                             ) {
                                 Button(
                                     onClick = {
-                                        isOperating = true
-                                        gdMessage = "Initiating cloud backup..."
-                                        viewModel.backupAllDataToGoogleDrive(context, { intent ->
-                                            authResolutionLauncher.launch(intent)
-                                        }) { success, msg ->
-                                            isOperating = false
-                                            gdMessage = msg
-                                            if (success) {
-                                                lastSyncTs = prefs.getLong("gd_all_last_sync_timestamp", 0L)
-                                            }
-                                        }
+                                        viewModel.triggerGoogleDriveBackup(context)
                                     },
+                                    enabled = !syncStatus.isRunning,
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E24)),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, WaterBlue.copy(alpha = 0.4f)),
                                     shape = RoundedCornerShape(8.dp),
@@ -2772,18 +2968,9 @@ fun LifeOSBackupSection(viewModel: AppViewModel) {
 
                                 Button(
                                     onClick = {
-                                        isOperating = true
-                                        gdMessage = "Initiating cloud restore..."
-                                        viewModel.restoreAllDataFromGoogleDrive(context, { intent ->
-                                            authResolutionLauncher.launch(intent)
-                                        }) { success, msg ->
-                                            isOperating = false
-                                            gdMessage = msg
-                                            if (success) {
-                                                lastSyncTs = prefs.getLong("gd_all_last_sync_timestamp", 0L)
-                                            }
-                                        }
+                                        viewModel.triggerGoogleDriveRestore(context)
                                     },
+                                    enabled = !syncStatus.isRunning,
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E24)),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.4f)),
                                     shape = RoundedCornerShape(8.dp),
@@ -2797,15 +2984,9 @@ fun LifeOSBackupSection(viewModel: AppViewModel) {
 
                             Button(
                                 onClick = {
-                                    isOperating = true
-                                    gdMessage = "Organizing Google Drive vault and removing duplicate folders..."
-                                    viewModel.manageAndCleanGoogleDriveAppData(context, { intent ->
-                                        authResolutionLauncher.launch(intent)
-                                    }) { success, msg ->
-                                        isOperating = false
-                                        gdMessage = msg
-                                    }
+                                    viewModel.triggerGoogleDriveCleanVault(context)
                                 },
+                                enabled = !syncStatus.isRunning,
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D2415)),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f)),
                                 shape = RoundedCornerShape(8.dp),
@@ -5124,6 +5305,7 @@ fun FirebaseConfigurationSection(viewModel: AppViewModel) {
 @Composable
 fun SettingsContactsPage(
     viewModel: AppViewModel,
+    onNavigateToToolkit: (() -> Unit)? = null,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -5164,6 +5346,7 @@ fun SettingsContactsPage(
 
     SettingsPageScope {
         val isContactsSyncPaused by viewModel.isContactsSyncPaused.collectAsState()
+        val hasDuplicateContacts by viewModel.hasDuplicateContacts.collectAsState()
 
         SettingsSubpageWorkspace(
             title = "Contacts Settings",
@@ -5173,6 +5356,72 @@ fun SettingsContactsPage(
             Text("Search algorithms index display names, emails, and phone indices. Anniversaries are linked to countdown reminders automatically.", color = Color.LightGray, fontSize = 12.sp, textAlign = TextAlign.Center)
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            // Contacts Tool Kit card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToToolkit?.invoke() },
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F151C)),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, if (hasDuplicateContacts) Color(0xFFE53935).copy(alpha = 0.5f) else Color(0xFF00E5FF).copy(alpha = 0.25f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E5FF).copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MergeType,
+                            contentDescription = "Contacts Tool Kit",
+                            tint = Color(0xFF00E5FF),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "Contacts Tool Kit",
+                                color = Color.White,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (hasDuplicateContacts) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFE53935))
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (hasDuplicateContacts) "Duplicate contacts or conflicts detected. Tap to inspect & resolve." else "Scan and resolve duplicate phone numbers, names, or Instagram IDs.",
+                            color = if (hasDuplicateContacts) Color(0xFFFF8A80) else Color.Gray,
+                            fontSize = 10.5.sp,
+                            lineHeight = 14.sp
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Open Tool Kit",
+                        tint = Color.LightGray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -7568,7 +7817,7 @@ fun SettingsGeneralSystemPage(
         val spotifyAdMuteEnabled by viewModel.spotifyAdMuteEnabled.collectAsState()
         val spotifyPodcastsBlocked by viewModel.spotifyPodcastsBlocked.collectAsState()
         val context = LocalContext.current
-        var tempOrder by remember(tabOrder) { mutableStateOf(tabOrder.filterNot { it == Screen.FOCUS_LOCKER || it == Screen.LIVE_SPHERE || it == Screen.INSTAGRAM_WEB_APP || it == Screen.YOUTUBE_WEB_APP || it == Screen.SPOTIFY_WEB_APP || it == Screen.GOOGLE_DRIVE_SYNC || it == Screen.MOVIE_TRACKER || it == Screen.OBSIDIAN_ARCHITECTURE }) }
+        var tempOrder by remember(tabOrder) { mutableStateOf(tabOrder.filterNot { it == Screen.FOCUS_LOCKER || it == Screen.LIVE_SPHERE || it == Screen.INSTAGRAM_WEB_APP || it == Screen.YOUTUBE_WEB_APP || it == Screen.SPOTIFY_WEB_APP || it == Screen.GOOGLE_DRIVE_SYNC || it == Screen.MOVIE_TRACKER }) }
         var showNetworkUsageDialog by remember { mutableStateOf(false) }
 
         if (showNetworkUsageDialog) {
@@ -7686,7 +7935,7 @@ fun SettingsGeneralSystemPage(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Set the tab position: left (sidebar), right, top, bottom, or legacy profiles.",
+                        text = "Set the navigation tab position: Left (Sidebar), Right, Top, or Bottom dock.",
                         color = Color.Gray,
                         fontSize = 11.sp,
                         textAlign = TextAlign.Center
@@ -8307,62 +8556,6 @@ fun SettingsGeneralSystemPage(
                 }
             }
 
-            // 4-WINDOW MULTITASKING DESKTOP MODE
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF16161E),
-                border = BorderStroke(1.dp, Color(0xFF2B2B3D))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.GridView,
-                            contentDescription = "4-Window Desktop",
-                            tint = Color(0xFF3B82F6),
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                text = "4-WINDOW MULTITASKING DESKTOP",
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = "Run Spotify, YouTube, Instagram & Life OS simultaneously in 4 active floating/tiled windows with background audio!",
-                                color = Color.Gray,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Button(
-                        onClick = {
-                            viewModel.setMultiWindowDesktopMode(true)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB), contentColor = Color.White)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.OpenInNew,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("LAUNCH 4-WINDOW DESKTOP MODE", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
-                    }
-                }
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
 
             // Tab order customization
@@ -8411,19 +8604,16 @@ fun SettingsGeneralSystemPage(
                                 Screen.PROFILE_SETUP -> "Profile Setup"
                                 Screen.PERMISSION_ONBOARDING -> "Permissions Onboarding"
                                 Screen.CALENDAR_OPTIMIZATION_ONBOARDING -> "Calendar Optimization"
-                                Screen.HEALTH -> "Health"
+                                Screen.HEALTH -> "Fitness & Wellness"
                                 Screen.LIVE_SPHERE -> "Friends Focus Details"
-                                Screen.ARENA -> "Arena"
+                                Screen.ARENA -> "Arena & Syllabus Tracker"
                                 Screen.FOCUS_LOCKER -> "Focus Locker"
                                 Screen.MESSAGES -> "Messages"
-                                Screen.FLEX_GRID_STUDIO -> "Layout Studio"
                                 Screen.INSTAGRAM_WEB_APP -> "Instagram (AntiGram)"
                                 Screen.YOUTUBE_WEB_APP -> "YouTube (AntiTube)"
                                 Screen.SPOTIFY_WEB_APP -> "Spotify (AntiSpotify)"
-                                Screen.OBSIDIAN_ARCHITECTURE -> "Obsidian Architecture"
                                 Screen.GOOGLE_DRIVE_SYNC -> "Google Drive Sync"
                                 Screen.MOVIE_TRACKER -> "Movie Tracker"
-                                Screen.MULTI_WINDOW_DESKTOP -> "4-Window Desktop"
                                 Screen.SHOPPING_CART -> "Shopping Cart"
                             }
 
@@ -8444,9 +8634,9 @@ fun SettingsGeneralSystemPage(
                                     Screen.SEARCH -> "Search"
                                     Screen.ANALYTICS -> "Analytics"
                                     Screen.SETTINGS -> "Settings"
-                                    Screen.HEALTH -> "Health"
+                                    Screen.HEALTH -> "Fitness & Wellness"
                                     Screen.MESSAGES -> "Messages"
-                                    Screen.ARENA -> "Arena"
+                                    Screen.ARENA -> "Arena & Syllabus Tracker"
                                     else -> parentScreen.name
                                 }
                             } else null

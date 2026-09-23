@@ -59,9 +59,29 @@ fun LoginView(viewModel: AppViewModel) {
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var loggingIn by remember { mutableStateOf(false) }
     val requestDriveScope = false
-    var testerCountdown by remember { mutableStateOf(-1) }
+    var testerTapCount by remember { mutableStateOf(0) }
+    var lastTapTimestamp by remember { mutableStateOf(0L) }
     
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    val onLogoClicked = {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastTapTimestamp > 2500L) {
+            testerTapCount = 1
+        } else {
+            testerTapCount += 1
+        }
+        lastTapTimestamp = currentTime
+
+        if (testerTapCount >= 5) {
+            testerTapCount = 0
+            Toast.makeText(context, "Tester Mode activated! 🕵️", Toast.LENGTH_LONG).show()
+            viewModel.activateTesterMode()
+        } else if (testerTapCount >= 2) {
+            val remaining = 5 - testerTapCount
+            Toast.makeText(context, "Tap $remaining more time${if (remaining > 1) "s" else ""} for Tester Mode", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Set up standard Google Sign In Launcher
     val googleSignInLauncher = rememberLauncherForActivityResult(
@@ -142,7 +162,7 @@ fun LoginView(viewModel: AppViewModel) {
                 .fillMaxWidth(0.95f)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Elegant Visual Branding Header with Real App Logo
+            // Elegant Visual Branding Header with Real App Logo (Tap 5 times to enter Tester Mode)
             Box(
                 modifier = Modifier
                     .size(80.dp)
@@ -159,56 +179,24 @@ fun LoginView(viewModel: AppViewModel) {
                         1.dp,
                         Brush.linearGradient(
                             colors = listOf(
-                                Color(0xFF38B0F2).copy(alpha = 0.5f),
-                                Color(0xFF38B0F2).copy(alpha = 0.1f)
+                                Color(0xFF38B0F2).copy(alpha = if (testerTapCount > 0) 0.9f else 0.5f),
+                                Color(0xFF38B0F2).copy(alpha = if (testerTapCount > 0) 0.5f else 0.1f)
                             )
                         ),
                         RoundedCornerShape(20.dp)
                     )
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                val job = scope.launch {
-                                    for (i in 1..15) {
-                                        delay(1000)
-                                        testerCountdown = i
-                                        if (i == 5) {
-                                            Toast.makeText(context, "Entering Tester Mode in 10s...", Toast.LENGTH_SHORT).show()
-                                        } else if (i == 10) {
-                                            Toast.makeText(context, "Entering Tester Mode in 5s...", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                    // Successfully held for 15s!
-                                    Toast.makeText(context, "Tester Mode activated! 🕵️", Toast.LENGTH_LONG).show()
-                                    viewModel.activateTesterMode()
-                                }
-                                try {
-                                    tryAwaitRelease()
-                                } finally {
-                                    job.cancel()
-                                    testerCountdown = -1
-                                }
-                            }
-                        )
-                    },
+                    .clickable(
+                        onClick = { onLogoClicked() }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                if (testerCountdown != -1) {
-                    Text(
-                        text = (15 - testerCountdown).toString(),
-                        color = Color(0xFF38B0F2),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                } else {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                        contentDescription = "LIFE OS Logo",
-                        modifier = Modifier
-                            .size(64.dp)
-                            .padding(4.dp)
-                    )
-                }
+                Image(
+                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                    contentDescription = "LIFE OS Logo",
+                    modifier = Modifier
+                        .size(64.dp)
+                        .padding(4.dp)
+                )
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text(
@@ -216,7 +204,8 @@ fun LoginView(viewModel: AppViewModel) {
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black,
-                letterSpacing = 1.5.sp
+                letterSpacing = 1.5.sp,
+                modifier = Modifier.clickable { onLogoClicked() }
             )
             Text(
                 text = "Your centralized digital environment.",

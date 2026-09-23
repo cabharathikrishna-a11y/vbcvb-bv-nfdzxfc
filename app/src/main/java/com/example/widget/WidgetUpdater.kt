@@ -50,4 +50,20 @@ object WidgetUpdater {
     fun updatePhotoShowerWidget(context: Context, forceNext: Boolean = false) {
         WidgetManager.updatePhotoShowerWidget(context, forceNext)
     }
+
+    fun updateCountdownWidget(context: Context) {
+        WidgetManager.updateCountdownWidget(context)
+    }
+
+    fun updateTasksWidget(context: Context) {
+        WidgetManager.updateTasksWidget(context)
+    }
+
+    fun updateHabitsWidget(context: Context) {
+        WidgetManager.updateHabitsWidget(context)
+    }
+
+    fun updateSingleHabitWidget(context: Context) {
+        WidgetManager.updateSingleHabitWidget(context)
+    }
 }

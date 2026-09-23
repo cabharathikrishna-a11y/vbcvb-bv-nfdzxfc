@@ -272,22 +272,31 @@ object GoogleDriveUploadManager {
         context: Context,
         onAuthResolutionRequired: (Intent) -> Unit = {}
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        GoogleDriveSyncProgressTracker.updateProgress(context, "Vault Cleanup", "Preparing", 5, "Connecting to Google Drive...")
         val token = GoogleDriveReadManager.getAccessToken(context, onAuthResolutionRequired)
-            ?: return@withContext Pair(false, "Authorization required. Please connect your Google Drive.")
+        if (token == null) {
+            val msg = "Authorization required. Please connect your Google Drive."
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Vault Cleanup", "Failed", 0, msg, isFinished = true, isError = true)
+            return@withContext Pair(false, msg)
+        }
 
         try {
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Vault Cleanup", "Scanning", 30, "Scanning Google Drive AppData folders...")
             val vault = consolidateAndCleanDriveAppData(token)
             if (vault != null) {
-                Pair(
-                    true,
-                    "✅ Google Drive successfully organized!\n- Root Vault: $PRIMARY_VAULT_FOLDER_NAME\n- Subfolders: App_Backups, Focus_Data, Task_Attachments, Shared_Media, General_Files\n- All duplicate and legacy folders purged."
-                )
+                val successMsg = "Google Drive successfully organized!\n- Root Vault: $PRIMARY_VAULT_FOLDER_NAME\n- Subfolders: App_Backups, Focus_Data, Task_Attachments, Shared_Media, General_Files\n- All duplicate and legacy folders purged."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Vault Cleanup", "Completed", 100, successMsg, isFinished = true)
+                Pair(true, successMsg)
             } else {
-                Pair(false, "Failed to organize Drive folders. Please check connection.")
+                val msg = "Failed to organize Drive folders. Please check connection."
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Vault Cleanup", "Failed", 0, msg, isFinished = true, isError = true)
+                Pair(false, msg)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error during Drive vault cleanup", e)
-            Pair(false, "Cleanup Error: ${e.localizedMessage ?: "Unknown error"}")
+            val errMsg = "Cleanup Error: ${e.localizedMessage ?: "Unknown error"}"
+            GoogleDriveSyncProgressTracker.updateProgress(context, "Vault Cleanup", "Failed", 0, errMsg, isFinished = true, isError = true)
+            Pair(false, errMsg)
         }
     }
 

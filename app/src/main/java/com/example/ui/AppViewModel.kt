@@ -22,7 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 enum class Screen {
-    LOGIN, PROFILE_SETUP, PERMISSION_ONBOARDING, CALENDAR_OPTIMIZATION_ONBOARDING, DEEPA_AI, KEEP_NOTES, SEARCH, TASKS, CALENDAR, TIMER, HABITS, COUNTDOWN, JOURNAL, CONTACTS, FILE_EXPLORER, FINANCES, ANALYTICS, SETTINGS, HEALTH, LIVE_SPHERE, ARENA, FOCUS_LOCKER, MESSAGES, FLEX_GRID_STUDIO, INSTAGRAM_WEB_APP, YOUTUBE_WEB_APP, SPOTIFY_WEB_APP, OBSIDIAN_ARCHITECTURE, GOOGLE_DRIVE_SYNC, MOVIE_TRACKER, MULTI_WINDOW_DESKTOP, SHOPPING_CART
+    LOGIN, PROFILE_SETUP, PERMISSION_ONBOARDING, CALENDAR_OPTIMIZATION_ONBOARDING, DEEPA_AI, KEEP_NOTES, SEARCH, TASKS, CALENDAR, TIMER, HABITS, COUNTDOWN, JOURNAL, CONTACTS, FILE_EXPLORER, FINANCES, ANALYTICS, SETTINGS, HEALTH, LIVE_SPHERE, ARENA, FOCUS_LOCKER, MESSAGES, INSTAGRAM_WEB_APP, YOUTUBE_WEB_APP, SPOTIFY_WEB_APP, GOOGLE_DRIVE_SYNC, MOVIE_TRACKER, SHOPPING_CART
 }
 
 sealed interface LogoutFlowState {
@@ -96,9 +96,29 @@ class AppViewModel(
     private val _isCommandDevice = MutableStateFlow(prefs.getBoolean("is_command_device", true))
     val isCommandDevice: StateFlow<Boolean> = _isCommandDevice.asStateFlow()
 
+    private val _taskHideCompleted = MutableStateFlow(prefs.getBoolean("task_hide_completed", false))
+    val taskHideCompleted: StateFlow<Boolean> = _taskHideCompleted.asStateFlow()
+
+    private val _taskShowDetails = MutableStateFlow(prefs.getBoolean("task_show_details", false))
+    val taskShowDetails: StateFlow<Boolean> = _taskShowDetails.asStateFlow()
+
+    private val _taskGroupByMode = MutableStateFlow(prefs.getString("task_group_by_mode", "Date") ?: "Date")
+    val taskGroupByMode: StateFlow<String> = _taskGroupByMode.asStateFlow()
+
+    private val _taskSortByMode = MutableStateFlow(prefs.getString("task_sort_by_mode", "Date") ?: "Date")
+    val taskSortByMode: StateFlow<String> = _taskSortByMode.asStateFlow()
+
+    private val _taskFilterMode = MutableStateFlow(prefs.getString("task_filter_mode", "All") ?: "All")
+    val taskFilterMode: StateFlow<String> = _taskFilterMode.asStateFlow()
+
     private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { sharedPreferences, key ->
-        if (key == "is_command_device") {
-            _isCommandDevice.value = sharedPreferences.getBoolean("is_command_device", true)
+        when (key) {
+            "is_command_device" -> _isCommandDevice.value = sharedPreferences.getBoolean("is_command_device", true)
+            "task_hide_completed" -> _taskHideCompleted.value = sharedPreferences.getBoolean("task_hide_completed", false)
+            "task_show_details" -> _taskShowDetails.value = sharedPreferences.getBoolean("task_show_details", false)
+            "task_group_by_mode" -> _taskGroupByMode.value = sharedPreferences.getString("task_group_by_mode", "Date") ?: "Date"
+            "task_sort_by_mode" -> _taskSortByMode.value = sharedPreferences.getString("task_sort_by_mode", "Date") ?: "Date"
+            "task_filter_mode" -> _taskFilterMode.value = sharedPreferences.getString("task_filter_mode", "All") ?: "All"
         }
     }
 
@@ -446,8 +466,31 @@ class AppViewModel(
     private val _settingsActivePage = MutableStateFlow(0)
     val settingsActivePage: StateFlow<Int> = _settingsActivePage.asStateFlow()
 
+    private val _settingsTargetScrollPercent = MutableStateFlow<Float?>(null)
+    val settingsTargetScrollPercent: StateFlow<Float?> = _settingsTargetScrollPercent.asStateFlow()
+
+    private val _settingsTargetHighlight = MutableStateFlow<String?>(null)
+    val settingsTargetHighlight: StateFlow<String?> = _settingsTargetHighlight.asStateFlow()
+
     fun updateSettingsActivePage(page: Int) {
         _settingsActivePage.value = page
+    }
+
+    fun navigateToSetting(pageId: Int, scrollPercent: Float = 0f, highlightTitle: String? = null) {
+        _previousScreenBeforeSettings.value = Screen.SEARCH
+        _settingsTargetScrollPercent.value = scrollPercent
+        _settingsTargetHighlight.value = highlightTitle
+        if (pageId < 0) {
+            _currentScreen.value = Screen.SHOPPING_CART
+        } else {
+            _settingsActivePage.value = pageId
+            _currentScreen.value = Screen.SETTINGS
+        }
+    }
+
+    fun clearSettingsTarget() {
+        _settingsTargetScrollPercent.value = null
+        _settingsTargetHighlight.value = null
     }
 
     private val _showUninstallConfirm = MutableStateFlow(false)
@@ -483,7 +526,7 @@ class AppViewModel(
 
     // Default tab list
     val defaultScreens = listOf(
-        Screen.DEEPA_AI, Screen.MESSAGES, Screen.KEEP_NOTES, Screen.HEALTH, Screen.SEARCH, Screen.TASKS, Screen.CALENDAR, Screen.TIMER, Screen.ARENA, Screen.HABITS, Screen.COUNTDOWN, Screen.JOURNAL, Screen.CONTACTS, Screen.FILE_EXPLORER, Screen.FINANCES, Screen.SHOPPING_CART, Screen.ANALYTICS, Screen.SETTINGS
+        Screen.DEEPA_AI, Screen.MESSAGES, Screen.KEEP_NOTES, Screen.SEARCH, Screen.TASKS, Screen.CALENDAR, Screen.TIMER, Screen.HABITS, Screen.COUNTDOWN, Screen.JOURNAL, Screen.CONTACTS, Screen.FILE_EXPLORER, Screen.FINANCES, Screen.SHOPPING_CART, Screen.ANALYTICS, Screen.SETTINGS
     )
 
     // Dynamic Tab Order State
@@ -830,52 +873,6 @@ class AppViewModel(
 
     private val _floatingTimerSize = MutableStateFlow("large")
     val floatingTimerSize: StateFlow<String> = _floatingTimerSize.asStateFlow()
-
-    // 4-Window Desktop Multitasking State
-    private val _isMultiWindowDesktopMode = MutableStateFlow(false)
-    val isMultiWindowDesktopMode: StateFlow<Boolean> = _isMultiWindowDesktopMode.asStateFlow()
-
-    private val _multiWindowLayoutMode = MutableStateFlow("QUAD_GRID") // "QUAD_GRID", "FLOATING", "SPLIT_DUAL", "HERO_MAIN"
-    val multiWindowLayoutMode: StateFlow<String> = _multiWindowLayoutMode.asStateFlow()
-
-    private val _isSpotifyWindowActive = MutableStateFlow(true)
-    val isSpotifyWindowActive: StateFlow<Boolean> = _isSpotifyWindowActive.asStateFlow()
-
-    private val _isYouTubeWindowActive = MutableStateFlow(true)
-    val isYouTubeWindowActive: StateFlow<Boolean> = _isYouTubeWindowActive.asStateFlow()
-
-    private val _isInstagramWindowActive = MutableStateFlow(true)
-    val isInstagramWindowActive: StateFlow<Boolean> = _isInstagramWindowActive.asStateFlow()
-
-    private val _isLifeOsWindowActive = MutableStateFlow(true)
-    val isLifeOsWindowActive: StateFlow<Boolean> = _isLifeOsWindowActive.asStateFlow()
-
-    private val _isSpotifyWindowMinimized = MutableStateFlow(false)
-    val isSpotifyWindowMinimized: StateFlow<Boolean> = _isSpotifyWindowMinimized.asStateFlow()
-
-    private val _isYouTubeWindowMinimized = MutableStateFlow(false)
-    val isYouTubeWindowMinimized: StateFlow<Boolean> = _isYouTubeWindowMinimized.asStateFlow()
-
-    private val _isInstagramWindowMinimized = MutableStateFlow(false)
-    val isInstagramWindowMinimized: StateFlow<Boolean> = _isInstagramWindowMinimized.asStateFlow()
-
-    private val _isLifeOsWindowMinimized = MutableStateFlow(false)
-    val isLifeOsWindowMinimized: StateFlow<Boolean> = _isLifeOsWindowMinimized.asStateFlow()
-
-    private val _isSpotifyWindowMaximized = MutableStateFlow(false)
-    val isSpotifyWindowMaximized: StateFlow<Boolean> = _isSpotifyWindowMaximized.asStateFlow()
-
-    private val _isYouTubeWindowMaximized = MutableStateFlow(false)
-    val isYouTubeWindowMaximized: StateFlow<Boolean> = _isYouTubeWindowMaximized.asStateFlow()
-
-    private val _isInstagramWindowMaximized = MutableStateFlow(false)
-    val isInstagramWindowMaximized: StateFlow<Boolean> = _isInstagramWindowMaximized.asStateFlow()
-
-    private val _isLifeOsWindowMaximized = MutableStateFlow(false)
-    val isLifeOsWindowMaximized: StateFlow<Boolean> = _isLifeOsWindowMaximized.asStateFlow()
-
-    private val _focusedWindowId = MutableStateFlow("LIFE_OS")
-    val focusedWindowId: StateFlow<String> = _focusedWindowId.asStateFlow()
 
     private val _keepNotificationEnabled = MutableStateFlow(true)
     val keepNotificationEnabled: StateFlow<Boolean> = _keepNotificationEnabled.asStateFlow()
@@ -1961,92 +1958,6 @@ class AppViewModel(
         FocusTimerManager.recreateOverlayIfExists(getApplication())
     }
 
-    // 4-Window Desktop Multitasking Methods
-    fun toggleMultiWindowDesktopMode() {
-        val next = !_isMultiWindowDesktopMode.value
-        _isMultiWindowDesktopMode.value = next
-        prefs.edit().putBoolean("multi_window_desktop_mode", next).apply()
-    }
-
-    fun setMultiWindowDesktopMode(enabled: Boolean) {
-        _isMultiWindowDesktopMode.value = enabled
-        prefs.edit().putBoolean("multi_window_desktop_mode", enabled).apply()
-    }
-
-    fun setMultiWindowLayoutMode(mode: String) {
-        _multiWindowLayoutMode.value = mode
-        prefs.edit().putString("multi_window_layout_mode", mode).apply()
-    }
-
-    fun toggleWindowMinimized(windowId: String) {
-        when (windowId.uppercase(java.util.Locale.ROOT)) {
-            "SPOTIFY" -> _isSpotifyWindowMinimized.value = !_isSpotifyWindowMinimized.value
-            "YOUTUBE" -> _isYouTubeWindowMinimized.value = !_isYouTubeWindowMinimized.value
-            "INSTAGRAM" -> _isInstagramWindowMinimized.value = !_isInstagramWindowMinimized.value
-            "LIFE_OS", "LIFEOS" -> _isLifeOsWindowMinimized.value = !_isLifeOsWindowMinimized.value
-        }
-    }
-
-    fun toggleWindowMaximized(windowId: String) {
-        when (windowId.uppercase(java.util.Locale.ROOT)) {
-            "SPOTIFY" -> {
-                val next = !_isSpotifyWindowMaximized.value
-                _isSpotifyWindowMaximized.value = next
-                if (next) {
-                    _isYouTubeWindowMaximized.value = false
-                    _isInstagramWindowMaximized.value = false
-                    _isLifeOsWindowMaximized.value = false
-                }
-            }
-            "YOUTUBE" -> {
-                val next = !_isYouTubeWindowMaximized.value
-                _isYouTubeWindowMaximized.value = next
-                if (next) {
-                    _isSpotifyWindowMaximized.value = false
-                    _isInstagramWindowMaximized.value = false
-                    _isLifeOsWindowMaximized.value = false
-                }
-            }
-            "INSTAGRAM" -> {
-                val next = !_isInstagramWindowMaximized.value
-                _isInstagramWindowMaximized.value = next
-                if (next) {
-                    _isSpotifyWindowMaximized.value = false
-                    _isYouTubeWindowMaximized.value = false
-                    _isLifeOsWindowMaximized.value = false
-                }
-            }
-            "LIFE_OS", "LIFEOS" -> {
-                val next = !_isLifeOsWindowMaximized.value
-                _isLifeOsWindowMaximized.value = next
-                if (next) {
-                    _isSpotifyWindowMaximized.value = false
-                    _isYouTubeWindowMaximized.value = false
-                    _isInstagramWindowMaximized.value = false
-                }
-            }
-        }
-    }
-
-    fun setFocusedWindow(windowId: String) {
-        _focusedWindowId.value = windowId
-    }
-
-    fun resetAllWindows() {
-        _isSpotifyWindowActive.value = true
-        _isYouTubeWindowActive.value = true
-        _isInstagramWindowActive.value = true
-        _isLifeOsWindowActive.value = true
-        _isSpotifyWindowMinimized.value = false
-        _isYouTubeWindowMinimized.value = false
-        _isInstagramWindowMinimized.value = false
-        _isLifeOsWindowMinimized.value = false
-        _isSpotifyWindowMaximized.value = false
-        _isYouTubeWindowMaximized.value = false
-        _isInstagramWindowMaximized.value = false
-        _isLifeOsWindowMaximized.value = false
-    }
-
     fun updateKeepNotificationEnabled(enabled: Boolean) {
         _keepNotificationEnabled.value = enabled
         prefs.edit().putBoolean("keep_notification_enabled", enabled).apply()
@@ -2862,7 +2773,10 @@ class AppViewModel(
         }
     }
 
-    fun syncGoogleContacts(context: android.content.Context, onAuthRequired: (android.content.Intent) -> Unit = {}) {
+    fun syncGoogleContacts(
+        context: android.content.Context,
+        onAuthRequired: (android.content.Intent) -> Unit = {}
+    ) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _googleContactsSyncStatus.value = "Syncing..."
             try {
@@ -2871,15 +2785,119 @@ class AppViewModel(
                     _googleContactsSyncStatus.value = "Sync successful!"
                     withContext(kotlinx.coroutines.Dispatchers.Main) {
                         loadContactFolders()
+                        android.widget.Toast.makeText(context, "Google Contacts synced successfully!", android.widget.Toast.LENGTH_SHORT).show()
                     }
+                    refreshAllContactPhotos(context)
                 } else {
                     _googleContactsSyncStatus.value = "Sync failed: ${result.second}"
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        if (result.second.contains("Authorization required", ignoreCase = true)) {
+                            android.widget.Toast.makeText(context, "Google Account connection required to sync contacts.", android.widget.Toast.LENGTH_LONG).show()
+                        } else {
+                            android.widget.Toast.makeText(context, "Contacts sync: ${result.second}", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("AppViewModel", "Google Contacts sync failed", e)
                 _googleContactsSyncStatus.value = "Sync failed: ${e.localizedMessage}"
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Sync error: ${e.localizedMessage}", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                kotlinx.coroutines.delay(4000)
+                if (_googleContactsSyncStatus.value != "Syncing...") {
+                    _googleContactsSyncStatus.value = ""
+                }
+            }
+        }
+    }
+
+    fun refreshAllContactPhotos(context: android.content.Context) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val contactDao = com.example.data.AppDatabase.getInstance(context).contactDao()
+                val contactsList = contactDao.getAllContacts().first()
+
+                for (contact in contactsList) {
+                    val photoUri = contact.photoUri?.trim()
+                    if (!photoUri.isNullOrEmpty() && (photoUri.startsWith("http://") || photoUri.startsWith("https://"))) {
+                        val safeName = (contact.googleContactId ?: "contact_${contact.id}").replace("/", "_").replace(":", "_")
+                        val destFile = com.example.util.InternalStorageManager.getFile(
+                            context,
+                            com.example.util.InternalStorageManager.Category.CONTACTS,
+                            "g_avatar_${safeName}.jpg"
+                        )
+
+                        if (!destFile.exists() || destFile.length() == 0L) {
+                            val bytes = com.example.util.SystemContactSyncHelper.getContactPhotoBytes(context, photoUri)
+                            if (bytes != null && bytes.isNotEmpty()) {
+                                destFile.parentFile?.mkdirs()
+                                destFile.writeBytes(bytes)
+                                val currentFiles = mutableListOf<String>()
+                                if (contact.attachedFilesJson.isNotEmpty()) {
+                                    try {
+                                        val arr = org.json.JSONArray(contact.attachedFilesJson)
+                                        for (i in 0 until arr.length()) {
+                                            val itm = arr.getString(i)
+                                            if (itm.isNotBlank() && !currentFiles.contains(itm)) currentFiles.add(itm)
+                                        }
+                                    } catch (_: Exception) {}
+                                }
+                                if (!currentFiles.contains(destFile.absolutePath)) {
+                                    currentFiles.add(0, destFile.absolutePath)
+                                }
+                                contactDao.updateContact(contact.copy(
+                                    photoUri = destFile.absolutePath,
+                                    attachedFilesJson = org.json.JSONArray(currentFiles).toString()
+                                ))
+                            }
+                        } else {
+                            // If local file exists, point to the local file and ensure it is in attached files
+                            val currentFiles = mutableListOf<String>()
+                            if (contact.attachedFilesJson.isNotEmpty()) {
+                                try {
+                                    val arr = org.json.JSONArray(contact.attachedFilesJson)
+                                    for (i in 0 until arr.length()) {
+                                        val itm = arr.getString(i)
+                                        if (itm.isNotBlank() && !currentFiles.contains(itm)) currentFiles.add(itm)
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                            if (!currentFiles.contains(destFile.absolutePath)) {
+                                currentFiles.add(0, destFile.absolutePath)
+                            }
+                            if (contact.photoUri != destFile.absolutePath || !contact.attachedFilesJson.contains(destFile.absolutePath)) {
+                                contactDao.updateContact(contact.copy(
+                                    photoUri = destFile.absolutePath,
+                                    attachedFilesJson = org.json.JSONArray(currentFiles).toString()
+                                ))
+                            }
+                        }
+                    } else if (!photoUri.isNullOrEmpty()) {
+                        // Profile pic exists; ensure it is included in attachedFilesJson
+                        val currentFiles = mutableListOf<String>()
+                        if (contact.attachedFilesJson.isNotEmpty()) {
+                            try {
+                                val arr = org.json.JSONArray(contact.attachedFilesJson)
+                                for (i in 0 until arr.length()) {
+                                    val itm = arr.getString(i)
+                                    if (itm.isNotBlank() && !currentFiles.contains(itm)) currentFiles.add(itm)
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        if (!currentFiles.contains(photoUri)) {
+                            currentFiles.add(0, photoUri)
+                            contactDao.updateContact(contact.copy(
+                                attachedFilesJson = org.json.JSONArray(currentFiles).toString()
+                            ))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("AppViewModel", "refreshAllContactPhotos error: ${e.message}")
             }
         }
     }
@@ -3795,7 +3813,7 @@ class AppViewModel(
             } else if (isSwActive) {
                 com.example.util.FocusTimerManager.setTabFocusTimerSelected(false)
             }
-            viewModelScope.launch {
+            viewModelScope.launch(Dispatchers.IO) {
                 val username = _currentUsername.value ?: ""
                 val email = if (_userEmail.value.isNotEmpty()) _userEmail.value else if (username.contains("@")) username else prefs.getString("user_email_${username}", "") ?: ""
                 if (email.isNotEmpty()) {
@@ -4270,9 +4288,9 @@ class AppViewModel(
     }
 
     fun toggleTaskCompletion(task: Task) {
-        com.example.util.DeletedTaskLogHelper.removeDeletedTaskFromLog(getApplication(), task.title, task.dueDateString, null)
-        com.example.util.DeletedTaskLogHelper.removeDeletedGoogleTaskFromLog(getApplication(), task.title, null)
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.example.util.DeletedTaskLogHelper.removeDeletedTaskFromLog(getApplication(), task.title, task.dueDateString, null)
+            com.example.util.DeletedTaskLogHelper.removeDeletedGoogleTaskFromLog(getApplication(), task.title, null)
             val newIsCompleted = !task.isCompleted
             val cleanDesc = task.description.replace(Regex("""\[CompletedAt:\s*\d+\]"""), "").trim()
             val newDescription = if (newIsCompleted) {
@@ -4286,6 +4304,7 @@ class AppViewModel(
             }
             val updatedTask = task.copy(isCompleted = newIsCompleted, description = newDescription)
             repository.updateTask(updatedTask)
+            com.example.widget.WidgetUpdater.updateTasksWidget(getApplication())
             uploadSharedTaskToFirebase(updatedTask)
             triggerSilentCalendarSync()
             triggerSilentGoogleTasksSync()
@@ -4326,7 +4345,7 @@ class AppViewModel(
     }
 
     fun deleteTask(task: Task) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val idRegex = Regex("""\[GCalEventId:\s*(\d+)\]""")
             val gTaskIdRegex = Regex("""\[GTaskId:\s*([^\]]+)\]""")
             // Delete and cancel subtasks recursively
@@ -4508,6 +4527,7 @@ class AppViewModel(
 
     fun resetStopwatch(saveSession: Boolean = true) {
         takeCommandDevice()
+        _sessionStartTimestamp.value = null
         FocusTimerManager.resetStopwatch(getApplication(), saveSession)
         reportButtonClick("reset_stopwatch")
         setTimerImmersive(false)
@@ -4761,6 +4781,7 @@ class AppViewModel(
 
     fun resetTimer(saveSession: Boolean = true) {
         takeCommandDevice()
+        _sessionStartTimestamp.value = null
         FocusTimerManager.resetTimer(getApplication(), saveSession)
         reportButtonClick("reset_timer")
         setTimerImmersive(false)
@@ -4945,6 +4966,8 @@ class AppViewModel(
                 streakCount = newStreak,
                 lastCompletedTimestamp = if (!exists) System.currentTimeMillis() else habit.lastCompletedTimestamp
             ))
+            com.example.widget.WidgetUpdater.updateHabitsWidget(getApplication())
+            com.example.widget.WidgetUpdater.updateSingleHabitWidget(getApplication())
         }
     }
 
@@ -4965,24 +4988,28 @@ class AppViewModel(
         viewModelScope.launch {
             val targetTime = System.currentTimeMillis() + daysCount * 24 * 3600 * 1000L
             repository.insertDeadline(Deadline(name = name, targetTimestamp = targetTime))
+            com.example.widget.WidgetUpdater.updateCountdownWidget(getApplication())
         }
     }
 
     fun updateDeadline(deadline: Deadline) {
         viewModelScope.launch {
             repository.updateDeadline(deadline)
+            com.example.widget.WidgetUpdater.updateCountdownWidget(getApplication())
         }
     }
 
     fun toggleDeadlineCompletion(deadline: Deadline) {
         viewModelScope.launch {
             repository.updateDeadline(deadline.copy(isCompleted = !deadline.isCompleted))
+            com.example.widget.WidgetUpdater.updateCountdownWidget(getApplication())
         }
     }
 
     fun deleteDeadline(deadline: Deadline) {
         viewModelScope.launch {
             repository.deleteDeadline(deadline)
+            com.example.widget.WidgetUpdater.updateCountdownWidget(getApplication())
         }
     }
 
@@ -5046,6 +5073,7 @@ class AppViewModel(
 
     fun insertKeepNote(title: String, content: String, colorHex: String = "#202124", isPinned: Boolean = false) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            com.example.util.DeletedKeepNoteLogHelper.removeDeletedNoteFromLog(getApplication(), title, content)
             val url = extractUrl(content) ?: extractUrl(title)
             val logoUrl = url?.let { resolveLogoUrl(it) }
 
@@ -5090,6 +5118,7 @@ class AppViewModel(
 
     fun updateKeepNote(note: KeepNote) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            com.example.util.DeletedKeepNoteLogHelper.removeDeletedNoteFromLog(getApplication(), note.title, note.content)
             val url = extractUrl(note.content) ?: extractUrl(note.title)
             val logoUrl = url?.let { resolveLogoUrl(it) }
             val updated = note.copy(
@@ -5108,6 +5137,7 @@ class AppViewModel(
 
     fun deleteKeepNote(note: KeepNote) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            com.example.util.DeletedKeepNoteLogHelper.logDeletedNote(getApplication(), note.title, note.content)
             repository.deleteKeepNote(note)
 
             val email = _userEmail.value.ifEmpty { prefs.getString("user_email", "") ?: "" }
@@ -6396,6 +6426,62 @@ class AppViewModel(
     val contacts: StateFlow<List<Contact>> = repository.allContacts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val duplicateContacts: StateFlow<List<com.example.util.ContactDuplicateGroup>> = repository.allContacts
+        .map { list ->
+            com.example.util.ContactToolkitHelper.scanForDuplicates(list)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val hasDuplicateContacts: StateFlow<Boolean> = duplicateContacts
+        .map { list -> list.any { !it.isExactMatch } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    private var isCleaningExactDuplicates = false
+
+    init {
+        // Automatically check and clean exact duplicate contacts on launch/updates
+        viewModelScope.launch {
+            repository.allContacts.collect { list ->
+                if (!isCleaningExactDuplicates) {
+                    val exactMatches = com.example.util.ContactToolkitHelper.scanForDuplicates(list).filter { it.isExactMatch }
+                    if (exactMatches.isNotEmpty()) {
+                        isCleaningExactDuplicates = true
+                        try {
+                            for (duplicateGroup in exactMatches) {
+                                // Delete the duplicate copy, preserving the primary (Google-synced preferred)
+                                deleteContact(duplicateGroup.duplicateContact)
+                            }
+                        } finally {
+                            isCleaningExactDuplicates = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun autoCleanExactDuplicates(onComplete: ((Int) -> Unit)? = null) {
+        viewModelScope.launch {
+            val list = repository.allContacts.first()
+            val exactMatches = com.example.util.ContactToolkitHelper.scanForDuplicates(list).filter { it.isExactMatch }
+            var cleanedCount = 0
+            for (duplicateGroup in exactMatches) {
+                deleteContact(duplicateGroup.duplicateContact)
+                cleanedCount++
+            }
+            onComplete?.invoke(cleanedCount)
+        }
+    }
+
+    fun mergeContacts(primary: Contact, duplicate: Contact, mergedValues: Contact) {
+        viewModelScope.launch {
+            // Update primary with merged values
+            updateContact(mergedValues.copy(id = primary.id, systemContactId = primary.systemContactId, googleContactId = primary.googleContactId ?: duplicate.googleContactId))
+            // Delete the duplicate
+            deleteContact(duplicate)
+        }
+    }
+
     private val _isContactsSyncPaused = MutableStateFlow(prefs.getBoolean("contacts_sync_paused", false))
     val isContactsSyncPaused: StateFlow<Boolean> = _isContactsSyncPaused.asStateFlow()
 
@@ -6464,6 +6550,25 @@ class AppViewModel(
         attachedFilesJson: String = ""
     ) {
         viewModelScope.launch {
+            val resolvedAttachedFiles = if (!photoUri.isNullOrEmpty()) {
+                val list = mutableListOf<String>()
+                if (attachedFilesJson.isNotEmpty()) {
+                    try {
+                        val arr = org.json.JSONArray(attachedFilesJson)
+                        for (i in 0 until arr.length()) {
+                            val itm = arr.getString(i)
+                            if (itm.isNotBlank() && !list.contains(itm)) list.add(itm)
+                        }
+                    } catch (_: Exception) {}
+                }
+                if (!list.contains(photoUri)) {
+                    list.add(0, photoUri)
+                }
+                org.json.JSONArray(list).toString()
+            } else {
+                attachedFilesJson
+            }
+
             val contactToInsert = Contact(
                 firstName = firstName,
                 middleName = middleName,
@@ -6478,7 +6583,7 @@ class AppViewModel(
                 additionalFieldsJson = additionalFieldsJson,
                 additionalDatesJson = additionalDatesJson,
                 folder = folder,
-                attachedFilesJson = attachedFilesJson
+                attachedFilesJson = resolvedAttachedFiles
             )
             val localId = repository.insertContact(contactToInsert)
             
@@ -6516,13 +6621,33 @@ class AppViewModel(
 
     fun updateContact(contact: Contact) {
         viewModelScope.launch {
-            repository.updateContact(contact)
+            val resolvedContact = if (!contact.photoUri.isNullOrEmpty()) {
+                val list = mutableListOf<String>()
+                if (contact.attachedFilesJson.isNotEmpty()) {
+                    try {
+                        val arr = org.json.JSONArray(contact.attachedFilesJson)
+                        for (i in 0 until arr.length()) {
+                            val itm = arr.getString(i)
+                            if (itm.isNotBlank() && !list.contains(itm)) list.add(itm)
+                        }
+                    } catch (_: Exception) {}
+                }
+                if (!list.contains(contact.photoUri)) {
+                    list.add(0, contact.photoUri!!)
+                    contact.copy(attachedFilesJson = org.json.JSONArray(list).toString())
+                } else {
+                    contact
+                }
+            } else {
+                contact
+            }
+            repository.updateContact(resolvedContact)
             
             if (!_isContactsSyncPaused.value) {
                 try {
-                    val sysId = com.example.util.SystemContactSyncHelper.updateSystemContact(getApplication(), contact)
-                    if (sysId != null && sysId != contact.systemContactId) {
-                        repository.updateContact(contact.copy(systemContactId = sysId))
+                    val sysId = com.example.util.SystemContactSyncHelper.updateSystemContact(getApplication(), resolvedContact)
+                    if (sysId != null && sysId != resolvedContact.systemContactId) {
+                        repository.updateContact(resolvedContact.copy(systemContactId = sysId))
                     }
                 } catch (e: SecurityException) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -6546,6 +6671,7 @@ class AppViewModel(
                     // Ignore background sync errors
                 }
             }
+            com.example.widget.WidgetUpdater.updateCountdownWidget(getApplication())
         }
     }
 
@@ -6572,6 +6698,7 @@ class AppViewModel(
                     // Ignore
                 }
             }
+            com.example.widget.WidgetUpdater.updateCountdownWidget(getApplication())
         }
     }
 
@@ -7230,7 +7357,38 @@ class AppViewModel(
         }
     }
 
+    val driveSyncStatus = com.example.util.GoogleDriveSyncProgressTracker.syncStatus
+
+    fun triggerGoogleDriveFullSync(context: android.content.Context) {
+        com.example.service.GoogleDriveSyncService.startFullSync(context)
+    }
+
+    fun triggerGoogleDriveBackup(context: android.content.Context) {
+        com.example.service.GoogleDriveSyncService.startBackup(context)
+    }
+
+    fun triggerGoogleDriveRestore(context: android.content.Context) {
+        com.example.service.GoogleDriveSyncService.startRestore(context)
+    }
+
+    fun triggerGoogleDriveCleanVault(context: android.content.Context) {
+        com.example.service.GoogleDriveSyncService.startCleanVault(context)
+    }
+
+    fun triggerGoogleDriveFocusBackup(context: android.content.Context) {
+        com.example.service.GoogleDriveSyncService.startFocusBackup(context)
+    }
+
+    fun triggerGoogleDriveFocusRestore(context: android.content.Context) {
+        com.example.service.GoogleDriveSyncService.startFocusRestore(context)
+    }
+
+    fun triggerGoogleDriveKeepNotesSync(context: android.content.Context) {
+        com.example.service.GoogleDriveSyncService.startKeepNotesSync(context)
+    }
+
     fun backupAllDataToGoogleDrive(context: android.content.Context, onAuthResolutionRequired: (android.content.Intent) -> Unit, onComplete: (Boolean, String) -> Unit) {
+        com.example.service.GoogleDriveSyncService.startBackup(context)
         viewModelScope.launch {
             val (success, msg) = com.example.util.GoogleDriveSyncManager.backupAllAppData(context, repository.db, onAuthResolutionRequired)
             onComplete(success, msg)
@@ -7238,6 +7396,7 @@ class AppViewModel(
     }
 
     fun restoreAllDataFromGoogleDrive(context: android.content.Context, onAuthResolutionRequired: (android.content.Intent) -> Unit, onComplete: (Boolean, String) -> Unit) {
+        com.example.service.GoogleDriveSyncService.startRestore(context)
         viewModelScope.launch {
             val (success, msg) = com.example.util.GoogleDriveSyncManager.restoreAllAppData(context, repository.db, onAuthResolutionRequired)
             onComplete(success, msg)
@@ -7245,9 +7404,72 @@ class AppViewModel(
     }
 
     fun manageAndCleanGoogleDriveAppData(context: android.content.Context, onAuthResolutionRequired: (android.content.Intent) -> Unit, onComplete: (Boolean, String) -> Unit) {
+        com.example.service.GoogleDriveSyncService.startCleanVault(context)
         viewModelScope.launch {
             val (success, msg) = com.example.util.GoogleDriveSyncManager.manageAndCleanDriveAppData(context, onAuthResolutionRequired)
             onComplete(success, msg)
+        }
+    }
+
+    fun setTaskHideCompleted(hide: Boolean) {
+        _taskHideCompleted.value = hide
+        prefs.edit().putBoolean("task_hide_completed", hide).apply()
+        val appSettings = getApplication<android.app.Application>().getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+        appSettings.edit().putBoolean("task_hide_completed", hide).apply()
+        syncSettingsAcrossDevicesAndDrive()
+    }
+
+    fun setTaskShowDetails(show: Boolean) {
+        _taskShowDetails.value = show
+        prefs.edit().putBoolean("task_show_details", show).apply()
+        val appSettings = getApplication<android.app.Application>().getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+        appSettings.edit().putBoolean("task_show_details", show).apply()
+        syncSettingsAcrossDevicesAndDrive()
+    }
+
+    fun setTaskGroupByMode(mode: String) {
+        _taskGroupByMode.value = mode
+        prefs.edit().putString("task_group_by_mode", mode).apply()
+        val appSettings = getApplication<android.app.Application>().getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+        appSettings.edit().putString("task_group_by_mode", mode).apply()
+        syncSettingsAcrossDevicesAndDrive()
+    }
+
+    fun setTaskSortByMode(mode: String) {
+        _taskSortByMode.value = mode
+        prefs.edit().putString("task_sort_by_mode", mode).apply()
+        val appSettings = getApplication<android.app.Application>().getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+        appSettings.edit().putString("task_sort_by_mode", mode).apply()
+        syncSettingsAcrossDevicesAndDrive()
+    }
+
+    fun setTaskFilterMode(mode: String) {
+        _taskFilterMode.value = mode
+        prefs.edit().putString("task_filter_mode", mode).apply()
+        val appSettings = getApplication<android.app.Application>().getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+        appSettings.edit().putString("task_filter_mode", mode).apply()
+        syncSettingsAcrossDevicesAndDrive()
+    }
+
+    fun reloadTaskSettingsFromPrefs() {
+        _taskHideCompleted.value = prefs.getBoolean("task_hide_completed", false)
+        _taskShowDetails.value = prefs.getBoolean("task_show_details", false)
+        _taskGroupByMode.value = prefs.getString("task_group_by_mode", "Date") ?: "Date"
+        _taskSortByMode.value = prefs.getString("task_sort_by_mode", "Date") ?: "Date"
+        _taskFilterMode.value = prefs.getString("task_filter_mode", "All") ?: "All"
+    }
+
+    fun syncSettingsAcrossDevicesAndDrive(onComplete: ((Boolean, String) -> Unit)? = null) {
+        val app = getApplication<android.app.Application>()
+        val email = userEmail.value.ifEmpty { prefs.getString("user_email", "") ?: "" }
+        if (email.isNotBlank()) {
+            com.example.api.SameUserMultiDeviceSyncManager.pushSettingsToCloud(app, email)
+        }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val (driveSuccess, driveMsg) = com.example.util.GoogleDriveSyncManager.backupAppSettingsToDrive(app)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onComplete?.invoke(driveSuccess, driveMsg)
+            }
         }
     }
 
@@ -9450,7 +9672,8 @@ class AppViewModel(
                     it.note.lowercase().contains(q) || it.type.lowercase().contains(q) ||
                     (it.fromCategory?.lowercase()?.contains(q) ?: false) || (it.toCategory?.lowercase()?.contains(q) ?: false)
                 },
-                matchingNotes = mNotes
+                matchingNotes = mNotes,
+                matchingSettings = com.example.data.SettingSearchRegistry.search(q)
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), GlobalSearchResult())
@@ -10790,6 +11013,13 @@ class AppViewModel(
         startListeningToOwnSyllabusCloudSync()
         startListeningForSharedTasks()
         prefs.registerOnSharedPreferenceChangeListener(prefListener)
+        viewModelScope.launch {
+            com.example.api.SameUserMultiDeviceSyncManager.liveSettingsUpdateSignal.collect { timestamp ->
+                if (timestamp > 0L) {
+                    reloadTaskSettingsFromPrefs()
+                }
+            }
+        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             com.example.util.UserMemoryManager.autoIngestChatHistory(getApplication())
         }
@@ -10963,7 +11193,11 @@ class AppViewModel(
         // Centralized sessionStartTimestamp management natively derived from DynamicCommandManager
         viewModelScope.launch {
             com.example.api.DynamicCommandManager.currentTimelineFlow.collect { timeline ->
-                _sessionStartTimestamp.value = timeline.firstOrNull()?.timestamp
+                if (isTimerRunning.value || isStopwatchActive.value || isPaused.value) {
+                    _sessionStartTimestamp.value = timeline.firstOrNull()?.timestamp
+                } else if (timeline.isEmpty()) {
+                    _sessionStartTimestamp.value = null
+                }
             }
         }
 
@@ -11043,12 +11277,11 @@ class AppViewModel(
             try {
                 val parsedList = savedOrder.split(",").mapNotNull {
                     try {
-                        val s = Screen.valueOf(it)
-                        if (s == Screen.OBSIDIAN_ARCHITECTURE) null else s
+                        Screen.valueOf(it)
                     } catch (e: Exception) { null }
                 }
                 // Ensure all default screens are present in the list (in case of new additions)
-                val mergedList = parsedList.filterNot { it == Screen.OBSIDIAN_ARCHITECTURE }.toMutableList()
+                val mergedList = parsedList.toMutableList()
                 if (!mergedList.contains(Screen.MESSAGES)) {
                     if (mergedList.size >= 1) {
                         mergedList.add(1, Screen.MESSAGES)
@@ -11061,7 +11294,8 @@ class AppViewModel(
                         mergedList.add(screen)
                     }
                 }
-                _tabOrder.value = mergedList.filterNot { it == Screen.OBSIDIAN_ARCHITECTURE }
+                mergedList.removeAll(listOf(Screen.HEALTH, Screen.ARENA))
+                _tabOrder.value = mergedList
             } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -11136,13 +11370,18 @@ class AppViewModel(
         _dailyFocusHoursTarget.value = prefs.getSafeInt("daily_focus_hours_target", 8)
         _autoAiUpdaterEnabled.value = prefs.getSafeBoolean("auto_ai_updater_enabled", true)
         val savedHidden = prefs.getSafeString("hidden_tabs", "") ?: ""
-        if (savedHidden.isNotEmpty()) {
-            _hiddenTabs.value = savedHidden.split(",").mapNotNull {
+        val currentHidden = if (savedHidden.isNotEmpty()) {
+            savedHidden.split(",").mapNotNull {
                 try { Screen.valueOf(it) } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) { null }
-            }.toSet()
+            }.toMutableSet()
+        } else {
+            mutableSetOf()
         }
+        currentHidden.add(Screen.HEALTH)
+        currentHidden.add(Screen.ARENA)
+        _hiddenTabs.value = currentHidden
 
         loadNestedTabParentsFromPrefs()
         val nestedParents = _nestedTabParents.value
@@ -12327,7 +12566,7 @@ fun createAndPackageSharedTaskFolder(
                     name = "Amazon Cart 🛒",
                     icon = "🛒",
                     colorHex = "#00E5FF",
-                    budget = 200.0
+                    budget = 25000.0
                 )
                 repository.insertShoppingList(defaultList)
                 _selectedShoppingListId.value = defaultList.id
@@ -12336,20 +12575,20 @@ fun createAndPackageSharedTaskFolder(
                     listId = defaultList.id,
                     name = "Sony WH-1000XM5 Wireless Headphones",
                     originalTitle = "Sony WH-1000XM5 Noise Canceling Headphones",
-                    cost = 348.00,
+                    cost = 29990.00,
                     units = 1,
                     imageUrl = "https://images-na.ssl-images-amazon.com/images/P/B09XS7JWHH.01._SCLZZZZZZZ_.jpg",
-                    productUrl = "https://www.amazon.com/dp/B09XS7JWHH",
+                    productUrl = "https://www.amazon.in/dp/B09XS7JWHH",
                     category = "Electronics"
                 )
                 val sample2 = com.example.data.ShoppingItem(
                     listId = defaultList.id,
                     name = "Anker USB-C Fast Charger 65W",
                     originalTitle = "Anker 735 Charger GaNPrime 65W",
-                    cost = 39.99,
+                    cost = 3499.00,
                     units = 2,
                     imageUrl = "https://images-na.ssl-images-amazon.com/images/P/B09W2PNLX7.01._SCLZZZZZZZ_.jpg",
-                    productUrl = "https://www.amazon.com/dp/B09W2PNLX7",
+                    productUrl = "https://www.amazon.in/dp/B09W2PNLX7",
                     category = "Accessories"
                 )
                 repository.insertShoppingItem(sample1)
@@ -12376,7 +12615,8 @@ data class GlobalSearchResult(
     val matchingJournals: List<JournalEntry> = emptyList(),
     val matchingContacts: List<Contact> = emptyList(),
     val matchingFinances: List<com.example.data.FinanceTransaction> = emptyList(),
-    val matchingNotes: List<KeepNote> = emptyList()
+    val matchingNotes: List<KeepNote> = emptyList(),
+    val matchingSettings: List<com.example.data.SettingSearchResult> = emptyList()
 )
 
 data class FocusRankPopupData(
