@@ -11,6 +11,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import com.example.util.FocusTimerManager
+import com.example.util.DeviceSpecsManager
 import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -705,16 +706,19 @@ class MainActivity : ComponentActivity() {
                     val showHistoryScreen by viewModel.showHistoryScreen.collectAsStateWithLifecycle()
                     val unreadChatCount by viewModel.unreadChatCount.collectAsStateWithLifecycle()
                     val hasDuplicateContacts by viewModel.hasDuplicateContacts.collectAsStateWithLifecycle()
-                    val navItems = getNavigationItems(tabOrder.filterNot { hiddenTabs.contains(it) || nestedTabParents.containsKey(it) || it == Screen.HEALTH || it == Screen.ARENA })
+                    val overflowTabs by viewModel.overflowTabs.collectAsStateWithLifecycle()
+                    val navItems = getNavigationItems(tabOrder.filterNot { hiddenTabs.contains(it) || nestedTabParents.containsKey(it) || overflowTabs.contains(it) })
                     var showMoreMenuSheet by remember { mutableStateOf(false) }
 
                     val keyboardController = LocalSoftwareKeyboardController.current
                     val focusManager = LocalFocusManager.current
                     @OptIn(ExperimentalLayoutApi::class)
                     val isKeyboardVisible = WindowInsets.isImeVisible
+                    val isAiHardwareSupported = remember { DeviceSpecsManager.isAiHardwareSupported(this@MainActivity) }
+                    val homeScreen = if (isAiHardwareSupported) Screen.DEEPA_AI else Screen.TASKS
 
                     // Back Navigation Control
-                    if (currentScreen == Screen.DEEPA_AI) {
+                    if (currentScreen == homeScreen) {
                         BackHandler(enabled = true) {
                             if (isKeyboardVisible) {
                                 keyboardController?.hide()
@@ -764,18 +768,18 @@ class MainActivity : ComponentActivity() {
                                 if (previous != null && previous != Screen.SETTINGS && previous != Screen.LOGIN && previous != Screen.PROFILE_SETUP && previous != Screen.PERMISSION_ONBOARDING && previous != Screen.CALENDAR_OPTIMIZATION_ONBOARDING) {
                                     viewModel.navigateTo(previous)
                                 } else {
-                                    viewModel.navigateTo(Screen.DEEPA_AI)
+                                    viewModel.navigateTo(homeScreen)
                                 }
                             }
                         }
                     } else {
-                        // Other main tabs navigate back to Screen.DEEPA_AI (AI page again)
+                        // Other main tabs navigate back to home screen (Deepa AI or Tasks)
                         BackHandler(enabled = true) {
                             if (isKeyboardVisible) {
                                 keyboardController?.hide()
                                 focusManager.clearFocus(force = true)
                             } else {
-                                viewModel.navigateTo(Screen.DEEPA_AI)
+                                viewModel.navigateTo(homeScreen)
                             }
                         }
                     }
@@ -1117,7 +1121,7 @@ class MainActivity : ComponentActivity() {
                                         }
 
                                         // 3-Dot More Menu as the LAST option in task bar (not fixed)
-                                        val isMoreSelectedTop = showMoreMenuSheet || currentScreen == Screen.SHOPPING_CART || currentScreen == Screen.MOVIE_TRACKER || currentScreen == Screen.SPOTIFY_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.GOOGLE_DRIVE_SYNC || currentScreen == Screen.FOCUS_LOCKER || currentScreen == Screen.HEALTH || currentScreen == Screen.ARENA
+                                        val isMoreSelectedTop = showMoreMenuSheet || overflowTabs.contains(currentScreen)
                                         val moreIconScaleTop by animateFloatAsState(
                                             targetValue = if (isMoreSelectedTop) 1.2f else 1.0f,
                                             animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioLowBouncy),
@@ -1280,7 +1284,7 @@ class MainActivity : ComponentActivity() {
                                         }
 
                                         // 3-Dot More Menu as the LAST option in task bar (not fixed)
-                                        val isMoreSelectedBottom = showMoreMenuSheet || currentScreen == Screen.SHOPPING_CART || currentScreen == Screen.MOVIE_TRACKER || currentScreen == Screen.SPOTIFY_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.GOOGLE_DRIVE_SYNC || currentScreen == Screen.FOCUS_LOCKER || currentScreen == Screen.HEALTH || currentScreen == Screen.ARENA
+                                        val isMoreSelectedBottom = showMoreMenuSheet || overflowTabs.contains(currentScreen)
                                         val moreIconScaleBottom by animateFloatAsState(
                                             targetValue = if (isMoreSelectedBottom) 1.2f else 1.0f,
                                             animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = Spring.DampingRatioLowBouncy),
@@ -1443,7 +1447,7 @@ class MainActivity : ComponentActivity() {
                                     }
 
                                     // 3-Dot More Menu
-                                    val isMoreSelectedRight = showMoreMenuSheet || currentScreen == Screen.SHOPPING_CART || currentScreen == Screen.MOVIE_TRACKER || currentScreen == Screen.SPOTIFY_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.GOOGLE_DRIVE_SYNC || currentScreen == Screen.FOCUS_LOCKER || currentScreen == Screen.HEALTH || currentScreen == Screen.ARENA
+                                    val isMoreSelectedRight = showMoreMenuSheet || overflowTabs.contains(currentScreen)
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -1591,7 +1595,7 @@ class MainActivity : ComponentActivity() {
                                     }
 
                                     // 3-Dot More Menu
-                                    val isMoreSelectedLeft = showMoreMenuSheet || currentScreen == Screen.SHOPPING_CART || currentScreen == Screen.MOVIE_TRACKER || currentScreen == Screen.SPOTIFY_WEB_APP || currentScreen == Screen.YOUTUBE_WEB_APP || currentScreen == Screen.INSTAGRAM_WEB_APP || currentScreen == Screen.GOOGLE_DRIVE_SYNC || currentScreen == Screen.FOCUS_LOCKER || currentScreen == Screen.HEALTH || currentScreen == Screen.ARENA
+                                    val isMoreSelectedLeft = showMoreMenuSheet || overflowTabs.contains(currentScreen)
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -2513,6 +2517,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun getNavigationItems(order: List<Screen>): List<NavigationItem> {
+        val isAiSupported = DeviceSpecsManager.isAiHardwareSupported(this)
+        val filteredOrder = if (!isAiSupported) order.filterNot { it == Screen.DEEPA_AI } else order
         val mapping = mapOf(
             Screen.TASKS to NavigationItem(Screen.TASKS, Icons.Default.List, "Tasks"),
             Screen.CALENDAR to NavigationItem(Screen.CALENDAR, Icons.Default.DateRange, "Calendar"),
@@ -2536,7 +2542,7 @@ class MainActivity : ComponentActivity() {
             Screen.MOVIE_TRACKER to NavigationItem(Screen.MOVIE_TRACKER, Icons.Default.Movie, "Movie Tracker"),
             Screen.SHOPPING_CART to NavigationItem(Screen.SHOPPING_CART, Icons.Default.ShoppingCart, "Shopping List")
         )
-        return order.mapNotNull { mapping[it] }
+        return filteredOrder.mapNotNull { mapping[it] }
     }
 
     @android.annotation.SuppressLint("RestrictedApi")
@@ -2999,6 +3005,37 @@ data class ToolMenuItem(
     val color: Color
 )
 
+fun getToolMenuItemForScreen(screen: Screen): ToolMenuItem {
+    return when (screen) {
+        Screen.HEALTH -> ToolMenuItem(Screen.HEALTH, Icons.Default.Favorite, "Fitness & Wellness", "Health, Vitals & Water Log", Color(0xFFEF4444))
+        Screen.ARENA -> ToolMenuItem(Screen.ARENA, Icons.Default.EmojiEvents, "Arena & Syllabus", "Battles & Syllabus Tracker", Color(0xFFEC4899))
+        Screen.SHOPPING_CART -> ToolMenuItem(Screen.SHOPPING_CART, Icons.Default.ShoppingCart, "Shopping List", "Smart Cart & Wishlist", Color(0xFF00E5FF))
+        Screen.MOVIE_TRACKER -> ToolMenuItem(Screen.MOVIE_TRACKER, Icons.Default.Movie, "Movie Tracker", "Watchlist & Ratings", Color(0xFFFF5252))
+        Screen.SPOTIFY_WEB_APP -> ToolMenuItem(Screen.SPOTIFY_WEB_APP, Icons.Default.MusicNote, "AntiSpotify", "Spotify Web Player", Color(0xFF1DB954))
+        Screen.YOUTUBE_WEB_APP -> ToolMenuItem(Screen.YOUTUBE_WEB_APP, Icons.Default.PlayCircle, "AntiTube", "Clean YouTube Web", Color(0xFFFF0000))
+        Screen.INSTAGRAM_WEB_APP -> ToolMenuItem(Screen.INSTAGRAM_WEB_APP, Icons.Default.CameraAlt, "AntiGram", "Clean Instagram Web", Color(0xFFE1306C))
+        Screen.GOOGLE_DRIVE_SYNC -> ToolMenuItem(Screen.GOOGLE_DRIVE_SYNC, Icons.Default.CloudSync, "Google Drive", "Cloud Sync & Backups", Color(0xFF4285F4))
+        Screen.FOCUS_LOCKER -> ToolMenuItem(Screen.FOCUS_LOCKER, Icons.Default.Lock, "Focus Locker", "Distraction Blocker", Color(0xFFF59E0B))
+        Screen.LIVE_SPHERE -> ToolMenuItem(Screen.LIVE_SPHERE, Icons.Default.Share, "Friends Focus", "Live Sphere Network", Color(0xFF10B981))
+        Screen.KEEP_NOTES -> ToolMenuItem(Screen.KEEP_NOTES, Icons.Default.Note, "Keep Notes", "Quick Notes, Checklists & Memos", Color(0xFFF59E0B))
+        Screen.FILE_EXPLORER -> ToolMenuItem(Screen.FILE_EXPLORER, Icons.Default.Folder, "File Explorer", "Files, Folders & Storage Vault", Color(0xFF38BDF8))
+        Screen.ANALYTICS -> ToolMenuItem(Screen.ANALYTICS, Icons.Default.Star, "Analytics", "Insights, Focus Stats & Trends", Color(0xFFFBBF24))
+        Screen.SETTINGS -> ToolMenuItem(Screen.SETTINGS, Icons.Default.Settings, "Settings", "Preferences & Themes", Color(0xFF94A3B8))
+        Screen.TASKS -> ToolMenuItem(Screen.TASKS, Icons.Default.CheckCircle, "Tasks & Planner", "To-Dos, Checklists & Schedule", Color(0xFF38BDF8))
+        Screen.CALENDAR -> ToolMenuItem(Screen.CALENDAR, Icons.Default.DateRange, "Calendar", "Events, Agendas & Timetable", Color(0xFF818CF8))
+        Screen.TIMER -> ToolMenuItem(Screen.TIMER, Icons.Default.Timer, "Focus Timer", "Pomodoro & Deep Work Clock", Color(0xFFF43F5E))
+        Screen.HABITS -> ToolMenuItem(Screen.HABITS, Icons.Default.Loop, "Habits & Routines", "Daily Streaks & Tracker", Color(0xFF10B981))
+        Screen.COUNTDOWN -> ToolMenuItem(Screen.COUNTDOWN, Icons.Default.HourglassBottom, "Countdown", "Milestones & Target Dates", Color(0xFFA855F7))
+        Screen.JOURNAL -> ToolMenuItem(Screen.JOURNAL, Icons.Default.Book, "Journal & Diary", "Reflections & Mood Log", Color(0xFFF59E0B))
+        Screen.CONTACTS -> ToolMenuItem(Screen.CONTACTS, Icons.Default.People, "Contacts Vault", "Address Book & Network", Color(0xFF06B6D4))
+        Screen.FINANCES -> ToolMenuItem(Screen.FINANCES, Icons.Default.AccountBalance, "Finances Ledger", "Expenses, Income & Budget", Color(0xFF10B981))
+        Screen.DEEPA_AI -> ToolMenuItem(Screen.DEEPA_AI, Icons.Default.AutoAwesome, "Deepa AI", "AI Assistant & Copilot", Color(0xFF6366F1))
+        Screen.MESSAGES -> ToolMenuItem(Screen.MESSAGES, Icons.Default.Chat, "Messages & Chat", "Conversations & SMS", Color(0xFF38BDF8))
+        Screen.SEARCH -> ToolMenuItem(Screen.SEARCH, Icons.Default.Search, "Search LifeOS", "Universal Search & Finder", Color(0xFFFBBF24))
+        else -> ToolMenuItem(screen, Icons.Default.Apps, screen.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }, "LifeOS Utility", Color.LightGray)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoreAppsBottomSheet(
@@ -3006,6 +3043,12 @@ fun MoreAppsBottomSheet(
     onDismiss: () -> Unit
 ) {
     val currentScreen by viewModel.currentScreen.collectAsStateWithLifecycle()
+    val overflowTabs by viewModel.overflowTabs.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isAiHardwareSupported = remember { DeviceSpecsManager.isAiHardwareSupported(context) }
+    val cleanOverflowTabs = remember(overflowTabs, isAiHardwareSupported) {
+        if (!isAiHardwareSupported) overflowTabs.filterNot { it == Screen.DEEPA_AI } else overflowTabs
+    }
     var searchQuery by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -3061,7 +3104,7 @@ fun MoreAppsBottomSheet(
                             color = Color.White
                         )
                         Text(
-                            text = "Quick navigation and utilities",
+                            text = "3-Dots Menu & Utilities (${cleanOverflowTabs.size} items)",
                             fontSize = 12.sp,
                             color = Color.Gray
                         )
@@ -3089,7 +3132,7 @@ fun MoreAppsBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
-                placeholder = { Text("Search tools & apps...", fontSize = 13.sp, color = Color.Gray) },
+                placeholder = { Text("Search 3-dots menu & tools...", fontSize = 13.sp, color = Color.Gray) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -3124,21 +3167,9 @@ fun MoreAppsBottomSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Grid of all app tools
-            val allTools = remember {
-                listOf(
-                    ToolMenuItem(Screen.HEALTH, Icons.Default.Favorite, "Fitness & Wellness", "Health, Vitals & Water Log", Color(0xFFEF4444)),
-                    ToolMenuItem(Screen.ARENA, Icons.Default.EmojiEvents, "Arena & Syllabus", "Battles & Syllabus Tracker", Color(0xFFEC4899)),
-                    ToolMenuItem(Screen.SHOPPING_CART, Icons.Default.ShoppingCart, "Shopping List", "Smart Cart & Wishlist", Color(0xFF00E5FF)),
-                    ToolMenuItem(Screen.MOVIE_TRACKER, Icons.Default.Movie, "Movie Tracker", "Watchlist & Ratings", Color(0xFFFF5252)),
-                    ToolMenuItem(Screen.SPOTIFY_WEB_APP, Icons.Default.MusicNote, "AntiSpotify", "Spotify Web Player", Color(0xFF1DB954)),
-                    ToolMenuItem(Screen.YOUTUBE_WEB_APP, Icons.Default.PlayCircle, "AntiTube", "Clean YouTube Web", Color(0xFFFF0000)),
-                    ToolMenuItem(Screen.INSTAGRAM_WEB_APP, Icons.Default.CameraAlt, "AntiGram", "Clean Instagram Web", Color(0xFFE1306C)),
-                    ToolMenuItem(Screen.GOOGLE_DRIVE_SYNC, Icons.Default.CloudSync, "Google Drive", "Cloud Sync & Backups", Color(0xFF4285F4)),
-                    ToolMenuItem(Screen.FOCUS_LOCKER, Icons.Default.Lock, "Focus Locker", "Distraction Blocker", Color(0xFFF59E0B)),
-                    ToolMenuItem(Screen.LIVE_SPHERE, Icons.Default.Share, "Friends Focus", "Live Sphere Network", Color(0xFF10B981)),
-                    ToolMenuItem(Screen.SETTINGS, Icons.Default.Settings, "Settings", "Preferences & Themes", Color(0xFF94A3B8))
-                )
+            // Grid of app tools based on overflowTabs
+            val allTools = remember(cleanOverflowTabs) {
+                cleanOverflowTabs.map { getToolMenuItemForScreen(it) }
             }
 
             val filteredTools = if (searchQuery.isBlank()) allTools else {
@@ -3155,72 +3186,110 @@ fun MoreAppsBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(vertical = 4.dp)
                 ) {
-                    filteredTools.chunked(2).forEach { rowTools ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    if (filteredTools.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            rowTools.forEach { tool ->
-                                val isCurrent = currentScreen == tool.screen
-                                Surface(
-                                    onClick = {
-                                        onDismiss()
-                                        viewModel.navigateTo(tool.screen)
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("more_menu_item_${tool.screen.name.lowercase()}"),
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (isCurrent) tool.color.copy(alpha = 0.2f) else Color(0xFF1B1B24),
-                                    border = BorderStroke(
-                                        width = 1.dp,
-                                        color = if (isCurrent) tool.color else Color(0x18FFFFFF)
-                                    )
-                                ) {
-                                    Row(
+                            Text(
+                                text = if (searchQuery.isNotBlank()) "No tools found matching '$searchQuery'" else "3-Dots Menu is empty. Move tabs here from Settings!",
+                                color = Color.Gray,
+                                fontSize = 13.sp
+                            )
+                        }
+                    } else {
+                        filteredTools.chunked(2).forEach { rowTools ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowTools.forEach { tool ->
+                                    val isCurrent = currentScreen == tool.screen
+                                    Surface(
+                                        onClick = {
+                                            onDismiss()
+                                            viewModel.navigateTo(tool.screen)
+                                        },
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            .weight(1f)
+                                            .testTag("more_menu_item_${tool.screen.name.lowercase()}"),
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isCurrent) tool.color.copy(alpha = 0.2f) else Color(0xFF1B1B24),
+                                        border = BorderStroke(
+                                            width = 1.dp,
+                                            color = if (isCurrent) tool.color else Color(0x18FFFFFF)
+                                        )
                                     ) {
-                                        Box(
+                                        Row(
                                             modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(tool.color.copy(alpha = 0.2f)),
-                                            contentAlignment = Alignment.Center
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                                         ) {
-                                            Icon(
-                                                imageVector = tool.icon,
-                                                contentDescription = tool.title,
-                                                tint = tool.color,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = tool.title,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
-                                                color = Color.White,
-                                                maxLines = 1,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = tool.subtitle,
-                                                fontSize = 10.sp,
-                                                color = Color.Gray,
-                                                maxLines = 1,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(tool.color.copy(alpha = 0.2f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = tool.icon,
+                                                    contentDescription = tool.title,
+                                                    tint = tool.color,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = tool.title,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = tool.subtitle,
+                                                    fontSize = 10.sp,
+                                                    color = Color.Gray,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                )
+                                            }
                                         }
                                     }
                                 }
+                                if (rowTools.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
                             }
-                            if (rowTools.size == 1) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Surface(
+                        onClick = {
+                            onDismiss()
+                            viewModel.navigateTo(Screen.SETTINGS)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF1E1E28),
+                        border = BorderStroke(1.dp, Color(0x22FFFFFF))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Tune, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Customize Taskbar Tabs & 3-Dots in Settings", color = WaterBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

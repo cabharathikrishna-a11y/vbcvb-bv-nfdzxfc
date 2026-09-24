@@ -88,6 +88,26 @@ class AppViewModel(
     companion object {
         @Volatile
         var instance: AppViewModel? = null
+
+        val DEFAULT_OVERFLOW_MENU_SCREENS = setOf(
+            Screen.SHOPPING_CART,
+            Screen.HEALTH,
+            Screen.ARENA,
+            Screen.MOVIE_TRACKER,
+            Screen.FOCUS_LOCKER,
+            Screen.LIVE_SPHERE,
+            Screen.SPOTIFY_WEB_APP,
+            Screen.YOUTUBE_WEB_APP,
+            Screen.INSTAGRAM_WEB_APP,
+            Screen.GOOGLE_DRIVE_SYNC,
+            Screen.ANALYTICS,
+            Screen.KEEP_NOTES,
+            Screen.FILE_EXPLORER,
+            Screen.SETTINGS
+        )
+
+        val OVERFLOW_MENU_SCREENS: Set<Screen>
+            get() = instance?.overflowTabs?.value?.toSet() ?: DEFAULT_OVERFLOW_MENU_SCREENS
     }
 
     // SharedPreferences to persist settings
@@ -457,7 +477,11 @@ class AppViewModel(
     val optimisticTodayFocusSeconds: StateFlow<Long?> = FocusTimerManager.optimisticTodayFocusSeconds
 
     // Navigation State
-    private val _currentScreen = MutableStateFlow(if (_isLoggedIn.value) Screen.DEEPA_AI else Screen.LOGIN)
+    private val _currentScreen = MutableStateFlow(
+        if (_isLoggedIn.value) {
+            if (DeviceSpecsManager.isAiHardwareSupported(application)) Screen.DEEPA_AI else Screen.TASKS
+        } else Screen.LOGIN
+    )
     val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
 
     private val _previousScreenBeforeSettings = MutableStateFlow<Screen?>(null)
@@ -524,14 +548,31 @@ class AppViewModel(
         _logoutFlowState.value = LogoutFlowState.Idle
     }
 
-    // Default tab list
-    val defaultScreens = listOf(
-        Screen.DEEPA_AI, Screen.MESSAGES, Screen.KEEP_NOTES, Screen.SEARCH, Screen.TASKS, Screen.CALENDAR, Screen.TIMER, Screen.HABITS, Screen.COUNTDOWN, Screen.JOURNAL, Screen.CONTACTS, Screen.FILE_EXPLORER, Screen.FINANCES, Screen.SHOPPING_CART, Screen.ANALYTICS, Screen.SETTINGS
-    )
+    // Default tab list - dynamically filtered by device hardware RAM capability
+    val defaultScreens: List<Screen>
+        get() = if (DeviceSpecsManager.isAiHardwareSupported(getApplication())) {
+            listOf(
+                Screen.DEEPA_AI, Screen.MESSAGES, Screen.SEARCH, Screen.TASKS, Screen.CALENDAR, Screen.TIMER, Screen.HABITS, Screen.COUNTDOWN, Screen.JOURNAL, Screen.CONTACTS, Screen.FINANCES
+            )
+        } else {
+            listOf(
+                Screen.MESSAGES, Screen.SEARCH, Screen.TASKS, Screen.CALENDAR, Screen.TIMER, Screen.HABITS, Screen.COUNTDOWN, Screen.JOURNAL, Screen.CONTACTS, Screen.FINANCES
+            )
+        }
 
-    // Dynamic Tab Order State
+    // Dynamic Tab Order State (Taskbar tabs)
     private val _tabOrder = MutableStateFlow<List<Screen>>(emptyList())
     val tabOrder: StateFlow<List<Screen>> = _tabOrder.asStateFlow()
+
+    // Dynamic 3-Dots / Overflow Menu State
+    private val _overflowTabs = MutableStateFlow<List<Screen>>(
+        if (DeviceSpecsManager.isAiHardwareSupported(application)) {
+            DEFAULT_OVERFLOW_MENU_SCREENS.toList()
+        } else {
+            DEFAULT_OVERFLOW_MENU_SCREENS.filterNot { it == Screen.DEEPA_AI }
+        }
+    )
+    val overflowTabs: StateFlow<List<Screen>> = _overflowTabs.asStateFlow()
 
     // Nested Tab Grouping / Parent Mapping State
     private val _nestedTabParents = MutableStateFlow<Map<Screen, Screen>>(emptyMap())
@@ -2372,8 +2413,89 @@ class AppViewModel(
     }
 
     fun saveTabOrder(newOrder: List<Screen>) {
-        _tabOrder.value = newOrder
-        prefs.edit().putString("tab_order", newOrder.joinToString(",") { it.name }).apply()
+        val isAiSupported = DeviceSpecsManager.isAiHardwareSupported(getApplication())
+        val cleanOrder = newOrder
+            .filterNot { _overflowTabs.value.contains(it) }
+            .filter { isAiSupported || it != Screen.DEEPA_AI }
+        _tabOrder.value = cleanOrder
+        prefs.edit().putString("tab_order", cleanOrder.joinToString(",") { it.name }).apply()
+        syncSettingsAcrossDevicesAndDrive()
+    }
+
+    fun moveToOverflow(screen: Screen) {
+        if (screen == Screen.DEEPA_AI && !DeviceSpecsManager.isAiHardwareSupported(getApplication())) return
+        val currentOrder = _tabOrder.value.toMutableList()
+        val currentOverflow = _overflowTabs.value.toMutableList()
+        currentOrder.remove(screen)
+        if (!currentOverflow.contains(screen)) {
+            currentOverflow.add(screen)
+        }
+        _tabOrder.value = currentOrder
+        _overflowTabs.value = currentOverflow
+        prefs.edit()
+            .putString("tab_order", currentOrder.joinToString(",") { it.name })
+            .putString("overflow_menu_tabs", currentOverflow.joinToString(",") { it.name })
+            .apply()
+        syncSettingsAcrossDevicesAndDrive()
+    }
+
+    fun moveToTaskbar(screen: Screen) {
+        if (screen == Screen.DEEPA_AI && !DeviceSpecsManager.isAiHardwareSupported(getApplication())) return
+        val currentOrder = _tabOrder.value.toMutableList()
+        val currentOverflow = _overflowTabs.value.toMutableList()
+        currentOverflow.remove(screen)
+        if (!currentOrder.contains(screen)) {
+            currentOrder.add(screen)
+        }
+        // Also unhide if it was hidden
+        val currentHidden = _hiddenTabs.value.toMutableSet()
+        if (currentHidden.contains(screen)) {
+            currentHidden.remove(screen)
+            _hiddenTabs.value = currentHidden
+            prefs.edit().putString("hidden_tabs", currentHidden.joinToString(",") { it.name }).apply()
+        }
+        _tabOrder.value = currentOrder
+        _overflowTabs.value = currentOverflow
+        prefs.edit()
+            .putString("tab_order", currentOrder.joinToString(",") { it.name })
+            .putString("overflow_menu_tabs", currentOverflow.joinToString(",") { it.name })
+            .apply()
+        syncSettingsAcrossDevicesAndDrive()
+    }
+
+    fun saveTabAndOverflowConfiguration(taskbarOrder: List<Screen>, overflowOrder: List<Screen>) {
+        val isAiSupported = DeviceSpecsManager.isAiHardwareSupported(getApplication())
+        val cleanOverflow = overflowOrder
+            .distinct()
+            .filter { isAiSupported || it != Screen.DEEPA_AI }
+        val cleanTaskbar = taskbarOrder
+            .distinct()
+            .filterNot { cleanOverflow.contains(it) }
+            .filter { isAiSupported || it != Screen.DEEPA_AI }
+        _tabOrder.value = cleanTaskbar
+        _overflowTabs.value = cleanOverflow
+        prefs.edit()
+            .putString("tab_order", cleanTaskbar.joinToString(",") { it.name })
+            .putString("overflow_menu_tabs", cleanOverflow.joinToString(",") { it.name })
+            .apply()
+        syncSettingsAcrossDevicesAndDrive()
+    }
+
+    fun resetTabConfigurationToDefault() {
+        val isAiSupported = DeviceSpecsManager.isAiHardwareSupported(getApplication())
+        val cleanDefault = defaultScreens
+        val cleanOverflow = if (isAiSupported) DEFAULT_OVERFLOW_MENU_SCREENS.toList() else DEFAULT_OVERFLOW_MENU_SCREENS.filterNot { it == Screen.DEEPA_AI }
+        _tabOrder.value = cleanDefault
+        _overflowTabs.value = cleanOverflow
+        _hiddenTabs.value = cleanOverflow.toSet()
+        _nestedTabParents.value = emptyMap()
+        prefs.edit()
+            .putString("tab_order", cleanDefault.joinToString(",") { it.name })
+            .putString("overflow_menu_tabs", cleanOverflow.joinToString(",") { it.name })
+            .putString("hidden_tabs", cleanOverflow.joinToString(",") { it.name })
+            .remove("nested_tab_parents")
+            .apply()
+        syncSettingsAcrossDevicesAndDrive()
     }
 
     fun updateDailyFocusHoursTarget(hours: Int) {
@@ -2398,8 +2520,11 @@ class AppViewModel(
         } else {
             current.add(screen)
             if (_currentScreen.value == screen) {
-                val remainingVisible = _tabOrder.value.filterNot { current.contains(it) || it == screen }
-                val nextScreen = remainingVisible.firstOrNull() ?: Screen.DEEPA_AI
+                val isAiSupported = DeviceSpecsManager.isAiHardwareSupported(getApplication())
+                val remainingVisible = _tabOrder.value
+                    .filterNot { current.contains(it) || it == screen }
+                    .filter { isAiSupported || it != Screen.DEEPA_AI }
+                val nextScreen = remainingVisible.firstOrNull() ?: (if (isAiSupported) Screen.DEEPA_AI else Screen.TASKS)
                 navigateTo(nextScreen)
             }
         }
@@ -3797,10 +3922,15 @@ class AppViewModel(
     }
 
     fun navigateTo(screen: Screen) {
-        if (!_isLoggedIn.value && screen != Screen.LOGIN) {
+        val targetScreen = if (screen == Screen.DEEPA_AI && !DeviceSpecsManager.isAiHardwareSupported(getApplication())) {
+            Screen.TASKS
+        } else {
+            screen
+        }
+        if (!_isLoggedIn.value && targetScreen != Screen.LOGIN) {
             _currentScreen.value = Screen.LOGIN
         } else {
-            _currentScreen.value = screen
+            _currentScreen.value = targetScreen
         }
 
         // When navigating to the TIMER screen, immediately fetch focus timer from RTDB and calibrate!
@@ -3827,8 +3957,11 @@ class AppViewModel(
         if (!com.example.util.SleepTimeHelper.isWakeUpAndSleepTimeSet(getApplication())) {
             return Screen.CALENDAR_OPTIMIZATION_ONBOARDING
         }
-        val visibleTabs = _tabOrder.value.filterNot { _hiddenTabs.value.contains(it) }
-        return visibleTabs.firstOrNull() ?: Screen.DEEPA_AI
+        val isAiSupported = DeviceSpecsManager.isAiHardwareSupported(getApplication())
+        val visibleTabs = _tabOrder.value
+            .filterNot { _hiddenTabs.value.contains(it) }
+            .filter { isAiSupported || it != Screen.DEEPA_AI }
+        return visibleTabs.firstOrNull() ?: (if (isAiSupported) Screen.DEEPA_AI else Screen.TASKS)
     }
 
     private val _selectedContactId = MutableStateFlow<Int?>(null)
@@ -7377,6 +7510,28 @@ class AppViewModel(
 
     fun triggerGoogleDriveFocusBackup(context: android.content.Context) {
         com.example.service.GoogleDriveSyncService.startFocusBackup(context)
+    }
+
+    fun triggerGoogleDriveLiveSync(
+        context: android.content.Context,
+        onAuthResolutionRequired: (android.content.Intent) -> Unit = {},
+        onProgress: (String, Int, String) -> Unit = { _, _, _ -> },
+        onComplete: ((Boolean, String) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            val report = com.example.util.GoogleDriveSyncManager.execute3PassLiveSync(
+                context = context,
+                database = repository.db,
+                onProgress = onProgress,
+                onAuthResolutionRequired = onAuthResolutionRequired
+            )
+            reloadTaskSettingsFromPrefs()
+            onComplete?.invoke(report.success, report.message)
+        }
+    }
+
+    fun recordEntityDeletion(context: android.content.Context, uid: String, entityType: String) {
+        com.example.util.GoogleDriveSyncManager.recordLocalDeletion(context, uid, entityType)
     }
 
     fun triggerGoogleDriveFocusRestore(context: android.content.Context) {
@@ -11271,6 +11426,24 @@ class AppViewModel(
             _aiMemories.value = savedMemories.split(";;;").filter { it.isNotEmpty() }
         }
 
+        // Load custom overflow (3-dots) menu tabs from preferences
+        val isAiHardwareSupported = DeviceSpecsManager.isAiHardwareSupported(getApplication())
+        val savedOverflow = prefs.getSafeString("overflow_menu_tabs", null)
+        val loadedOverflow = if (savedOverflow != null) {
+            try {
+                savedOverflow.split(",").mapNotNull {
+                    try { Screen.valueOf(it) } catch (e: Exception) { null }
+                }.distinct()
+            } catch (e: Exception) {
+                DEFAULT_OVERFLOW_MENU_SCREENS.toList()
+            }
+        } else {
+            DEFAULT_OVERFLOW_MENU_SCREENS.toList()
+        }.let { list ->
+            if (!isAiHardwareSupported) list.filterNot { it == Screen.DEEPA_AI } else list
+        }
+        _overflowTabs.value = loadedOverflow
+
         // Load persist tab order from preferences
         val savedOrder = prefs.getSafeString("tab_order", null)
         if (savedOrder != null) {
@@ -11282,7 +11455,7 @@ class AppViewModel(
                 }
                 // Ensure all default screens are present in the list (in case of new additions)
                 val mergedList = parsedList.toMutableList()
-                if (!mergedList.contains(Screen.MESSAGES)) {
+                if (!mergedList.contains(Screen.MESSAGES) && !loadedOverflow.contains(Screen.MESSAGES)) {
                     if (mergedList.size >= 1) {
                         mergedList.add(1, Screen.MESSAGES)
                     } else {
@@ -11290,19 +11463,20 @@ class AppViewModel(
                     }
                 }
                 defaultScreens.forEach { screen ->
-                    if (!mergedList.contains(screen)) {
+                    if (!mergedList.contains(screen) && !loadedOverflow.contains(screen)) {
                         mergedList.add(screen)
                     }
                 }
-                mergedList.removeAll(listOf(Screen.HEALTH, Screen.ARENA))
-                _tabOrder.value = mergedList
+                mergedList.removeAll(loadedOverflow.toSet())
+                val cleanList = if (!isAiHardwareSupported) mergedList.filterNot { it == Screen.DEEPA_AI } else mergedList
+                _tabOrder.value = cleanList
             } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-                _tabOrder.value = defaultScreens
+                throw e
+            } catch (e: Exception) {
+                _tabOrder.value = defaultScreens.filterNot { loadedOverflow.contains(it) }
             }
         } else {
-            _tabOrder.value = defaultScreens
+            _tabOrder.value = defaultScreens.filterNot { loadedOverflow.contains(it) }
         }
 
         // Load persist Timer settings
@@ -11373,14 +11547,13 @@ class AppViewModel(
         val currentHidden = if (savedHidden.isNotEmpty()) {
             savedHidden.split(",").mapNotNull {
                 try { Screen.valueOf(it) } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) { null }
+                    throw e
+                } catch (e: Exception) { null }
             }.toMutableSet()
         } else {
             mutableSetOf()
         }
-        currentHidden.add(Screen.HEALTH)
-        currentHidden.add(Screen.ARENA)
+        currentHidden.addAll(_overflowTabs.value)
         _hiddenTabs.value = currentHidden
 
         loadNestedTabParentsFromPrefs()
@@ -11388,8 +11561,10 @@ class AppViewModel(
 
         // Apply "always when opened the app the tab at top of list is the default tab to be opened"
         if (_isLoggedIn.value) {
-            val visibleTabs = _tabOrder.value.filterNot { _hiddenTabs.value.contains(it) || nestedParents.containsKey(it) }
-            val firstVisibleTab = visibleTabs.firstOrNull() ?: Screen.DEEPA_AI
+            val visibleTabs = _tabOrder.value
+                .filterNot { _hiddenTabs.value.contains(it) || nestedParents.containsKey(it) }
+                .filter { isAiHardwareSupported || it != Screen.DEEPA_AI }
+            val firstVisibleTab = visibleTabs.firstOrNull() ?: (if (isAiHardwareSupported) Screen.DEEPA_AI else Screen.TASKS)
             
             // Check if profile is complete. If so, open the first visible tab. Otherwise allow profile setup.
             val isTester = prefs.getSafeBoolean("is_tester_mode", false)

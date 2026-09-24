@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import com.example.ui.LogoutFlowState
 import com.example.util.getSafeStringSet
+import com.example.util.DeviceSpecsManager
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -243,17 +244,20 @@ private fun SettingsViewImpl(viewModel: AppViewModel, modifier: Modifier = Modif
         }
     }
 
-    val allCategories = remember(isKeyboardConnected, hasDuplicateContacts) {
+    val isAiSupported = remember { DeviceSpecsManager.isAiHardwareSupported(context) }
+    val allCategories = remember(isKeyboardConnected, hasDuplicateContacts, isAiSupported) {
         listOf(
             SettingsCategoryData(
-                title = "Core Systems & AI",
+                title = if (isAiSupported) "Core Systems & AI" else "Core Systems",
                 tabId = 1,
                 items = buildList {
                     add(SettingsRowData("1. GENERAL SYSTEM", "Tab alignment, navigation bar reordering, style configurations", Icons.Default.Settings, Color(0xFF2196F3)) { activePage = 1 })
                     add(SettingsRowData("NOTIFICATION SETTINGS", "Control all automatic triggers, friend alerts, water, sleep & task alarms", Icons.Default.NotificationsActive, Color(0xFF00E5FF)) { activePage = 24 })
                     add(SettingsRowData("DIAGNOSTICS & BACKGROUND", "Fix stopwatch lockscreen freeze & background recording on Samsung/Oppo/Lenovo/Moto", Icons.Default.Info, Color(0xFFE53935)) { activePage = 17 })
                     add(SettingsRowData("APP UPDATE CENTER", "Check for updates, manage background downloads, authenticate tester", Icons.Default.Refresh, Color(0xFF4CAF50)) { activePage = 16 })
-                    add(SettingsRowData("2. DEEPA AI BRAIN", "Offline model caching, memories vault management", Icons.Default.Face, Color(0xFF00E5FF)) { activePage = 11 })
+                    if (isAiSupported) {
+                        add(SettingsRowData("2. DEEPA AI BRAIN", "Offline model caching, memories vault management", Icons.Default.Face, Color(0xFF00E5FF)) { activePage = 11 })
+                    }
                     add(SettingsRowData("3. BACKUP & RESTORE", "JSON manual database import & security exports", Icons.Default.Refresh, Color(0xFFFFB300)) { activePage = 12 })
                     if (isKeyboardConnected) {
                         add(SettingsRowData("KEYBOARD SHORTCUTS HELP", "View all connected physical keyboard shortcuts & mappings", Icons.Default.Keyboard, Color(0xFF9C27B0)) { activePage = 99 })
@@ -696,10 +700,16 @@ private fun SettingsViewImpl(viewModel: AppViewModel, modifier: Modifier = Modif
         }
 
         11 -> {
-            SettingsDeepaAIPage(
-                viewModel = viewModel,
-                onBack = { activePage = 0 }
-            )
+            if (isAiSupported) {
+                SettingsDeepaAIPage(
+                    viewModel = viewModel,
+                    onBack = { activePage = 0 }
+                )
+            } else {
+                LaunchedEffect(Unit) {
+                    activePage = 0
+                }
+            }
         }
 
         12 -> {
@@ -1812,6 +1822,29 @@ fun SettingsSleepWakePage(viewModel: AppViewModel) {
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+
+                        HorizontalDivider(color = Color(0xFF222225), thickness = 0.5.dp)
+
+                        OutlinedButton(
+                            onClick = {
+                                val testIntent = Intent(context, com.example.ui.ReminderActivity::class.java).apply {
+                                    putExtra("TASK_ID", com.example.util.AlarmScheduler.BEDTIME_REMINDER_REQUEST_CODE)
+                                    putExtra("TASK_TITLE", "Bedtime Reminder! 🌙")
+                                    putExtra("TASK_TIME", "")
+                                    putExtra("TASK_PRIORITY", "HIGH")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(testIntent)
+                            },
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.6f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = WaterBlue)
+                        ) {
+                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("TEST GOOD NIGHT DISPLAY (TAP TO CLOSE / 10s AUTO-CLOSE)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -7816,8 +7849,15 @@ fun SettingsGeneralSystemPage(
         val spotifyWebAppEnabled by viewModel.spotifyWebAppEnabled.collectAsState()
         val spotifyAdMuteEnabled by viewModel.spotifyAdMuteEnabled.collectAsState()
         val spotifyPodcastsBlocked by viewModel.spotifyPodcastsBlocked.collectAsState()
+        val overflowTabs by viewModel.overflowTabs.collectAsState()
         val context = LocalContext.current
-        var tempOrder by remember(tabOrder) { mutableStateOf(tabOrder.filterNot { it == Screen.FOCUS_LOCKER || it == Screen.LIVE_SPHERE || it == Screen.INSTAGRAM_WEB_APP || it == Screen.YOUTUBE_WEB_APP || it == Screen.SPOTIFY_WEB_APP || it == Screen.GOOGLE_DRIVE_SYNC || it == Screen.MOVIE_TRACKER }) }
+        val isAiSupported = remember { DeviceSpecsManager.isAiHardwareSupported(context) }
+        var tempTaskbarOrder by remember(tabOrder, overflowTabs, isAiSupported) { 
+            mutableStateOf(tabOrder.filterNot { overflowTabs.contains(it) }.filter { isAiSupported || it != Screen.DEEPA_AI }) 
+        }
+        var tempOverflowOrder by remember(overflowTabs, isAiSupported) { 
+            mutableStateOf(overflowTabs.filter { isAiSupported || it != Screen.DEEPA_AI }) 
+        }
         var showNetworkUsageDialog by remember { mutableStateOf(false) }
 
         if (showNetworkUsageDialog) {
@@ -8558,263 +8598,627 @@ fun SettingsGeneralSystemPage(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Tab order customization
+            // =========================================================================
+            // TASKBAR & 3-DOTS MENU CUSTOMIZER
+            // =========================================================================
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0C)),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(14.dp)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "Reorder & Nest Navigation Tabs",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Move tabs up/down, toggle visibility, or move any tab inside another tab as a nested child to decrease the count of tabs in your navigation bar.",
-                        color = Color.Gray,
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(WaterBlue.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = WaterBlue,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Taskbar & 3-Dots Menu Customizer",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Manually arrange tabs on the taskbar or move them to the 3-dots menu",
+                                color = Color.Gray,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        tempOrder.forEachIndexed { index, screen ->
-                            val label = when (screen) {
-                                Screen.TASKS -> "Tasks"
-                                Screen.CALENDAR -> "Calendar"
-                                Screen.TIMER -> "Timer"
-                                Screen.HABITS -> "Habits"
-                                Screen.COUNTDOWN -> "Countdown"
-                                Screen.JOURNAL -> "Journal"
-                                Screen.KEEP_NOTES -> "Keep Notes"
-                                Screen.CONTACTS -> "Contacts"
-                                Screen.FILE_EXPLORER -> "File Explorer"
-                                Screen.FINANCES -> "Finances"
-                                Screen.DEEPA_AI -> "Deepa AI"
-                                Screen.SEARCH -> "Search"
-                                Screen.ANALYTICS -> "Analytics"
-                                Screen.SETTINGS -> "Settings"
-                                Screen.LOGIN -> "Login"
-                                Screen.PROFILE_SETUP -> "Profile Setup"
-                                Screen.PERMISSION_ONBOARDING -> "Permissions Onboarding"
-                                Screen.CALENDAR_OPTIMIZATION_ONBOARDING -> "Calendar Optimization"
-                                Screen.HEALTH -> "Fitness & Wellness"
-                                Screen.LIVE_SPHERE -> "Friends Focus Details"
-                                Screen.ARENA -> "Arena & Syllabus Tracker"
-                                Screen.FOCUS_LOCKER -> "Focus Locker"
-                                Screen.MESSAGES -> "Messages"
-                                Screen.INSTAGRAM_WEB_APP -> "Instagram (AntiGram)"
-                                Screen.YOUTUBE_WEB_APP -> "YouTube (AntiTube)"
-                                Screen.SPOTIFY_WEB_APP -> "Spotify (AntiSpotify)"
-                                Screen.GOOGLE_DRIVE_SYNC -> "Google Drive Sync"
-                                Screen.MOVIE_TRACKER -> "Movie Tracker"
-                                Screen.SHOPPING_CART -> "Shopping Cart"
-                            }
-
-                            val parentScreen = nestedTabParents[screen]
-                            val parentLabel = if (parentScreen != null) {
-                                when (parentScreen) {
-                                    Screen.TASKS -> "Tasks"
-                                    Screen.CALENDAR -> "Calendar"
-                                    Screen.TIMER -> "Timer"
-                                    Screen.HABITS -> "Habits"
-                                    Screen.COUNTDOWN -> "Countdown"
-                                    Screen.JOURNAL -> "Journal"
-                                    Screen.KEEP_NOTES -> "Keep Notes"
-                                    Screen.CONTACTS -> "Contacts"
-                                    Screen.FILE_EXPLORER -> "File Explorer"
-                                    Screen.FINANCES -> "Finances"
-                                    Screen.DEEPA_AI -> "Deepa AI"
-                                    Screen.SEARCH -> "Search"
-                                    Screen.ANALYTICS -> "Analytics"
-                                    Screen.SETTINGS -> "Settings"
-                                    Screen.HEALTH -> "Fitness & Wellness"
-                                    Screen.MESSAGES -> "Messages"
-                                    Screen.ARENA -> "Arena & Syllabus Tracker"
-                                    else -> parentScreen.name
-                                }
-                            } else null
-
-                            var showParentPicker by remember { mutableStateOf(false) }
-
+                    // SECTION 1: 📱 Main Taskbar Tabs
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF14141A),
+                        border = BorderStroke(1.dp, Color(0x22FFFFFF))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xFF141414), RoundedCornerShape(6.dp))
-                                    .padding(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    if (parentLabel != null) {
-                                        Text(
-                                            text = "↳ Inside $parentLabel",
-                                            color = WaterBlue,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Dock,
+                                        contentDescription = null,
+                                        tint = WaterBlue,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "📱 Main Taskbar Tabs (${tempTaskbarOrder.size})",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
+                                Text(
+                                    text = "Visible in dock",
+                                    color = WaterBlue,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
 
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Box {
-                                        Surface(
-                                            onClick = { showParentPicker = true },
-                                            color = if (parentScreen != null) WaterBlue.copy(alpha = 0.2f) else Color(0xFF222222),
-                                            shape = RoundedCornerShape(6.dp),
-                                            border = BorderStroke(1.dp, if (parentScreen != null) WaterBlue else Color(0x33FFFFFF))
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            if (tempTaskbarOrder.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No tabs on taskbar. Bring items from 3-dots below!",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    tempTaskbarOrder.forEachIndexed { index, screen ->
+                                        val (label, icon, color) = when (screen) {
+                                            Screen.TASKS -> Triple("Tasks & Planner", Icons.Default.CheckCircle, Color(0xFF38BDF8))
+                                            Screen.CALENDAR -> Triple("Calendar & Schedule", Icons.Default.DateRange, Color(0xFF818CF8))
+                                            Screen.TIMER -> Triple("Focus Timer", Icons.Default.Timer, Color(0xFFF43F5E))
+                                            Screen.HABITS -> Triple("Habits & Streaks", Icons.Default.Loop, Color(0xFF10B981))
+                                            Screen.COUNTDOWN -> Triple("Countdown", Icons.Default.HourglassBottom, Color(0xFFA855F7))
+                                            Screen.JOURNAL -> Triple("Journal & Diary", Icons.Default.Book, Color(0xFFF59E0B))
+                                            Screen.KEEP_NOTES -> Triple("Keep Notes", Icons.Default.Note, Color(0xFFF59E0B))
+                                            Screen.CONTACTS -> Triple("Contacts Vault", Icons.Default.People, Color(0xFF06B6D4))
+                                            Screen.FILE_EXPLORER -> Triple("File Explorer", Icons.Default.Folder, Color(0xFF38BDF8))
+                                            Screen.FINANCES -> Triple("Finances Ledger", Icons.Default.AccountBalance, Color(0xFF10B981))
+                                            Screen.DEEPA_AI -> Triple("Deepa AI Copilot", Icons.Default.AutoAwesome, Color(0xFF6366F1))
+                                            Screen.MESSAGES -> Triple("Messages & Chat", Icons.Default.Chat, Color(0xFF38BDF8))
+                                            Screen.SEARCH -> Triple("Universal Search", Icons.Default.Search, Color(0xFFFBBF24))
+                                            Screen.ANALYTICS -> Triple("Analytics & Insights", Icons.Default.Star, Color(0xFFFBBF24))
+                                            Screen.SETTINGS -> Triple("Settings", Icons.Default.Settings, Color(0xFF94A3B8))
+                                            Screen.HEALTH -> Triple("Fitness & Wellness", Icons.Default.Favorite, Color(0xFFEF4444))
+                                            Screen.LIVE_SPHERE -> Triple("Friends Focus Details", Icons.Default.Share, Color(0xFF10B981))
+                                            Screen.ARENA -> Triple("Arena & Syllabus Tracker", Icons.Default.EmojiEvents, Color(0xFFEC4899))
+                                            Screen.FOCUS_LOCKER -> Triple("Focus Locker", Icons.Default.Lock, Color(0xFFF59E0B))
+                                            Screen.INSTAGRAM_WEB_APP -> Triple("Instagram (AntiGram)", Icons.Default.CameraAlt, Color(0xFFE1306C))
+                                            Screen.YOUTUBE_WEB_APP -> Triple("YouTube (AntiTube)", Icons.Default.PlayCircle, Color(0xFFFF0000))
+                                            Screen.SPOTIFY_WEB_APP -> Triple("Spotify (AntiSpotify)", Icons.Default.MusicNote, Color(0xFF1DB954))
+                                            Screen.GOOGLE_DRIVE_SYNC -> Triple("Google Drive Sync", Icons.Default.CloudSync, Color(0xFF4285F4))
+                                            Screen.MOVIE_TRACKER -> Triple("Movie Tracker", Icons.Default.Movie, Color(0xFFFF5252))
+                                            Screen.SHOPPING_CART -> Triple("Shopping Cart", Icons.Default.ShoppingCart, Color(0xFF00E5FF))
+                                            else -> Triple(screen.name, Icons.Default.Apps, Color.LightGray)
+                                        }
+
+                                        val parentScreen = nestedTabParents[screen]
+                                        val parentLabel = if (parentScreen != null) {
+                                            when (parentScreen) {
+                                                Screen.TASKS -> "Tasks"
+                                                Screen.CALENDAR -> "Calendar"
+                                                Screen.TIMER -> "Timer"
+                                                Screen.HABITS -> "Habits"
+                                                Screen.COUNTDOWN -> "Countdown"
+                                                Screen.JOURNAL -> "Journal"
+                                                Screen.KEEP_NOTES -> "Keep Notes"
+                                                Screen.CONTACTS -> "Contacts"
+                                                Screen.FILE_EXPLORER -> "File Explorer"
+                                                Screen.FINANCES -> "Finances"
+                                                Screen.DEEPA_AI -> "Deepa AI"
+                                                Screen.SEARCH -> "Search"
+                                                Screen.ANALYTICS -> "Analytics"
+                                                Screen.SETTINGS -> "Settings"
+                                                Screen.HEALTH -> "Fitness & Wellness"
+                                                Screen.MESSAGES -> "Messages"
+                                                Screen.ARENA -> "Arena"
+                                                else -> parentScreen.name
+                                            }
+                                        } else null
+
+                                        var showParentPicker by remember { mutableStateOf(false) }
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFF1E1E24), RoundedCornerShape(8.dp))
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Row(
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                                modifier = Modifier.weight(1f),
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                Text(
-                                                    text = if (parentScreen != null) "In $parentLabel" else "Move inside...",
-                                                    color = if (parentScreen != null) WaterBlue else Color.LightGray,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                                Icon(
-                                                    imageVector = Icons.Default.ArrowDropDown,
-                                                    contentDescription = "Select Parent",
-                                                    tint = if (parentScreen != null) WaterBlue else Color.LightGray,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                            }
-                                        }
-
-                                        DropdownMenu(
-                                            expanded = showParentPicker,
-                                            onDismissRequest = { showParentPicker = false },
-                                            modifier = Modifier.background(Color(0xFF1E1E1E))
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text("Main Navigation Bar (No Parent)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                                                onClick = {
-                                                    viewModel.setTabParent(screen, null)
-                                                    showParentPicker = false
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(24.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(color.copy(alpha = 0.2f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = icon,
+                                                        contentDescription = null,
+                                                        tint = color,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
                                                 }
-                                            )
-                                            tempOrder.filter { it != screen }.forEach { candidate ->
-                                                val candLabel = when (candidate) {
-                                                    Screen.TASKS -> "Tasks"
-                                                    Screen.CALENDAR -> "Calendar"
-                                                    Screen.TIMER -> "Timer"
-                                                    Screen.HABITS -> "Habits"
-                                                    Screen.COUNTDOWN -> "Countdown"
-                                                    Screen.JOURNAL -> "Journal"
-                                                    Screen.KEEP_NOTES -> "Keep Notes"
-                                                    Screen.CONTACTS -> "Contacts"
-                                                    Screen.FILE_EXPLORER -> "File Explorer"
-                                                    Screen.FINANCES -> "Finances"
-                                                    Screen.DEEPA_AI -> "Deepa AI"
-                                                    Screen.SEARCH -> "Search"
-                                                    Screen.ANALYTICS -> "Analytics"
-                                                    Screen.SETTINGS -> "Settings"
-                                                    Screen.HEALTH -> "Health"
-                                                    Screen.MESSAGES -> "Messages"
-                                                    Screen.ARENA -> "Arena"
-                                                    else -> candidate.name
-                                                }
-                                                DropdownMenuItem(
-                                                    text = { Text("Move inside $candLabel", color = WaterBlue, fontSize = 11.sp) },
-                                                    onClick = {
-                                                        viewModel.setTabParent(screen, candidate)
-                                                        showParentPicker = false
+                                                Column {
+                                                    Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    if (parentLabel != null) {
+                                                        Text(
+                                                            text = "↳ Inside $parentLabel",
+                                                            color = WaterBlue,
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Medium
+                                                        )
                                                     }
-                                                )
+                                                }
+                                            }
+
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                // Nesting dropdown
+                                                Box {
+                                                    Surface(
+                                                        onClick = { showParentPicker = true },
+                                                        color = if (parentScreen != null) WaterBlue.copy(alpha = 0.2f) else Color(0xFF2A2A34),
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        border = BorderStroke(1.dp, if (parentScreen != null) WaterBlue else Color(0x22FFFFFF))
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = if (parentScreen != null) "In $parentLabel" else "Nest",
+                                                                color = if (parentScreen != null) WaterBlue else Color.LightGray,
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.SemiBold
+                                                            )
+                                                            Icon(
+                                                                imageVector = Icons.Default.ArrowDropDown,
+                                                                contentDescription = "Select Parent",
+                                                                tint = if (parentScreen != null) WaterBlue else Color.LightGray,
+                                                                modifier = Modifier.size(11.dp)
+                                                            )
+                                                        }
+                                                    }
+
+                                                    DropdownMenu(
+                                                        expanded = showParentPicker,
+                                                        onDismissRequest = { showParentPicker = false },
+                                                        modifier = Modifier.background(Color(0xFF1E1E1E))
+                                                    ) {
+                                                        DropdownMenuItem(
+                                                            text = { Text("Main Navigation Bar (No Parent)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                                                            onClick = {
+                                                                viewModel.setTabParent(screen, null)
+                                                                showParentPicker = false
+                                                            }
+                                                        )
+                                                        tempTaskbarOrder.filter { it != screen }.forEach { candidate ->
+                                                            val candLabel = when (candidate) {
+                                                                Screen.TASKS -> "Tasks"
+                                                                Screen.CALENDAR -> "Calendar"
+                                                                Screen.TIMER -> "Timer"
+                                                                Screen.HABITS -> "Habits"
+                                                                Screen.COUNTDOWN -> "Countdown"
+                                                                Screen.JOURNAL -> "Journal"
+                                                                Screen.KEEP_NOTES -> "Keep Notes"
+                                                                Screen.CONTACTS -> "Contacts"
+                                                                Screen.FILE_EXPLORER -> "File Explorer"
+                                                                Screen.FINANCES -> "Finances"
+                                                                Screen.DEEPA_AI -> "Deepa AI"
+                                                                Screen.SEARCH -> "Search"
+                                                                Screen.ANALYTICS -> "Analytics"
+                                                                Screen.SETTINGS -> "Settings"
+                                                                Screen.HEALTH -> "Health"
+                                                                Screen.MESSAGES -> "Messages"
+                                                                Screen.ARENA -> "Arena"
+                                                                else -> candidate.name
+                                                            }
+                                                            DropdownMenuItem(
+                                                                text = { Text("Move inside $candLabel", color = WaterBlue, fontSize = 11.sp) },
+                                                                onClick = {
+                                                                    viewModel.setTabParent(screen, candidate)
+                                                                    showParentPicker = false
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                val isTabHidden = hiddenTabs.contains(screen)
+                                                IconButton(
+                                                    onClick = { viewModel.toggleTabVisibility(screen) },
+                                                    modifier = Modifier.size(26.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (isTabHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                        contentDescription = "Toggle Visibility",
+                                                        tint = if (isTabHidden) Color.Gray else WaterBlue,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+
+                                                IconButton(
+                                                    onClick = {
+                                                        if (index > 0) {
+                                                            val list = tempTaskbarOrder.toMutableList()
+                                                            val tmp = list.removeAt(index)
+                                                            list.add(index - 1, tmp)
+                                                            tempTaskbarOrder = list
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(26.dp),
+                                                    enabled = index > 0
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                                        contentDescription = "Move Up",
+                                                        tint = if (index > 0) Color.White else Color.DarkGray,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+
+                                                IconButton(
+                                                    onClick = {
+                                                        if (index < tempTaskbarOrder.size - 1) {
+                                                            val list = tempTaskbarOrder.toMutableList()
+                                                            val tmp = list.removeAt(index)
+                                                            list.add(index + 1, tmp)
+                                                            tempTaskbarOrder = list
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(26.dp),
+                                                    enabled = index < tempTaskbarOrder.size - 1
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                                        contentDescription = "Move Down",
+                                                        tint = if (index < tempTaskbarOrder.size - 1) Color.White else Color.DarkGray,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+
+                                                // Move to 3-Dots Button
+                                                Surface(
+                                                    onClick = {
+                                                        val taskbarList = tempTaskbarOrder.toMutableList()
+                                                        val overflowList = tempOverflowOrder.toMutableList()
+                                                        taskbarList.remove(screen)
+                                                        if (!overflowList.contains(screen)) {
+                                                            overflowList.add(screen)
+                                                        }
+                                                        tempTaskbarOrder = taskbarList
+                                                        tempOverflowOrder = overflowList
+                                                    },
+                                                    color = Color(0xFF2C2436),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    border = BorderStroke(1.dp, Color(0xFF9C27B0).copy(alpha = 0.4f)),
+                                                    modifier = Modifier.testTag("move_to_overflow_${screen.name.lowercase()}")
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                    ) {
+                                                        Text("⋯", color = Color(0xFFCE93D8), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                                                        Text("3-Dots", color = Color(0xFFCE93D8), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
                                             }
                                         }
-                                    }
-
-                                    val isTabHidden = hiddenTabs.contains(screen)
-                                    IconButton(
-                                        onClick = { viewModel.toggleTabVisibility(screen) },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isTabHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = "Toggle Visibility",
-                                            tint = if (isTabHidden) Color.Gray else WaterBlue,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-
-                                    IconButton(
-                                        onClick = {
-                                            if (index > 0) {
-                                                val list = tempOrder.toMutableList()
-                                                val tmp = list.removeAt(index)
-                                                list.add(index - 1, tmp)
-                                                tempOrder = list
-                                            }
-                                        },
-                                        modifier = Modifier.size(28.dp),
-                                        enabled = index > 0
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.KeyboardArrowUp,
-                                            contentDescription = "Move Up",
-                                            tint = if (index > 0) Color.White else Color.DarkGray,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-
-                                    IconButton(
-                                        onClick = {
-                                            if (index < tempOrder.size - 1) {
-                                                val list = tempOrder.toMutableList()
-                                                val tmp = list.removeAt(index)
-                                                list.add(index + 1, tmp)
-                                                tempOrder = list
-                                            }
-                                        },
-                                        modifier = Modifier.size(28.dp),
-                                        enabled = index < tempOrder.size - 1
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.KeyboardArrowDown,
-                                            contentDescription = "Move Down",
-                                            tint = if (index < tempOrder.size - 1) Color.White else Color.DarkGray,
-                                            modifier = Modifier.size(16.dp)
-                                        )
                                     }
                                 }
                             }
                         }
+                    }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                        Button(
-                            onClick = { viewModel.saveTabOrder(tempOrder) },
+                    // SECTION 2: ⋯ 3-Dots "More Apps & Tools" Menu
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF161420),
+                        border = BorderStroke(1.dp, Color(0xFF9C27B0).copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Apps,
+                                        contentDescription = null,
+                                        tint = Color(0xFFCE93D8),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "⋯ 3-Dots Menu Apps & Tools (${tempOverflowOrder.size})",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = "Inside 3-dots sheet",
+                                    color = Color(0xFFCE93D8),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            if (tempOverflowOrder.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "3-dots menu is empty. Click '⋯ 3-Dots' on any taskbar tab above to move it here!",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    tempOverflowOrder.forEachIndexed { index, screen ->
+                                        val (label, icon, color) = when (screen) {
+                                            Screen.TASKS -> Triple("Tasks & Planner", Icons.Default.CheckCircle, Color(0xFF38BDF8))
+                                            Screen.CALENDAR -> Triple("Calendar & Schedule", Icons.Default.DateRange, Color(0xFF818CF8))
+                                            Screen.TIMER -> Triple("Focus Timer", Icons.Default.Timer, Color(0xFFF43F5E))
+                                            Screen.HABITS -> Triple("Habits & Streaks", Icons.Default.Loop, Color(0xFF10B981))
+                                            Screen.COUNTDOWN -> Triple("Countdown", Icons.Default.HourglassBottom, Color(0xFFA855F7))
+                                            Screen.JOURNAL -> Triple("Journal & Diary", Icons.Default.Book, Color(0xFFF59E0B))
+                                            Screen.KEEP_NOTES -> Triple("Keep Notes", Icons.Default.Note, Color(0xFFF59E0B))
+                                            Screen.CONTACTS -> Triple("Contacts Vault", Icons.Default.People, Color(0xFF06B6D4))
+                                            Screen.FILE_EXPLORER -> Triple("File Explorer", Icons.Default.Folder, Color(0xFF38BDF8))
+                                            Screen.FINANCES -> Triple("Finances Ledger", Icons.Default.AccountBalance, Color(0xFF10B981))
+                                            Screen.DEEPA_AI -> Triple("Deepa AI Copilot", Icons.Default.AutoAwesome, Color(0xFF6366F1))
+                                            Screen.MESSAGES -> Triple("Messages & Chat", Icons.Default.Chat, Color(0xFF38BDF8))
+                                            Screen.SEARCH -> Triple("Universal Search", Icons.Default.Search, Color(0xFFFBBF24))
+                                            Screen.ANALYTICS -> Triple("Analytics & Insights", Icons.Default.Star, Color(0xFFFBBF24))
+                                            Screen.SETTINGS -> Triple("Settings", Icons.Default.Settings, Color(0xFF94A3B8))
+                                            Screen.HEALTH -> Triple("Fitness & Wellness", Icons.Default.Favorite, Color(0xFFEF4444))
+                                            Screen.LIVE_SPHERE -> Triple("Friends Focus Details", Icons.Default.Share, Color(0xFF10B981))
+                                            Screen.ARENA -> Triple("Arena & Syllabus Tracker", Icons.Default.EmojiEvents, Color(0xFFEC4899))
+                                            Screen.FOCUS_LOCKER -> Triple("Focus Locker", Icons.Default.Lock, Color(0xFFF59E0B))
+                                            Screen.INSTAGRAM_WEB_APP -> Triple("Instagram (AntiGram)", Icons.Default.CameraAlt, Color(0xFFE1306C))
+                                            Screen.YOUTUBE_WEB_APP -> Triple("YouTube (AntiTube)", Icons.Default.PlayCircle, Color(0xFFFF0000))
+                                            Screen.SPOTIFY_WEB_APP -> Triple("Spotify (AntiSpotify)", Icons.Default.MusicNote, Color(0xFF1DB954))
+                                            Screen.GOOGLE_DRIVE_SYNC -> Triple("Google Drive Sync", Icons.Default.CloudSync, Color(0xFF4285F4))
+                                            Screen.MOVIE_TRACKER -> Triple("Movie Tracker", Icons.Default.Movie, Color(0xFFFF5252))
+                                            Screen.SHOPPING_CART -> Triple("Shopping Cart", Icons.Default.ShoppingCart, Color(0xFF00E5FF))
+                                            else -> Triple(screen.name, Icons.Default.Apps, Color.LightGray)
+                                        }
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color(0xFF201D2A), RoundedCornerShape(8.dp))
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.weight(1f),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(24.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(color.copy(alpha = 0.2f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = icon,
+                                                        contentDescription = null,
+                                                        tint = color,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                }
+                                                Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                IconButton(
+                                                    onClick = {
+                                                        if (index > 0) {
+                                                            val list = tempOverflowOrder.toMutableList()
+                                                            val tmp = list.removeAt(index)
+                                                            list.add(index - 1, tmp)
+                                                            tempOverflowOrder = list
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(26.dp),
+                                                    enabled = index > 0
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                                        contentDescription = "Move Up in 3-Dots",
+                                                        tint = if (index > 0) Color.White else Color.DarkGray,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+
+                                                IconButton(
+                                                    onClick = {
+                                                        if (index < tempOverflowOrder.size - 1) {
+                                                            val list = tempOverflowOrder.toMutableList()
+                                                            val tmp = list.removeAt(index)
+                                                            list.add(index + 1, tmp)
+                                                            tempOverflowOrder = list
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(26.dp),
+                                                    enabled = index < tempOverflowOrder.size - 1
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                                        contentDescription = "Move Down in 3-Dots",
+                                                        tint = if (index < tempOverflowOrder.size - 1) Color.White else Color.DarkGray,
+                                                        modifier = Modifier.size(15.dp)
+                                                    )
+                                                }
+
+                                                // Bring back to Taskbar Button
+                                                Surface(
+                                                    onClick = {
+                                                        val taskbarList = tempTaskbarOrder.toMutableList()
+                                                        val overflowList = tempOverflowOrder.toMutableList()
+                                                        overflowList.remove(screen)
+                                                        if (!taskbarList.contains(screen)) {
+                                                            taskbarList.add(screen)
+                                                        }
+                                                        tempTaskbarOrder = taskbarList
+                                                        tempOverflowOrder = overflowList
+                                                    },
+                                                    color = WaterBlue.copy(alpha = 0.15f),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.5f)),
+                                                    modifier = Modifier.testTag("bring_to_taskbar_${screen.name.lowercase()}")
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Dock,
+                                                            contentDescription = null,
+                                                            tint = WaterBlue,
+                                                            modifier = Modifier.size(11.dp)
+                                                        )
+                                                        Text("Taskbar", color = WaterBlue, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Action buttons
+                    Button(
+                        onClick = {
+                            viewModel.saveTabAndOverflowConfiguration(tempTaskbarOrder, tempOverflowOrder)
+                            Toast.makeText(context, "✅ Tab layout & 3-dots configuration saved successfully!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("save_tab_and_overflow_order_btn"),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
+                    ) {
+                        Text("SAVE TAB & 3-DOTS LAYOUT", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.resetTabConfigurationToDefault()
+                                tempTaskbarOrder = viewModel.defaultScreens
+                                tempOverflowOrder = if (isAiSupported) {
+                                    AppViewModel.DEFAULT_OVERFLOW_MENU_SCREENS.toList()
+                                } else {
+                                    AppViewModel.DEFAULT_OVERFLOW_MENU_SCREENS.filterNot { it == Screen.DEEPA_AI }
+                                }
+                                Toast.makeText(context, "🔄 Reset tab layout to default layout", Toast.LENGTH_SHORT).show()
+                            },
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp)
-                                .testTag("save_tab_order_subpage_btn"),
+                                .weight(1f)
+                                .height(38.dp),
                             shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
+                            border = BorderStroke(1.dp, Color(0x44FFFFFF)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray)
                         ) {
-                            Text("SAVE TAB ORDER", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("RESET TO DEFAULT", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
 
                         if (nestedTabParents.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(6.dp))
                             OutlinedButton(
-                                onClick = { viewModel.clearAllTabNesting() },
-                                modifier = Modifier.fillMaxWidth().height(40.dp),
+                                onClick = {
+                                    viewModel.clearAllTabNesting()
+                                    Toast.makeText(context, "🔄 Tab nesting cleared", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp),
                                 shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.6f)),
+                                border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red)
                             ) {
-                                Text("RESET ALL TAB NESTING", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text("CLEAR NESTING", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

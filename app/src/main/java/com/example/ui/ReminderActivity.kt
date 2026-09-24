@@ -50,6 +50,12 @@ import androidx.lifecycle.lifecycleScope
 import com.example.data.AppDatabase
 import com.example.ui.theme.MyApplicationTheme
 import com.example.util.AlarmScheduler
+import com.example.util.SleepTimeHelper
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material.icons.filled.Bedtime
+import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -237,46 +243,287 @@ class ReminderActivity : ComponentActivity() {
     private fun BedtimeScreen(
         onDismiss: () -> Unit
     ) {
+        val context = LocalContext.current
+        val prefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+        val userName = remember {
+            prefs.getString("user_name", "")?.takeIf { it.isNotBlank() }
+                ?: prefs.getString("user_nickname", "")?.takeIf { it.isNotBlank() }
+        }
+        val wakeUpTimeStr = remember { SleepTimeHelper.getWakeUpTime(context) ?: "07:00" }
+
+        // Live calculation of remaining sleep seconds until next scheduled wake-up time
+        var remainingSecondsToSleep by remember {
+            mutableLongStateOf(calculateRemainingSleepSeconds(wakeUpTimeStr))
+        }
+
+        LaunchedEffect(wakeUpTimeStr) {
+            while (true) {
+                remainingSecondsToSleep = calculateRemainingSleepSeconds(wakeUpTimeStr)
+                kotlinx.coroutines.delay(1000L)
+            }
+        }
+
+        // If untouched for 10 seconds OR if touched: dismiss/close immediately
+        var isDismissed by remember { mutableStateOf(false) }
+        val handleDismiss = remember(onDismiss) {
+            {
+                if (!isDismissed) {
+                    isDismissed = true
+                    onDismiss()
+                }
+            }
+        }
+
+        var autoCloseCountdown by remember { mutableIntStateOf(10) }
+
+        LaunchedEffect(Unit) {
+            autoCloseCountdown = 10
+            while (autoCloseCountdown > 0) {
+                kotlinx.coroutines.delay(1000L)
+                autoCloseCountdown--
+            }
+            handleDismiss()
+        }
+
+        // Pulsing glowing animation for the moon
+        val infiniteTransition = rememberInfiniteTransition(label = "bedtime_pulse")
+        val pulseScale by infiniteTransition.animateFloat(
+            initialValue = 0.94f,
+            targetValue = 1.06f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2800, easing = EaseInOutCubic),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "scale"
+        )
+        val haloAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.12f,
+            targetValue = 0.30f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2800, easing = EaseInOutCubic),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "alpha"
+        )
+
+        val sleepHours = remainingSecondsToSleep / 3600
+        val sleepMins = (remainingSecondsToSleep % 3600) / 60
+        val sleepSecs = remainingSecondsToSleep % 60
+
+        val formattedWakeUp = remember(wakeUpTimeStr) {
+            try {
+                val parts = wakeUpTimeStr.split(":")
+                val h = parts.getOrNull(0)?.toIntOrNull() ?: 7
+                val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                val cal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, h)
+                    set(Calendar.MINUTE, m)
+                }
+                java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(cal.time)
+            } catch (e: Exception) {
+                wakeUpTimeStr
+            }
+        }
+
         Box(
-            modifier = Modifier.fillMaxSize().background(Color(0xFF06070D)),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF030510), Color(0xFF0A0F24), Color(0xFF040612))
+                    )
+                )
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            // If display is touched anywhere, go away immediately
+                            if (event.changes.any { it.pressed }) {
+                                handleDismiss()
+                                break
+                            }
+                        }
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(32.dp)
+                verticalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp, vertical = 40.dp)
             ) {
-                Text(
-                    text = "🌙",
-                    fontSize = 72.sp,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                Text(
-                    text = "Bedtime Reminder",
-                    color = Color.White,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
+                // Top spacing / indicator
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "It's time to wind down and prepare for sleep. Rest well!",
-                    color = Color.LightGray,
-                    fontSize = 15.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 22.sp
-                )
-                Spacer(modifier = Modifier.height(48.dp))
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38B0F2)),
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.width(200.dp).height(48.dp)
+
+                // Center section: Moon + Good Night wish + Remaining Sleep Time
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Goodnight", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    // Glowing Moon Halo
+                    Box(
+                        modifier = Modifier
+                            .size(130.dp)
+                            .graphicsLayer {
+                                scaleX = pulseScale
+                                scaleY = pulseScale
+                            }
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(Color(0xFF818CF8).copy(alpha = haloAlpha), Color.Transparent)
+                                ),
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "🌙",
+                            fontSize = 72.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Good Night greeting
+                    Text(
+                        text = if (!userName.isNullOrBlank()) "Good Night, $userName!" else "Good Night! 🌙",
+                        color = Color.White,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Center,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Wishing you restful sleep and peaceful dreams.",
+                        color = Color(0xFFC7D2FE),
+                        fontSize = 15.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(32.dp))
+
+                    // Remaining time to sleep Card
+                    Card(
+                        shape = RoundedCornerShape(22.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF11172E).copy(alpha = 0.85f)),
+                        border = BorderStroke(1.dp, Color(0xFF818CF8).copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth(0.92f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 22.dp, horizontal = 20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bedtime,
+                                    contentDescription = null,
+                                    tint = Color(0xFF818CF8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "REMAINING TIME TO SLEEP",
+                                    color = Color(0xFFA5B4FC),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.2.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                verticalAlignment = Alignment.Bottom,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "${sleepHours}h ${sleepMins}m",
+                                    color = Color.White,
+                                    fontSize = 40.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = String.format(java.util.Locale.US, "%02ds", sleepSecs),
+                                    color = Color(0xFF818CF8),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(bottom = 6.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Surface(
+                                color = Color(0xFF1E294B).copy(alpha = 0.65f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = "⏰ Wake-up scheduled for $formattedWakeUp",
+                                    color = Color(0xFFE0E7FF),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Bottom auto-close indicator (No buttons, auto-closes if untouched for 10 sec)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                ) {
+                    LinearProgressIndicator(
+                        progress = { (autoCloseCountdown / 10f).coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth(0.5f)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = Color(0xFF818CF8),
+                        trackColor = Color(0xFF1E293B)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Auto-closing in ${autoCloseCountdown}s • Tap anywhere to dismiss",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
+    }
+
+    private fun calculateRemainingSleepSeconds(wakeUpTimeStr: String): Long {
+        val parts = wakeUpTimeStr.split(":")
+        val targetHour = parts.getOrNull(0)?.toIntOrNull() ?: 7
+        val targetMin = parts.getOrNull(1)?.toIntOrNull() ?: 0
+
+        val now = Calendar.getInstance()
+        val target = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, targetHour)
+            set(Calendar.MINUTE, targetMin)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        if (target.timeInMillis <= now.timeInMillis) {
+            target.add(Calendar.DAY_OF_YEAR, 1)
+        }
+        val diffMs = target.timeInMillis - now.timeInMillis
+        return (diffMs / 1000L).coerceAtLeast(0L)
     }
 
     @Composable

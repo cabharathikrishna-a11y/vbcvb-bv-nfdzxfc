@@ -219,6 +219,151 @@ fun GoogleDriveSyncView(
                 }
             }
 
+            // Atomic 3-Pass Continuous Live Sync Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                border = BorderStroke(1.5.dp, Color(0xFF38BDF8)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.SyncLock,
+                                contentDescription = null,
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Atomic 3-Pass Live Sync",
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Assess → Reconcile & Bookkeep → Parity Verification",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                        Surface(
+                            color = Color(0xFF38BDF8).copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "Continuous",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Synchronizes every individual item (Tasks, Notes, Chats, Contacts, Habits, Journal, Finances, View Settings & Tab Layout) into dedicated subfolders in 'LifeOS_Sync_Vault'. Records full edit audit logs and respects deleted tombstones across devices.",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    var liveSyncRunning by remember { mutableStateOf(false) }
+                    var liveSyncPhase by remember { mutableStateOf("Ready") }
+                    var liveSyncPercent by remember { mutableStateOf(0) }
+                    var liveSyncDetail by remember { mutableStateOf("Tap below to start 3-pass reconciliation") }
+
+                    if (liveSyncRunning) {
+                        Surface(
+                            color = Color(0xFF0F172A),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = liveSyncPhase,
+                                        color = Color(0xFF38BDF8),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = "$liveSyncPercent%",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+
+                                LinearProgressIndicator(
+                                    progress = { (liveSyncPercent / 100f).coerceIn(0f, 1f) },
+                                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                    color = Color(0xFF38BDF8),
+                                    trackColor = Color(0xFF334155)
+                                )
+
+                                Text(
+                                    text = liveSyncDetail,
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                liveSyncRunning = true
+                                liveSyncPhase = "Pass 1: Read & Assess"
+                                liveSyncPercent = 15
+                                liveSyncDetail = "Reading cloud tombstones and assessing delta..."
+                                addLog("Starting Atomic 3-Pass Live Sync...")
+
+                                viewModel.triggerGoogleDriveLiveSync(
+                                    context = context,
+                                    onProgress = { phase, percent, detail ->
+                                        liveSyncPhase = phase
+                                        liveSyncPercent = percent
+                                        liveSyncDetail = detail
+                                        addLog("[$phase] $detail")
+                                    },
+                                    onComplete = { success, msg ->
+                                        liveSyncRunning = false
+                                        liveSyncPercent = 100
+                                        lastSyncTime = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date())
+                                        addLog(msg)
+                                        Toast.makeText(context, if (success) "Live Sync Complete ✅" else "Sync Error ⚠️", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(imageVector = Icons.Default.Sync, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Run Live 3-Pass Parity Sync", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
             // One-Tap Sync Controls
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),

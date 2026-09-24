@@ -2723,6 +2723,16 @@ object GoogleContactsSyncManager {
 // ==================== CONSOLIDATED FROM: GoogleDriveSyncManager.kt ====================
 object GoogleDriveSyncManager {
 
+    suspend fun execute3PassLiveSync(
+        context: Context,
+        database: com.example.data.AppDatabase,
+        onProgress: (phase: String, percent: Int, detail: String) -> Unit = { _, _, _ -> },
+        onAuthResolutionRequired: (Intent) -> Unit = {}
+    ): SyncSummaryReport = GoogleDriveLiveSyncManager.execute3PassLiveSync(context, database, onProgress, onAuthResolutionRequired)
+
+    fun recordLocalDeletion(context: Context, uid: String, entityType: String) =
+        GoogleDriveLiveSyncManager.recordLocalDeletion(context, uid, entityType)
+
     suspend fun getAccessToken(
         context: Context,
         onAuthResolutionRequired: (Intent) -> Unit = {}

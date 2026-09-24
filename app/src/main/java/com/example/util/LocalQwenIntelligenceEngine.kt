@@ -70,11 +70,16 @@ object LocalQwenIntelligenceEngine {
             }
         } catch (_: Exception) {}
 
-        return@withContext processOfflineReasoning(cleanPrompt, systemContext)
+        return@withContext processOfflineReasoning(context, cleanPrompt, systemContext)
     }
 
-    private fun processOfflineReasoning(prompt: String, systemContext: String): String {
+    private fun processOfflineReasoning(context: Context, prompt: String, systemContext: String): String {
         val lower = prompt.lowercase(Locale.getDefault()).trim()
+
+        // 0. Hardware & Model Compatibility / Diagnostics Queries
+        if (isCompatibilityQuery(lower)) {
+            return generateCompatibilityReportResponse(context)
+        }
 
         // 1. Math / Calculations / Percentages / Interest / Unit Conversions
         val mathResult = tryEvaluateMath(prompt, lower)
@@ -1005,6 +1010,35 @@ object LocalQwenIntelligenceEngine {
         
         3. **Actionable Next Step:**
            - Translate this understanding into immediate execution or dedicated focus time inside Life OS.
+        """.trimIndent()
+    }
+
+    private fun isCompatibilityQuery(lower: String): Boolean {
+        return lower.contains("compatib") || lower.contains("hardware spec") ||
+                lower.contains("is my phone compatible") || lower.contains("is device compatible") ||
+                lower.contains("engine health") || lower.contains("ram test") || lower.contains("benchmark")
+    }
+
+    private fun generateCompatibilityReportResponse(context: Context): String {
+        val report = DeviceSpecsManager.verifyModelCompatibility(context)
+        val bulletList = report.compatibilityDetails.joinToString("\n") { "- $it" }
+
+        return """
+        ### 🛡️ On-Device AI Compatibility & Diagnostics Report
+
+        **System Verdict:** ${report.diagnosticSummary}
+        **Readiness Rating:** **${report.readinessPercentage}%**
+
+        #### 📋 Hardware & Model Telemetry:
+        $bulletList
+
+        #### ⚡ Execution Profile:
+        - **Backend:** `${report.executionBackend}`
+        - **RAM Tier:** `${report.ramStatusLevel}` (${report.physicalRamGb} GB Total / ${report.availableRamGb} GB Avail)
+        - **Thermal State:** `${report.thermalState}`
+        - **OOM Shield:** `${if (report.oomSafetyShieldActive) "ACTIVE (Crash Prevention Safe)" else "Standard"}`
+
+        *This device is verified to execute on-device AI reasoning with zero external network traffic.*
         """.trimIndent()
     }
 }
