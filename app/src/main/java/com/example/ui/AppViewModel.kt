@@ -3262,6 +3262,10 @@ class AppViewModel(
             }
         }
 
+        // Update widgets and shortcuts to reflect newly authenticated session
+        com.example.widget.WidgetManager.updateAllWidgets(getApplication())
+        com.example.util.AppShortcutHelper.publishDynamicShortcuts(getApplication())
+
         if (isAdminUser) {
             navigateTo(getDefaultScreen())
         } else {
@@ -3735,6 +3739,10 @@ class AppViewModel(
 
             // 5. Final state: user told backup is in Downloads and app will close
             _logoutFlowState.value = LogoutFlowState.Completed(fileName)
+
+            // Update all widgets & shortcuts to immediately show logged out "LOG IN" button
+            com.example.widget.WidgetManager.updateAllWidgets(context)
+            com.example.util.AppShortcutHelper.publishDynamicShortcuts(context)
         }
     }
 
@@ -11343,6 +11351,8 @@ class AppViewModel(
                 .remove("user_email")
                 .apply()
             _currentScreen.value = Screen.LOGIN
+            com.example.widget.WidgetManager.updateAllWidgets(application)
+            com.example.util.AppShortcutHelper.publishDynamicShortcuts(application)
         }
 
         // Centralized sessionStartTimestamp management natively derived from DynamicCommandManager

@@ -129,27 +129,14 @@ class KeepAliveService : Service() {
         }
     }
 
-    private fun createFastBootstrapNotification(): Notification {
-        return NotificationCompat.Builder(this, LiveTimerNotificationManager.CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Focus Session")
-            .setContentText("Focus background daemon active")
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
-    }
-
     override fun onCreate() {
         super.onCreate()
+        instance = this
         
-        // 1. ABSOLUTE FIRST PRIORITY: Instantly start foreground with a minimal safe notification
-        // This unconditionally satisfies the Android OS contract within microseconds and prevents
-        // ForegroundServiceDidNotStartInTimeException under all startup, restart, and login conditions.
+        // 1. ABSOLUTE FIRST PRIORITY: Instantly start foreground with the unified live notification
         ensureNotificationChannel()
-        val bootstrapNotification = createFastBootstrapNotification()
-        startForegroundSafe(NOTIFICATION_ID, bootstrapNotification)
+        val initialNotification = LiveTimerNotificationManager.buildNotification(this)
+        startForegroundSafe(NOTIFICATION_ID, initialNotification)
 
         // 2. Safely verify authentication status; if unauthenticated, gracefully terminate foreground
         if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
@@ -175,14 +162,6 @@ class KeepAliveService : Service() {
             com.example.util.NetworkTrafficManager.init(this)
         } catch (e: Throwable) {
             Log.e("KeepAliveService", "Error initializing display relays: ${e.message}", e)
-        }
-
-        // 4. Update with rich notification safely
-        try {
-            val richNotification = LiveTimerNotificationManager.buildNotification(this)
-            startForegroundSafe(NOTIFICATION_ID, richNotification)
-        } catch (e: Throwable) {
-            Log.e("KeepAliveService", "Failed to update with rich notification in onCreate: ${e.message}", e)
         }
 
         // Dynamically manage WakeLock: only hold it when a timer or stopwatch is actively running
@@ -338,10 +317,8 @@ class KeepAliveService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Guarantee startForeground was called
+        instance = this
         ensureNotificationChannel()
-        val bootstrapNotification = createFastBootstrapNotification()
-        startForegroundSafe(NOTIFICATION_ID, bootstrapNotification)
 
         if (!com.example.util.AuthGatekeeper.isUserLoggedIn(this)) {
             Log.d("KeepAliveService", "KeepAliveService onStartCommand: User is not logged in. Cleanly stopping.")
@@ -367,7 +344,7 @@ class KeepAliveService : Service() {
                 LiveTimerNotificationManager.dispatchCommand(this, action)
             }
 
-            // Immediately build the actual up-to-date notification and set it as foreground
+            // Immediately build the actual up-to-date notification and set it as foreground once
             val notification = LiveTimerNotificationManager.buildNotification(this)
             startForegroundSafe(NOTIFICATION_ID, notification)
         } catch (e: Exception) {
@@ -382,7 +359,12 @@ class KeepAliveService : Service() {
     fun updateNotificationDirectly() {
         try {
             val notification = LiveTimerNotificationManager.buildNotification(this)
-            startForegroundSafe(NOTIFICATION_ID, notification)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            if (manager != null) {
+                manager.notify(NOTIFICATION_ID, notification)
+            } else {
+                startForegroundSafe(NOTIFICATION_ID, notification)
+            }
         } catch (e: Exception) {
             Log.e("KeepAliveService", "Failed to update notification directly: ${e.message}", e)
         }
@@ -917,6 +899,7 @@ class KeepAliveService : Service() {
             }
             serviceJob.cancel()
         } finally {
+            instance = null
             releaseWakeLock()
             super.onDestroy()
         }
@@ -948,6 +931,9 @@ class KeepAliveService : Service() {
         const val ACTION_PAUSE_STOPWATCH = "com.example.service.ACTION_PAUSE_STOPWATCH"
         const val ACTION_RESUME_STOPWATCH = "com.example.service.ACTION_RESUME_STOPWATCH"
         const val ACTION_RESET_STOPWATCH = "com.example.service.ACTION_RESET_STOPWATCH"
+
+        @Volatile
+        private var instance: KeepAliveService? = null
         
         fun start(context: Context) {
             try {
@@ -1004,13 +990,12 @@ class KeepAliveService : Service() {
                     return
                 }
 
-                val intent = Intent(context.applicationContext, KeepAliveService::class.java).apply {
-                    action = "com.example.service.UPDATE_NOTIFICATION"
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.applicationContext.startForegroundService(intent)
+                val activeInstance = instance
+                if (activeInstance != null) {
+                    // Update running foreground notification in-place without IPC or onStartCommand re-entry
+                    activeInstance.updateNotificationDirectly()
                 } else {
-                    context.applicationContext.startService(intent)
+                    start(context)
                 }
             } catch (e: Exception) {
                 Log.e("KeepAliveService", "Failed to update notification service: ${e.message}", e)

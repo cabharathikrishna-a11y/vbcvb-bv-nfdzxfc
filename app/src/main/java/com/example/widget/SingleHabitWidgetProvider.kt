@@ -116,6 +116,12 @@ class SingleHabitWidgetProvider : AppWidgetProvider() {
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             providerScope.launch(Dispatchers.IO) {
                 try {
+                    if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                        val loggedOutViews = WidgetManager.createLoggedOutRemoteViews(context, appWidgetId, "Habit")
+                        appWidgetManager.updateAppWidget(appWidgetId, loggedOutViews)
+                        return@launch
+                    }
+
                     val views = RemoteViews(context.packageName, R.layout.widget_single_habit)
                     val bgRes = WidgetManager.getBackgroundDrawableRes(context)
                     views.setInt(android.R.id.background, "setBackgroundResource", bgRes)

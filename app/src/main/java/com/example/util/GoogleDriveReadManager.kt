@@ -519,7 +519,8 @@ object GoogleDriveReadManager {
     }
 
     /**
-     * Restores application settings and preferences from Google Drive.
+     * Restores application settings and preferences from Google Drive using deterministic constant UIDs
+     * and bidirectional timestamp conflict resolution.
      */
     suspend fun restoreAppSettingsFromDrive(
         context: Context,
@@ -527,55 +528,7 @@ object GoogleDriveReadManager {
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val token = getAccessToken(context, onAuthResolutionRequired) ?: return@withContext Pair(false, "Google Drive auth required.")
         try {
-            val vault = GoogleDriveUploadManager.ensureVaultStructureAndReadme(token)
-            val backupsId = vault?.backupsId
-            val fileName = "app_settings_sync.json"
-            val fileId = if (backupsId != null) {
-                GoogleDriveUploadManager.findFileInFolder(token, fileName, backupsId)
-            } else {
-                findFileId(token, fileName)
-            } ?: return@withContext Pair(false, "No settings backup found on Google Drive.")
-
-            val request = Request.Builder()
-                .url("https://www.googleapis.com/drive/v3/files/$fileId?alt=media")
-                .addHeader("Authorization", "Bearer $token")
-                .build()
-
-            client.newCall(request).execute().use { res ->
-                if (!res.isSuccessful) return@withContext Pair(false, "Failed to download settings (HTTP ${res.code}).")
-                val body = res.body?.string() ?: return@withContext Pair(false, "Empty settings file.")
-                val rootJson = JSONObject(body)
-
-                fun applyJsonToSharedPrefs(prefName: String, jsonKey: String) {
-                    val subObj = rootJson.optJSONObject(jsonKey) ?: return
-                    val editor = context.getSharedPreferences(prefName, Context.MODE_PRIVATE).edit()
-                    val keys = subObj.keys()
-                    while (keys.hasNext()) {
-                        val k = keys.next()
-                        val v = subObj.get(k)
-                        when (v) {
-                            is Boolean -> editor.putBoolean(k, v)
-                            is Int -> editor.putInt(k, v)
-                            is Long -> editor.putLong(k, v)
-                            is Double -> editor.putFloat(k, v.toFloat())
-                            is String -> editor.putString(k, v)
-                            else -> editor.putString(k, v.toString())
-                        }
-                    }
-                    editor.apply()
-                }
-
-                applyJsonToSharedPrefs("app_prefs", "app_prefs")
-                applyJsonToSharedPrefs("app_settings", "app_settings")
-                applyJsonToSharedPrefs("countdown_settings_prefs", "countdown_settings_prefs")
-                applyJsonToSharedPrefs("strict_mode_prefs", "strict_mode_prefs")
-                applyJsonToSharedPrefs("app_calendar_prefs", "app_calendar_prefs")
-
-                val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-                prefs.edit().putLong("gd_settings_last_restore_timestamp", System.currentTimeMillis()).apply()
-
-                Pair(true, "Settings restored successfully from Google Drive.")
-            }
+            GoogleDriveSettingsRegistryManager.synchronizeSettingsWithDrive(context, token)
         } catch (e: Exception) {
             Log.e(TAG, "Error restoring settings from Drive", e)
             Pair(false, "Drive Restore Error: ${e.localizedMessage ?: "Unknown error"}")

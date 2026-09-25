@@ -116,6 +116,12 @@ class TasksWidgetProvider : AppWidgetProvider() {
 
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             try {
+                if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                    val loggedOutViews = WidgetManager.createLoggedOutRemoteViews(context, appWidgetId, "Tasks")
+                    appWidgetManager.updateAppWidget(appWidgetId, loggedOutViews)
+                    return
+                }
+
                 val config = TasksWidgetPreferences.loadConfig(context, appWidgetId)
                 val views = RemoteViews(context.packageName, R.layout.widget_tasks)
 

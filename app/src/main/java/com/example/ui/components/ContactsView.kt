@@ -530,40 +530,14 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
 
                         if (sortedFilteredContacts.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AccountBox,
-                                        contentDescription = null,
-                                        tint = Color.Gray.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(48.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text = "No contacts in fold.",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = "Click the '+' button above to register premium contacts.",
-                                        color = Color.Gray,
-                                        fontSize = 11.sp,
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                }
-                            }
+                            CenteredEmptyStateView(
+                                icon = Icons.Default.Contacts,
+                                title = "No Contacts Found",
+                                subtitle = "Your contact book is empty. Tap the '+' button above to add or import contacts.",
+                                accentColor = Color(0xFF38BDF8),
+                                orbSize = 76.dp,
+                                iconSize = 36.dp
+                            )
                         } else {
                             LazyColumn(
                                 modifier = Modifier

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_black_glass"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <!-- Top icon / lock indication -->
+    <ImageView
+        android:id="@+id/img_widget_lock"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:src="@drawable/ic_widget_lock"
+        android:tint="#38BDF8"
+        android:contentDescription="Locked" />
+
+    <!-- Widget Title / Auth prompt -->
+    <TextView
+        android:id="@+id/widget_login_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="LOG IN REQUIRED"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.04"
+        android:gravity="center"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <!-- Context description message -->
+    <TextView
+        android:id="@+id/widget_login_message"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:layout_marginBottom="8dp"
+        android:text="Please log in to use this widget"
+        android:textColor="#94A3B8"
+        android:textSize="10.5sp"
+        android:gravity="center"
+        android:maxLines="2"
+        android:ellipsize="end" />
+
+    <!-- Prominent "LOG IN" Button -->
+    <TextView
+        android:id="@+id/btn_widget_login"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_widget_login_btn"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:minWidth="100dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:text="LOG IN"
+        android:textColor="#FFFFFF"
+        android:textSize="11.5sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.06" />
+
+</LinearLayout>

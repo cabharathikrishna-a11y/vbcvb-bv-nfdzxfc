@@ -849,7 +849,7 @@ object GoogleDriveWriteManager {
     }
 
     /**
-     * Backs up and syncs application settings to Google Drive.
+     * Backs up and syncs application settings to Google Drive using deterministic constant UIDs.
      */
     suspend fun backupAppSettingsToDrive(
         context: Context,
@@ -862,79 +862,7 @@ object GoogleDriveWriteManager {
         }
 
         try {
-            val appPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).all
-            val appSettings = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE).all
-            val countdownPrefs = context.getSharedPreferences("countdown_settings_prefs", Context.MODE_PRIVATE).all
-            val strictPrefs = context.getSharedPreferences("strict_mode_prefs", Context.MODE_PRIVATE).all
-            val calendarPrefs = context.getSharedPreferences("app_calendar_prefs", Context.MODE_PRIVATE).all
-
-            fun mapToJson(map: Map<String, *>?): JSONObject {
-                val json = JSONObject()
-                map?.forEach { (k, v) ->
-                    when (v) {
-                        is Boolean -> json.put(k, v)
-                        is Int -> json.put(k, v)
-                        is Long -> json.put(k, v)
-                        is Float -> json.put(k, v.toDouble())
-                        is Double -> json.put(k, v)
-                        is String -> json.put(k, v)
-                        null -> {}
-                        else -> json.put(k, v.toString())
-                    }
-                }
-                return json
-            }
-
-            val settingsJson = JSONObject().apply {
-                put("timestamp", System.currentTimeMillis())
-                put("version", 1)
-                put("app_prefs", mapToJson(appPrefs))
-                put("app_settings", mapToJson(appSettings))
-                put("countdown_settings_prefs", mapToJson(countdownPrefs))
-                put("strict_mode_prefs", mapToJson(strictPrefs))
-                put("app_calendar_prefs", mapToJson(calendarPrefs))
-            }
-
-            val vault = GoogleDriveUploadManager.ensureVaultStructureAndReadme(token)
-            val targetFolderId = vault?.backupsId
-            val fileName = "app_settings_sync.json"
-
-            var fileId = if (targetFolderId != null) {
-                GoogleDriveUploadManager.findFileInFolder(token, fileName, targetFolderId)
-            } else {
-                GoogleDriveReadManager.findFileId(token, fileName)
-            }
-
-            if (fileId == null) {
-                fileId = if (targetFolderId != null) {
-                    GoogleDriveUploadManager.createFileMetadataInFolder(token, fileName, targetFolderId)
-                } else {
-                    createFileMetadata(token, fileName)
-                }
-                if (fileId == null) {
-                    return@withContext Pair(false, "Failed to initialize settings file in Google Drive.")
-                }
-            }
-
-            val request = Request.Builder()
-                .url("https://www.googleapis.com/upload/drive/v3/files/$fileId?uploadType=media")
-                .addHeader("Authorization", "Bearer $token")
-                .addHeader("Content-Type", "application/json")
-                .patch(settingsJson.toString().toRequestBody(JSON_MEDIA_TYPE))
-                .build()
-
-            client.newCall(request).execute().use { res ->
-                if (res.isSuccessful) {
-                    makeFilePublic(token, fileId)
-                    val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-                    prefs.edit().putLong("gd_settings_last_sync_timestamp", System.currentTimeMillis()).apply()
-                    Log.i(TAG, "Successfully synced settings to Google Drive: $fileName")
-                    Pair(true, "Settings successfully saved and synced with Google Drive.")
-                } else {
-                    Log.e(TAG, "Failed to upload settings to Google Drive: ${res.code}")
-                    Pair(false, "Failed to upload settings to Google Drive (HTTP ${res.code})")
-                }
-            }
+            GoogleDriveSettingsRegistryManager.synchronizeSettingsWithDrive(context, token)
         } catch (e: Exception) {
             Log.e(TAG, "Error syncing settings to Drive", e)
             Pair(false, "Drive Sync Error: ${e.localizedMessage ?: "Unknown error"}")

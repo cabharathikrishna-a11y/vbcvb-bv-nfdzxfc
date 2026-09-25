@@ -1,5 +1,9 @@
 package com.example.ui.components
 
+import com.example.ui.theme.Charcoal
+import com.example.ui.theme.DeepSlate
+import com.example.ui.theme.SurfaceCard
+import com.example.ui.theme.WaterBlue
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -771,8 +775,6 @@ fun MiniCalendarDialog(
         val monthNames = listOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
         monthNames[currentMonth]
     }
-
-    val WaterBlue = Color(0xFF38BDF8)
 
     Dialog(onDismissRequest = onDismissRequest) {
         Card(
@@ -1879,7 +1881,6 @@ fun androidx.compose.foundation.layout.ColumnScope.FriendHistoryDetailsContent(
     onDismiss: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val WaterBlue = Color(0xFF38BDF8)
     val yesterdayHistoryText by viewModel.friendYesterdayHistory.collectAsStateWithLifecycle()
 
     val meEmail = viewModel.userEmail.value.lowercase().trim()
@@ -2252,7 +2253,7 @@ fun LiveRecordDurationText(
 
     Text(
         text = formatRecordDuration(durationSeconds, durationSeconds / 60) + " (In Progress)",
-        color = Color(0xFF38BDF8),
+        color = WaterBlue,
         fontSize = 9.sp,
         fontWeight = FontWeight.Bold
     )
@@ -2384,7 +2385,6 @@ fun FriendsFocusDetailsDialog(
     val GoldRank = Color(0xFFFFD700)
     val SilverRank = Color(0xFFC0C0C0)
     val BronzeRank = Color(0xFFCD7F32)
-    val WaterBlue = Color(0xFF38BDF8)
 
     var selectedFilter by remember { mutableStateOf("Today") }
     var filterExpanded by remember { mutableStateOf(false) }
@@ -3106,7 +3106,7 @@ fun LiveDurationText(
             val minutes = (displaySecs % 3600) / 60
             if (hours > 0) "${hours}h ${minutes}m" else "${minutes}m"
         },
-        color = if (isFocusing) Color(0xFF38BDF8) else Color.LightGray,
+        color = if (isFocusing) WaterBlue else Color.LightGray,
         fontSize = 13.sp,
         fontWeight = FontWeight.Bold,
         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
@@ -3185,8 +3185,6 @@ fun TimerHistoryView(
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilterTag by remember { mutableStateOf("All") }
     var showFriendsList by remember { mutableStateOf(false) }
-
-    val WaterBlue = Color(0xFF38BDF8)
 
     val completedSecs = remember(focusRecords, selectedDateStr) {
         focusRecords.sumOf { FocusTimerManager.getOverlapSecondsForDate(it, selectedDateStr) }
@@ -3272,13 +3270,13 @@ fun TimerHistoryView(
 
         fun getLocalTagColor(tag: String): Color {
             return when (tag.lowercase().trim()) {
-                "study" -> Color(0xFF38BDF8) // WaterBlue
+                "study" -> WaterBlue // WaterBlue
                 "work" -> Color(0xFF10B981) // Green
                 "coding" -> Color(0xFFF59E0B) // Amber / Orange
                 "personal" -> Color(0xFFEC4899) // Pink
                 "sleep" -> Color(0xFF8B5CF6) // Violet / Deep Purple
                 "wasted" -> Color(0xFFEF4444) // Red
-                else -> Color(0xFF38BDF8) // Fallback WaterBlue
+                else -> WaterBlue // Fallback WaterBlue
             }
         }
 
@@ -5008,8 +5006,6 @@ fun SyllabusCascadingSelector(
     viewModel: AppViewModel,
     modifier: Modifier = Modifier
 ) {
-    val WaterBlue = Color(0xFF38BDF8)
-    
     val subjects = CAInterPaperSubject.entries
     
     var selectedSubject by remember { mutableStateOf<CAInterPaperSubject?>(null) }
@@ -5217,8 +5213,6 @@ fun TimerLiveControlContent(
     wastedMins: Int,
     modifier: Modifier = Modifier
 ) {
-    val WaterBlue = Color(0xFF38BDF8)
-
     val pendingFocusReview by viewModel.pendingFocusReview.collectAsStateWithLifecycle()
 
     val isTimerActive by viewModel.isTimerRunning.collectAsStateWithLifecycle()
@@ -5580,248 +5574,261 @@ fun TimerLiveControlContent(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(12.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(
+                // 1. Mode Toggles: Pomodoro vs Stopwatch (ON TOP)
+                val shouldShowToggles = if (isTabFocusTimerSelected) {
+                    !isTimerOnOrActive
+                } else {
+                    !isStopwatchOnOrActive
+                }
+                if (shouldShowToggles) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .clip(RoundedCornerShape(32.dp))
+                            .background(Color(0xFF151515))
+                            .border(1.dp, Color(0xFF2A2A2A), RoundedCornerShape(32.dp))
+                            .padding(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(if (isTabFocusTimerSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
+                                .clickable { viewModel.setTabFocusTimerSelected(true) }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Pomodoro", color = if (isTabFocusTimerSelected) Color.White else Color.Gray, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(if (!isTabFocusTimerSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
+                                .clickable { viewModel.setTabFocusTimerSelected(false) }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Stopwatch", color = if (!isTabFocusTimerSelected) Color.White else Color.Gray, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                // 2. CENTER SECTION: Numbers and Time Statistics Centered in Available Viewport
+                Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // 1. Mode Toggles Focus vs Stopwatch (switching to promo or stopwatch)
-                    val shouldShowToggles = if (isTabFocusTimerSelected) {
-                        !isTimerOnOrActive
-                    } else {
-                        !isStopwatchOnOrActive
-                    }
-                    if (shouldShowToggles) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth(0.9f)
-                                .clip(RoundedCornerShape(32.dp))
-                                .background(Color(0xFF151515))
-                                .border(1.dp, Color(0xFF2A2A2A), RoundedCornerShape(32.dp))
-                                .padding(4.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(28.dp))
-                                    .background(if (isTabFocusTimerSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
-                                    .clickable { viewModel.setTabFocusTimerSelected(true) }
-                                    .padding(vertical = 12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("Pomodoro", color = if (isTabFocusTimerSelected) Color.White else Color.Gray, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(28.dp))
-                                    .background(if (!isTabFocusTimerSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
-                                    .clickable { viewModel.setTabFocusTimerSelected(false) }
-                                    .padding(vertical = 12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("Stopwatch", color = if (!isTabFocusTimerSelected) Color.White else Color.Gray, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            }
-                        }
-                    }
-
-                    // 2. Numeric display unified for both Timer and Stopwatch (current session timing)
-                    Box(
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            if (isMinusTimerActive) {
-                                RenderDigitalDigits(
-                                    viewModel = viewModel,
-                                    seconds = minusTimerSeconds,
-                                    isImmersive = isImmersive,
-                                    isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                                    isBlinking = false,
-                                    isMinusTimer = true
-                                )
-                                Text(
-                                    text = "FOCUS ENDED • START BREAK OR END",
-                                    color = Color(0xFFEF5350),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
-                                )
-                            } else if (isTabFocusTimerSelected || isInBreakMode) {
-                                RenderDigitalDigits(
-                                    viewModel = viewModel,
-                                    seconds = timerSecondsRemaining,
-                                    isImmersive = isImmersive,
-                                    isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                                    isBlinking = isInBreakMode || isPaused
-                                )
-                                Text(
-                                    text = if (isTimerActive) {
-                                        if (isInBreakMode) "now u r in a break" else "KEEP FOCUSING"
-                                    } else {
-                                        if (isInBreakMode) "now u r in a break" else "STOPPED"
-                                    },
-                                    color = if (isTimerActive) {
-                                        if (isInBreakMode) Color(0xFF81C784) else WaterBlue
-                                    } else {
-                                        if (isInBreakMode) Color(0xFF81C784) else Color.Gray
-                                    },
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
-                                )
-                            } else {
-                                RenderDigitalDigits(
-                                    viewModel = viewModel,
-                                    seconds = stopwatchSeconds,
-                                    isImmersive = isImmersive,
-                                    isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                                    isBlinking = isPaused
-                                )
-                                Text(
-                                    text = if (isStopwatchActive) "KEEP FOCUSING" else "STOPPED",
-                                    color = if (isStopwatchActive) WaterBlue else Color.Gray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
-                                )
-                            }
-                        }
-                    }
-
-                    // Sound playing visuals (if any)
-                    if (soundPlayingNotification != null) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f)),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, WaterBlue),
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.NotificationsActive, contentDescription = "Active Alarm", tint = WaterBlue, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(soundPlayingNotification ?: "", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-
-                    // Battery optimization prompt (if idle)
-                    val isPausedState = isPaused || (!isTimerActive && !isStopwatchActive && isFocusPhase && (
-                        (wasStartedFromStopwatch && stopwatchSeconds > 0) || 
-                        (!wasStartedFromStopwatch && timerSecondsRemaining < focusTimerDurationMins * 60)
-                    ))
-                    val isIdle = isFocusPhase && !isTimerActive && !isStopwatchActive && !isPausedState
-                    if (isIdle) {
-                        val context = androidx.compose.ui.platform.LocalContext.current
-                        var showBatteryPrompt by androidx.compose.runtime.remember {
-                            androidx.compose.runtime.mutableStateOf(
-                                !com.example.util.BatteryOptimizationHelper.isBatteryOptimizationIgnored(context)
+                        // Numeric display unified for both Timer and Stopwatch (current session timing)
+                        if (isMinusTimerActive) {
+                            RenderDigitalDigits(
+                                viewModel = viewModel,
+                                seconds = minusTimerSeconds,
+                                isImmersive = isImmersive,
+                                isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
+                                isBlinking = false,
+                                isMinusTimer = true
+                            )
+                            Text(
+                                text = "FOCUS ENDED • START BREAK OR END",
+                                color = Color(0xFFEF5350),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                        } else if (isTabFocusTimerSelected || isInBreakMode) {
+                            RenderDigitalDigits(
+                                viewModel = viewModel,
+                                seconds = timerSecondsRemaining,
+                                isImmersive = isImmersive,
+                                isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
+                                isBlinking = isInBreakMode || isPaused
+                            )
+                            Text(
+                                text = if (isTimerActive) {
+                                    if (isInBreakMode) "now u r in a break" else "KEEP FOCUSING"
+                                } else {
+                                    if (isInBreakMode) "now u r in a break" else "STOPPED"
+                                },
+                                color = if (isTimerActive) {
+                                    if (isInBreakMode) Color(0xFF81C784) else WaterBlue
+                                } else {
+                                    if (isInBreakMode) Color(0xFF81C784) else Color.Gray
+                                },
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                        } else {
+                            RenderDigitalDigits(
+                                viewModel = viewModel,
+                                seconds = stopwatchSeconds,
+                                isImmersive = isImmersive,
+                                isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
+                                isBlinking = isPaused
+                            )
+                            Text(
+                                text = if (isStopwatchActive) "KEEP FOCUSING" else "STOPPED",
+                                color = if (isStopwatchActive) WaterBlue else Color.Gray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
                             )
                         }
 
-                        if (showBatteryPrompt) {
-                            androidx.compose.material3.Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                                    .testTag("battery_exemption_prompt"),
-                                colors = androidx.compose.material3.CardDefaults.cardColors(
-                                    containerColor = Color(0xFF1E293B)
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Focused Today / Wasted Today (Centered below digits)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth(0.9f)
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = "Focused Today", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = formatLiveSeconds(globalTodaySeconds), color = WaterBlue, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = "Wasted Today", color = Color(0xFFEF4444), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = formatMinsToHhMm(wastedMins), color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                            }
+                        }
+
+                        // Sound playing visuals (if any)
+                        if (soundPlayingNotification != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f)),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, WaterBlue),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
                             ) {
-                                Column(
-                                    modifier = Modifier.padding(16.dp)
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically
+                                    Icon(Icons.Default.NotificationsActive, contentDescription = "Active Alarm", tint = WaterBlue, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(soundPlayingNotification ?: "", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+
+                        // Battery optimization prompt (if idle)
+                        val isPausedState = isPaused || (!isTimerActive && !isStopwatchActive && isFocusPhase && (
+                            (wasStartedFromStopwatch && stopwatchSeconds > 0) || 
+                            (!wasStartedFromStopwatch && timerSecondsRemaining < focusTimerDurationMins * 60)
+                        ))
+                        val isIdle = isFocusPhase && !isTimerActive && !isStopwatchActive && !isPausedState
+                        if (isIdle) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            var showBatteryPrompt by androidx.compose.runtime.remember {
+                                androidx.compose.runtime.mutableStateOf(
+                                    !com.example.util.BatteryOptimizationHelper.isBatteryOptimizationIgnored(context)
+                                )
+                            }
+
+                            if (showBatteryPrompt) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                androidx.compose.material3.Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        .testTag("battery_exemption_prompt"),
+                                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                                        containerColor = Color(0xFF1E293B)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(14.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Warning,
-                                            contentDescription = "Battery Optimization Alert",
-                                            tint = Color(0xFFF59E0B),
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(
-                                            text = "Battery Exemption Required",
-                                            color = Color.White,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = "To ensure your 3-hour study sessions aren't killed in the background, please exempt this app from battery restrictions.",
-                                        color = Color(0xFFCBD5E1),
-                                        fontSize = 12.sp,
-                                        lineHeight = 16.sp
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        androidx.compose.material3.TextButton(
-                                            onClick = { showBatteryPrompt = false }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text("Dismiss", color = Color(0xFF94A3B8))
-                                        }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        androidx.compose.material3.Button(
-                                            onClick = {
-                                                com.example.util.BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context)
-                                            },
-                                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                                containerColor = Color(0xFF3B82F6)
+                                            Icon(
+                                                imageVector = Icons.Default.Warning,
+                                                contentDescription = "Battery Optimization Alert",
+                                                tint = Color(0xFFF59E0B),
+                                                modifier = Modifier.size(22.dp)
                                             )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text(
+                                                text = "Battery Exemption Required",
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = "To ensure study sessions aren't killed in the background, please exempt this app from battery restrictions.",
+                                            color = Color(0xFFCBD5E1),
+                                            fontSize = 11.5.sp,
+                                            lineHeight = 15.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End
                                         ) {
-                                            Text("Grant", color = Color.White)
+                                            androidx.compose.material3.TextButton(
+                                                onClick = { showBatteryPrompt = false }
+                                            ) {
+                                                Text("Dismiss", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            androidx.compose.material3.Button(
+                                                onClick = {
+                                                    com.example.util.BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context)
+                                                },
+                                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                                    containerColor = Color(0xFF3B82F6)
+                                                ),
+                                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("Grant", color = Color.White, fontSize = 12.sp)
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
+                }
 
-                    // 3. Today's focused time (always visible)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = "Focused Today", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(text = formatLiveSeconds(globalTodaySeconds), color = WaterBlue, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = "Wasted Today", color = Color(0xFFEF4444), fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(text = formatMinsToHhMm(wastedMins), color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                        }
-                    }
-
-                    // 4. Subject tagging (Syllabus/Target Selection)
+                // 3. BOTTOM SECTION: Subject & Topic Selection positioned directly ABOVE the action button
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     if (isFocusPhase) {
                         val selectedTag by viewModel.attachedTag.collectAsStateWithLifecycle()
                         var isEditingTargetPhone by remember { mutableStateOf(false) }
                         val isSessionActive = isTimerActive || isStopwatchActive || isPaused
 
                         if (!isSessionActive || isEditingTargetPhone) {
-                            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
                                 if (isSessionActive) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
@@ -5845,7 +5852,7 @@ fun TimerLiveControlContent(
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(bottom = 8.dp)
+                                    .padding(bottom = 10.dp)
                                     .clickable { isEditingTargetPhone = true },
                                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111113)),
                                 border = BorderStroke(1.dp, Color(0xFF232326))
@@ -5883,16 +5890,15 @@ fun TimerLiveControlContent(
                             }
                         }
                     }
-                }
 
-                // 5. Long buttons at the bottom of the screen
-                Spacer(modifier = Modifier.height(12.dp))
-                LiveSessionActionBar(
-                    viewModel = viewModel,
-                    focusTimerDurationMins = focusTimerDurationMins,
-                    isImmersive = false,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    // Action Button (Start Focus / Resume / Pause etc.)
+                    LiveSessionActionBar(
+                        viewModel = viewModel,
+                        focusTimerDurationMins = focusTimerDurationMins,
+                        isImmersive = false,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }
@@ -6031,7 +6037,7 @@ fun SyllabusSelectionBar(
                     .clickable { subjectExpanded = true },
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111113)),
-                border = BorderStroke(1.dp, if (selectedSubject != null) Color(0xFF38BDF8).copy(alpha = 0.6f) else Color(0xFF232326))
+                border = BorderStroke(1.dp, if (selectedSubject != null) WaterBlue.copy(alpha = 0.6f) else Color(0xFF232326))
             ) {
                 Row(
                     modifier = Modifier
@@ -6048,7 +6054,7 @@ fun SyllabusSelectionBar(
                             modifier = Modifier
                                 .size(32.dp)
                                 .background(
-                                    color = if (selectedSubject != null) Color(0xFF38BDF8).copy(alpha = 0.12f) else Color(0xFF1E1E22),
+                                    color = if (selectedSubject != null) WaterBlue.copy(alpha = 0.12f) else Color(0xFF1E1E22),
                                     shape = RoundedCornerShape(8.dp)
                                 ),
                             contentAlignment = Alignment.Center
@@ -6056,7 +6062,7 @@ fun SyllabusSelectionBar(
                             Icon(
                                 imageVector = Icons.Default.Book,
                                 contentDescription = "Select Subject",
-                                tint = if (selectedSubject != null) Color(0xFF38BDF8) else Color.Gray,
+                                tint = if (selectedSubject != null) WaterBlue else Color.Gray,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -6137,7 +6143,7 @@ fun SyllabusSelectionBar(
                 ),
                 border = BorderStroke(
                     1.dp, 
-                    if (selectedTask != null) Color(0xFF38BDF8).copy(alpha = 0.6f) else Color(0xFF232326)
+                    if (selectedTask != null) WaterBlue.copy(alpha = 0.6f) else Color(0xFF232326)
                 )
             ) {
                 Row(
@@ -6155,7 +6161,7 @@ fun SyllabusSelectionBar(
                             modifier = Modifier
                                 .size(32.dp)
                                 .background(
-                                    color = if (selectedTask != null) Color(0xFF38BDF8).copy(alpha = 0.12f) else Color(0xFF1E1E22),
+                                    color = if (selectedTask != null) WaterBlue.copy(alpha = 0.12f) else Color(0xFF1E1E22),
                                     shape = RoundedCornerShape(8.dp)
                                 ),
                             contentAlignment = Alignment.Center
@@ -6163,7 +6169,7 @@ fun SyllabusSelectionBar(
                             Icon(
                                 imageVector = Icons.Default.List,
                                 contentDescription = "Select Chapter",
-                                tint = if (selectedTask != null) Color(0xFF38BDF8) else Color.Gray,
+                                tint = if (selectedTask != null) WaterBlue else Color.Gray,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -6211,7 +6217,7 @@ fun SyllabusSelectionBar(
                             Column(modifier = Modifier.padding(vertical = 2.dp)) {
                                 Text(
                                     text = "${topic.subject.subjectCode}: ${topic.chapterName}",
-                                    color = Color(0xFF38BDF8),
+                                    color = WaterBlue,
                                     fontSize = 10.5.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -6870,9 +6876,9 @@ fun LiveSessionActionBar(
             ActionButton(
                 text = startText,
                 icon = Icons.Default.PlayArrow,
-                containerColor = Color(0xFF00ADB5),
+                containerColor = WaterBlue,
                 contentColor = Color.Black,
-                borderColor = Color(0xFF00ADB5),
+                borderColor = WaterBlue,
                 onClick = {
                     if (isTabFocusTimerSelected) {
                         viewModel.startTimer()
@@ -8418,7 +8424,7 @@ fun VerticalCalendarTimelineView(
                     Icon(
                         imageVector = Icons.Default.Analytics,
                         contentDescription = "Allocation",
-                        tint = Color(0xFF38BDF8),
+                        tint = WaterBlue,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
@@ -8444,7 +8450,7 @@ fun VerticalCalendarTimelineView(
                 ) {
                     AllocationTableRow(
                         icon = Icons.Default.Schedule,
-                        iconColor = Color(0xFF38BDF8),
+                        iconColor = WaterBlue,
                         label = "Time Completed Today (till now)",
                         value = formatMinsToReadableCalendar(elapsedMins),
                         subtext = if (dayCategory == "TODAY") "Since midnight to current local time" else "Full past day duration"
@@ -8580,7 +8586,7 @@ fun VerticalCalendarTimelineView(
                         Icon(
                             imageVector = if (viewModeIsList) Icons.Default.List else Icons.Default.CalendarToday,
                             contentDescription = "View Mode Icon",
-                            tint = Color(0xFF38BDF8),
+                            tint = WaterBlue,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
@@ -8602,8 +8608,8 @@ fun VerticalCalendarTimelineView(
                         Button(
                             onClick = onLogManuallyClick,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF38BDF8).copy(alpha = 0.15f),
-                                contentColor = Color(0xFF38BDF8)
+                                containerColor = WaterBlue.copy(alpha = 0.15f),
+                                contentColor = WaterBlue
                             ),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -9805,7 +9811,7 @@ fun VerticalCalendarTimelineView(
             confirmButton = {
                 Button(
                     onClick = { selectedRecordForPopup = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38BDF8), contentColor = Color.Black)
+                    colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
                 ) {
                     Text("Done", fontWeight = FontWeight.Bold)
                 }
@@ -9904,9 +9910,9 @@ private fun formatHalfHourLabel(halfHour: Int): String {
 }
 
 private fun getTagColorCalendar(tag: String): Color {
-    if (tag.isBlank()) return Color(0xFF38BDF8) // Default WaterBlue
+    if (tag.isBlank()) return WaterBlue // Default WaterBlue
     val colors = listOf(
-        Color(0xFF38BDF8), // WaterBlue
+        WaterBlue, // WaterBlue
         Color(0xFFF43F5E), // Rose / Red
         Color(0xFF10B981), // Emerald / Green
         Color(0xFFF59E0B), // Amber / Orange
@@ -9986,7 +9992,7 @@ fun TwoByTwoStatsGrid(
                         title = "Today",
                         value = formatSecs(todaySecs),
                         icon = Icons.Default.Today,
-                        accentColor = Color(0xFF38BDF8)
+                        accentColor = WaterBlue
                     )
                     StatBoxCell(
                         title = "Past 30 Days",

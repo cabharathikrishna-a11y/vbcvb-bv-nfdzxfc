@@ -295,22 +295,14 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         ) {
                             if (displayedHabits.isEmpty()) {
                                 item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 32.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(24.dp))
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text(
-                                                text = if (activeTab == "Today") "No active scheduled habits for today." else "No habits found.",
-                                                color = Color.Gray,
-                                                fontSize = 12.sp
-                                            )
-                                        }
-                                    }
+                                    CenteredEmptyStateView(
+                                        icon = Icons.Default.Loop,
+                                        title = if (activeTab == "Today") "No Habits For Today" else "No Habits Found",
+                                        subtitle = if (activeTab == "Today") "No active habits scheduled for today. Build positive routines by tapping + below!" else "Your habit list is empty. Tap + below to create a new habit.",
+                                        accentColor = Color(0xFF818CF8),
+                                        orbSize = 72.dp,
+                                        iconSize = 34.dp
+                                    )
                                 }
                             } else {
                                 items(displayedHabits) { habit ->

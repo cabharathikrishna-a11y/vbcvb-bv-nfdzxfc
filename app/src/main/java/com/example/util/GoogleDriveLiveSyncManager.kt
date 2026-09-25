@@ -329,62 +329,12 @@ object GoogleDriveLiveSyncManager {
         accessToken: String,
         settingsFolderId: String
     ) = withContext(Dispatchers.IO) {
-        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-
-        // 1. Compile Local View Preferences Payload
-        val localViewPayload = JSONObject().apply {
-            put("task_hide_completed", prefs.getBoolean("task_hide_completed", false))
-            put("task_show_details", prefs.getBoolean("task_show_details", false))
-            put("task_group_by_mode", prefs.getString("task_group_by_mode", "Date") ?: "Date")
-            put("task_sort_by_mode", prefs.getString("task_sort_by_mode", "Date") ?: "Date")
-            put("task_view_mode", prefs.getString("task_view_mode", "Standard") ?: "Standard")
-            put("tab_order", prefs.getString("tab_order", "") ?: "")
-            put("overflow_menu_tabs", prefs.getString("overflow_menu_tabs", "") ?: "")
-            put("hidden_tabs", prefs.getString("hidden_tabs", "") ?: "")
-            put("tab_bar_position", prefs.getString("tab_bar_position", "BOTTOM") ?: "BOTTOM")
-            put("dark_theme", prefs.getBoolean("dark_theme", true))
-            put("last_modified", System.currentTimeMillis())
+        try {
+            // Full deterministic constant UID settings reconciliation with Google Drive
+            GoogleDriveSettingsRegistryManager.synchronizeSettingsWithDrive(context, accessToken)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error synchronizing settings registry with Drive: ${e.message}", e)
         }
-
-        val fileName = "view_preferences.json"
-        val existingFileId = findFileInFolder(accessToken, settingsFolderId, fileName)
-
-        if (existingFileId != null) {
-            // Read remote view preferences
-            val remoteContent = downloadFileContent(accessToken, existingFileId)
-            if (!remoteContent.isNullOrBlank()) {
-                try {
-                    val remoteJson = JSONObject(remoteContent)
-                    val remoteLastMod = remoteJson.optLong("last_modified", 0L)
-                    val localLastMod = prefs.getLong("view_settings_last_modified", 0L)
-
-                    if (remoteLastMod > localLastMod && localLastMod > 0) {
-                        // Remote is newer, apply to local SharedPreferences
-                        prefs.edit()
-                            .putBoolean("task_hide_completed", remoteJson.optBoolean("task_hide_completed", false))
-                            .putBoolean("task_show_details", remoteJson.optBoolean("task_show_details", false))
-                            .putString("task_group_by_mode", remoteJson.optString("task_group_by_mode", "Date"))
-                            .putString("task_sort_by_mode", remoteJson.optString("task_sort_by_mode", "Date"))
-                            .putString("task_view_mode", remoteJson.optString("task_view_mode", "Standard"))
-                            .apply()
-                        if (remoteJson.has("tab_order")) {
-                            prefs.edit().putString("tab_order", remoteJson.optString("tab_order")).apply()
-                        }
-                        if (remoteJson.has("overflow_menu_tabs")) {
-                            prefs.edit().putString("overflow_menu_tabs", remoteJson.optString("overflow_menu_tabs")).apply()
-                        }
-                        prefs.edit().putLong("view_settings_last_modified", remoteLastMod).apply()
-                        return@withContext
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error parsing remote view preferences: ${e.message}")
-                }
-            }
-        }
-
-        // Upload local view preferences
-        prefs.edit().putLong("view_settings_last_modified", System.currentTimeMillis()).apply()
-        uploadOrUpdateJsonFile(accessToken, settingsFolderId, fileName, localViewPayload.toString(2), existingFileId)
     }
 
     // =========================================================================

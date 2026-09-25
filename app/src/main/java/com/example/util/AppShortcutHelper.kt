@@ -162,10 +162,32 @@ object AppShortcutHelper {
 
     fun publishDynamicShortcuts(context: Context) {
         try {
-            // Remove legacy dynamic web shortcuts
+            if (!AuthGatekeeper.isUserLoggedIn(context)) {
+                // When logged out, publish a dedicated "Log In" dynamic shortcut
+                val loginIntent = Intent(context, MainActivity::class.java).apply {
+                    action = Intent.ACTION_MAIN
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    putExtra("NAVIGATE_TO", "LOGIN")
+                    putExtra("FORCE_LOGIN_SCREEN", true)
+                }
+                val loginShortcut = ShortcutInfoCompat.Builder(context, "shortcut_login_required")
+                    .setShortLabel("Log In")
+                    .setLongLabel("Log In to Account")
+                    .setIcon(IconCompat.createWithResource(context, R.drawable.ic_widget_lock))
+                    .setIntent(loginIntent)
+                    .build()
+
+                ShortcutManagerCompat.removeAllDynamicShortcuts(context)
+                ShortcutManagerCompat.pushDynamicShortcut(context, loginShortcut)
+                return
+            }
+
+            // Remove unauthenticated shortcut and legacy dynamic web shortcuts
             ShortcutManagerCompat.removeDynamicShortcuts(
                 context,
                 listOf(
+                    "shortcut_login_required",
                     "instagram_web_app_shortcut",
                     "youtube_web_app_shortcut",
                     "spotify_web_app_shortcut",

@@ -3060,7 +3060,14 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                                     if (entries.isEmpty()) {
                                         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                            Text("No journal entries documented. Click the + to persist today's record.", color = Color.Gray, fontSize = 12.sp)
+                                            CenteredEmptyStateView(
+                                                icon = Icons.Default.Book,
+                                                title = "No Journal Entries",
+                                                subtitle = "Capture your daily thoughts, reflections, and memories. Tap the '+' button to write today's record.",
+                                                accentColor = Color(0xFFC084FC),
+                                                orbSize = 76.dp,
+                                                iconSize = 36.dp
+                                            )
                                         }
                                     } else {
                                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {

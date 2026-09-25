@@ -460,15 +460,50 @@ object WidgetManager {
         return@withContext photos
     }
 
+    // --- WIDGET AUTH & LOGIN HELPERS ---
+
+    fun createLoginPendingIntent(context: Context, widgetId: Int): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("NAVIGATE_TO", "LOGIN")
+            putExtra("FORCE_LOGIN_SCREEN", true)
+        }
+        return PendingIntent.getActivity(
+            context,
+            widgetId * 1000 + 99,
+            intent,
+            getPendingIntentFlags(isMutable = false)
+        )
+    }
+
+    fun createLoggedOutRemoteViews(context: Context, widgetId: Int, widgetName: String? = null): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.widget_login_required)
+        val bgRes = getBackgroundDrawableRes(context)
+        views.setInt(android.R.id.background, "setBackgroundResource", bgRes)
+
+        val loginPendingIntent = createLoginPendingIntent(context, widgetId)
+        views.setOnClickPendingIntent(android.R.id.background, loginPendingIntent)
+        views.setOnClickPendingIntent(R.id.btn_widget_login, loginPendingIntent)
+
+        if (!widgetName.isNullOrBlank()) {
+            views.setTextViewText(R.id.widget_login_title, widgetName.uppercase())
+            views.setTextViewText(R.id.widget_login_message, "Log in to view $widgetName")
+        } else {
+            views.setTextViewText(R.id.widget_login_title, "LOG IN REQUIRED")
+            views.setTextViewText(R.id.widget_login_message, "Please log in to use widgets")
+        }
+        views.setTextViewText(R.id.btn_widget_login, "LOG IN")
+        return views
+    }
+
     // --- WIDGET UPDATER FUNCTIONS ---
 
     /**
      * Debounced update for all active widgets registered in the system.
      */
     fun updateAllWidgets(context: Context) {
-        if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
-            return
-        }
         val now = SystemClock.elapsedRealtime()
         if (now - lastUpdateAllTime.get() < 300L) {
             return
@@ -556,6 +591,14 @@ object WidgetManager {
             val thisWidget = ComponentName(context, FriendsFocusWidgetProvider::class.java)
             val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
             if (allWidgetIds.isEmpty()) return@launch
+
+            if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                for (widgetId in allWidgetIds) {
+                    val loggedOutViews = createLoggedOutRemoteViews(context, widgetId, "Friends Focus")
+                    appWidgetManager.updateAppWidget(widgetId, loggedOutViews)
+                }
+                return@launch
+            }
 
             val bgRes = getBackgroundDrawableRes(context)
             val focusingLogos = fetchFocusingPeers(context)
@@ -665,6 +708,14 @@ object WidgetManager {
             val thisWidget = ComponentName(context, TimerStopwatchWidgetProvider::class.java)
             val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
             if (allWidgetIds.isEmpty()) return@launch
+
+            if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                for (widgetId in allWidgetIds) {
+                    val loggedOutViews = createLoggedOutRemoteViews(context, widgetId, "Stopwatch")
+                    appWidgetManager.updateAppWidget(widgetId, loggedOutViews)
+                }
+                return@launch
+            }
 
             val bgRes = getBackgroundDrawableRes(context)
 
@@ -786,6 +837,14 @@ object WidgetManager {
             val thisWidget = ComponentName(context, PomodoroWidgetProvider::class.java)
             val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
             if (allWidgetIds.isEmpty()) return@launch
+
+            if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                for (widgetId in allWidgetIds) {
+                    val loggedOutViews = createLoggedOutRemoteViews(context, widgetId, "Pomodoro Timer")
+                    appWidgetManager.updateAppWidget(widgetId, loggedOutViews)
+                }
+                return@launch
+            }
 
             val bgRes = getBackgroundDrawableRes(context)
             val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
@@ -936,6 +995,14 @@ object WidgetManager {
             val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
             if (allWidgetIds.isEmpty()) return@launch
 
+            if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                for (widgetId in allWidgetIds) {
+                    val loggedOutViews = createLoggedOutRemoteViews(context, widgetId, "Today's Focus")
+                    appWidgetManager.updateAppWidget(widgetId, loggedOutViews)
+                }
+                return@launch
+            }
+
             val bgRes = getBackgroundDrawableRes(context)
 
             val totalSeconds = fetchTodayTotalFocusSeconds(context)
@@ -990,6 +1057,14 @@ object WidgetManager {
             val thisWidget = ComponentName(context, TimelineSubjectsWidgetProvider::class.java)
             val allWidgetIds = appWidgetManager.getAppWidgetIds(thisWidget)
             if (allWidgetIds.isEmpty()) return@launch
+
+            if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                for (widgetId in allWidgetIds) {
+                    val loggedOutViews = createLoggedOutRemoteViews(context, widgetId, "Timeline & Subjects")
+                    appWidgetManager.updateAppWidget(widgetId, loggedOutViews)
+                }
+                return@launch
+            }
 
             val bgRes = getBackgroundDrawableRes(context)
 
@@ -1047,6 +1122,14 @@ object WidgetManager {
                 intArrayOf()
             }
             if (allWidgetIds.isEmpty()) return@launch
+
+            if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                for (widgetId in allWidgetIds) {
+                    val loggedOutViews = createLoggedOutRemoteViews(context, widgetId, "Photo Shower")
+                    appWidgetManager.updateAppWidget(widgetId, loggedOutViews)
+                }
+                return@launch
+            }
 
             val bgRes = getBackgroundDrawableRes(context)
             val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)

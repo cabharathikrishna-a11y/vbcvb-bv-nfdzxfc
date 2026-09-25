@@ -1734,12 +1734,14 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                     )
                     
                     if (combinedList.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("No transactions logged yet.", color = Color.Gray, fontSize = 13.sp)
-                        }
+                        CenteredEmptyStateView(
+                            icon = Icons.Default.AccountBalanceWallet,
+                            title = "No Transactions Found",
+                            subtitle = "No transactions, audits, or cash flows recorded yet. Tap + to log an expense or income.",
+                            accentColor = Color(0xFF4ADE80),
+                            orbSize = 76.dp,
+                            iconSize = 36.dp
+                        )
                     } else {
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1859,12 +1861,14 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                     )
                     
                     if (filteredTxs.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("No transactions logged in this range.", color = Color.Gray, fontSize = 13.sp)
-                        }
+                        CenteredEmptyStateView(
+                            icon = Icons.Default.AccountBalanceWallet,
+                            title = "No Transactions In Range",
+                            subtitle = "No transactions found within the selected date range. Try expanding your date filter.",
+                            accentColor = Color(0xFF4ADE80),
+                            orbSize = 76.dp,
+                            iconSize = 36.dp
+                        )
                     } else {
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(8.dp),

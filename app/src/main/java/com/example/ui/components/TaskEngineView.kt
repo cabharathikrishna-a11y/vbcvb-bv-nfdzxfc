@@ -979,33 +979,17 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
-                        .padding(24.dp),
+                        .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(44.dp),
-                            tint = Color.Gray.copy(alpha = 0.4f)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "No tasks found",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
-                        )
-                        Text(
-                            text = "Tap + to add one",
-                            color = Color.Gray,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
+                    CenteredEmptyStateView(
+                        icon = Icons.Default.CheckCircle,
+                        title = "No Tasks Found",
+                        subtitle = "You're completely caught up! Tap the + button to create a new task.",
+                        accentColor = WaterBlue,
+                        orbSize = 72.dp,
+                        iconSize = 34.dp
+                    )
                 }
             } else {
                 LazyColumn(

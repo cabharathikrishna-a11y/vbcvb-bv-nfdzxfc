@@ -800,31 +800,14 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             .fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.EditNote,
-                                contentDescription = "No Notes",
-                                tint = WaterBlue.copy(alpha = 0.4f),
-                                modifier = Modifier.size(80.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = if (searchQuery.isEmpty()) "No Notes Yet" else "No matching notes",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (searchQuery.isEmpty()) "Tap + to capture checklists, voice recordings, and live photos!" else "Try searching for another keyword",
-                                fontSize = 13.sp,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(horizontal = 32.dp)
-                            )
-                        }
+                        CenteredEmptyStateView(
+                            icon = Icons.Default.EditNote,
+                            title = if (searchQuery.isEmpty()) "No Notes Yet" else "No Matching Notes",
+                            subtitle = if (searchQuery.isEmpty()) "Capture checklists, thoughts, voice recordings, and live photos by tapping + below!" else "Try searching for another keyword.",
+                            accentColor = Color(0xFFFFD54F),
+                            orbSize = 76.dp,
+                            iconSize = 36.dp
+                        )
                     }
                 } else {
                     LazyVerticalGrid(

@@ -140,6 +140,12 @@ object LiveTimerNotificationManager {
         val attachedTaskTitle = FocusTimerManager.attachedTask.value?.title ?: "Focus Session"
         val attachedTag = FocusTimerManager.attachedTag.value.ifEmpty { "Study" }
 
+        val isTimerPaused = !isTimerOn && FocusTimerManager.isPaused.value && timerSecsLeft < totalTimerDurationSecs && timerSecsLeft > 0
+        val isStopwatchPaused = !isStopwatchOn && FocusTimerManager.isPaused.value && stopwatchSecs > 0
+
+        val isPomoActive = isTimerOn || isTimerPaused || (!isFocusPhase && isTimerOn)
+        val isSwActive = isStopwatchOn || isStopwatchPaused
+
         val snapshot = when {
             isMinusActive -> {
                 val totalSecs = FocusTimerManager.minusTimerSeconds.value
@@ -169,9 +175,7 @@ object LiveTimerNotificationManager {
                     hasActiveSession = true
                 )
             }
-            isTabFocusTimer -> {
-                val hasProgress = timerSecsLeft < totalTimerDurationSecs && timerSecsLeft > 0
-                val isPaused = !isTimerOn && (hasProgress || FocusTimerManager.isPaused.value)
+            isTabFocusTimer && (isTimerOn || isTimerPaused) -> {
                 val hours = timerSecsLeft / 3600
                 val mins = (timerSecsLeft % 3600) / 60
                 val secs = timerSecsLeft % 60
@@ -187,7 +191,7 @@ object LiveTimerNotificationManager {
 
                 val title = if (isTimerOn) {
                     "Focus Timer: $timeStr ($phase)"
-                } else if (isPaused) {
+                } else if (isTimerPaused) {
                     "Focus Timer: $timeStr (Paused - $phase)"
                 } else {
                     "Focus Timer ($phase)"
@@ -195,7 +199,7 @@ object LiveTimerNotificationManager {
 
                 val text = if (isTimerOn) {
                     "Active • $attachedTaskTitle"
-                } else if (isPaused) {
+                } else if (isTimerPaused) {
                     "Paused • $attachedTaskTitle"
                 } else {
                     attachedTaskTitle
@@ -208,7 +212,7 @@ object LiveTimerNotificationManager {
                     totalDurationSeconds = totalTimerDurationSecs,
                     progressPercent = progress,
                     isRunning = isTimerOn,
-                    isPaused = isPaused,
+                    isPaused = isTimerPaused,
                     isMinusTimer = false,
                     taskTitle = attachedTaskTitle,
                     taskTag = attachedTag,
@@ -216,13 +220,10 @@ object LiveTimerNotificationManager {
                     contentTitle = title,
                     contentText = text,
                     subText = phase,
-                    hasActiveSession = isTimerOn || isPaused
+                    hasActiveSession = true
                 )
             }
-            else -> {
-                // Live Stopwatch Mode
-                val hasStopwatchProgress = stopwatchSecs > 0
-                val isStopwatchPaused = !isStopwatchOn && (hasStopwatchProgress || FocusTimerManager.isPaused.value)
+            !isTabFocusTimer && (isStopwatchOn || isStopwatchPaused) -> {
                 val hours = stopwatchSecs / 3600
                 val mins = (stopwatchSecs % 3600) / 60
                 val secs = stopwatchSecs % 60
@@ -249,9 +250,8 @@ object LiveTimerNotificationManager {
                     attachedTaskTitle
                 }
 
-                val isActive = isStopwatchOn || isStopwatchPaused
                 LiveNotificationSnapshot(
-                    mode = if (isActive) LiveTimerMode.STOPWATCH else LiveTimerMode.IDLE,
+                    mode = LiveTimerMode.STOPWATCH,
                     formattedTime = timeStr,
                     rawSeconds = stopwatchSecs,
                     totalDurationSeconds = maxOf(stopwatchSecs, 1),
@@ -262,10 +262,88 @@ object LiveTimerNotificationManager {
                     taskTitle = attachedTaskTitle,
                     taskTag = attachedTag,
                     phaseLabel = phase,
-                    contentTitle = if (isActive) title else "LifeOS Active System",
-                    contentText = if (isActive) text else "Ensuring accurate backgrounds & task scheduling",
-                    subText = if (isActive) phase else "LifeOS",
-                    hasActiveSession = isActive
+                    contentTitle = title,
+                    contentText = text,
+                    subText = phase,
+                    hasActiveSession = true
+                )
+            }
+            isPomoActive -> {
+                // Secondary Pomodoro active fallback
+                val hours = timerSecsLeft / 3600
+                val mins = (timerSecsLeft % 3600) / 60
+                val secs = timerSecsLeft % 60
+                val timeStr = if (hours > 0) {
+                    String.format(Locale.US, "%02d:%02d:%02d", hours, mins, secs)
+                } else {
+                    String.format(Locale.US, "%02d:%02d", timerSecsLeft / 60, secs)
+                }
+                val phase = if (isFocusPhase) "Focusing 🎯" else "Break ☕"
+                LiveNotificationSnapshot(
+                    mode = if (isFocusPhase) LiveTimerMode.POMODORO_FOCUS else LiveTimerMode.POMODORO_BREAK,
+                    formattedTime = timeStr,
+                    rawSeconds = timerSecsLeft,
+                    totalDurationSeconds = totalTimerDurationSecs,
+                    progressPercent = 0,
+                    isRunning = isTimerOn,
+                    isPaused = isTimerPaused,
+                    isMinusTimer = false,
+                    taskTitle = attachedTaskTitle,
+                    taskTag = attachedTag,
+                    phaseLabel = phase,
+                    contentTitle = "Focus Timer: $timeStr ($phase)",
+                    contentText = if (isTimerOn) "Active • $attachedTaskTitle" else "Paused • $attachedTaskTitle",
+                    subText = phase,
+                    hasActiveSession = true
+                )
+            }
+            isSwActive -> {
+                // Secondary Stopwatch active fallback
+                val hours = stopwatchSecs / 3600
+                val mins = (stopwatchSecs % 3600) / 60
+                val secs = stopwatchSecs % 60
+                val timeStr = if (hours > 0) {
+                    String.format(Locale.US, "%02d:%02d:%02d", hours, mins, secs)
+                } else {
+                    String.format(Locale.US, "%02d:%02d", mins, secs)
+                }
+                LiveNotificationSnapshot(
+                    mode = LiveTimerMode.STOPWATCH,
+                    formattedTime = timeStr,
+                    rawSeconds = stopwatchSecs,
+                    totalDurationSeconds = maxOf(stopwatchSecs, 1),
+                    progressPercent = 0,
+                    isRunning = isStopwatchOn,
+                    isPaused = isStopwatchPaused,
+                    isMinusTimer = false,
+                    taskTitle = attachedTaskTitle,
+                    taskTag = attachedTag,
+                    phaseLabel = "Stopwatch ⏱️",
+                    contentTitle = "Stopwatch: $timeStr",
+                    contentText = if (isStopwatchOn) "Active • $attachedTaskTitle" else "Paused • $attachedTaskTitle",
+                    subText = "Stopwatch ⏱️",
+                    hasActiveSession = true
+                )
+            }
+            else -> {
+                // Stable Idle / Background daemon mode
+                val defaultTime = String.format(Locale.US, "%02d:00", timerDurationMins)
+                LiveNotificationSnapshot(
+                    mode = LiveTimerMode.IDLE,
+                    formattedTime = defaultTime,
+                    rawSeconds = totalTimerDurationSecs,
+                    totalDurationSeconds = totalTimerDurationSecs,
+                    progressPercent = 0,
+                    isRunning = false,
+                    isPaused = false,
+                    isMinusTimer = false,
+                    taskTitle = attachedTaskTitle,
+                    taskTag = attachedTag,
+                    phaseLabel = "Idle 💤",
+                    contentTitle = "LifeOS Background Service",
+                    contentText = "Ensuring accurate timers & background task scheduling",
+                    subText = "LifeOS",
+                    hasActiveSession = false
                 )
             }
         }

@@ -31,6 +31,12 @@ class CountdownWidgetProvider : AppWidgetProvider() {
             appWidgetManager: AppWidgetManager,
             appWidgetId: Int
         ) {
+            if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                val loggedOutViews = WidgetManager.createLoggedOutRemoteViews(context, appWidgetId, "Countdowns")
+                appWidgetManager.updateAppWidget(appWidgetId, loggedOutViews)
+                return
+            }
+
             val bgRes = WidgetManager.getBackgroundDrawableRes(context)
             val views = RemoteViews(context.packageName, R.layout.widget_countdown)
 

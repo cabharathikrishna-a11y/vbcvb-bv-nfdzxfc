@@ -119,6 +119,12 @@ class HabitsWidgetProvider : AppWidgetProvider() {
 
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             try {
+                if (!com.example.util.AuthGatekeeper.isUserLoggedIn(context)) {
+                    val loggedOutViews = WidgetManager.createLoggedOutRemoteViews(context, appWidgetId, "Habits")
+                    appWidgetManager.updateAppWidget(appWidgetId, loggedOutViews)
+                    return
+                }
+
                 val views = RemoteViews(context.packageName, R.layout.widget_habits)
 
                 val bgRes = WidgetManager.getBackgroundDrawableRes(context)

@@ -234,12 +234,16 @@ class CountdownRemoteViewsFactory(
                 }
             }
 
-            // CRITICAL REQUIREMENT: "only upcoming shows today tooo"
-            // Filter strictly upcoming items: daysRemaining >= 0 (includes today: 0, tomorrow: 1, and future)
-            // Sorted by daysRemaining ascending (soonest first)
+            // CRITICAL REQUIREMENT: "in countdown order in widget or in list view show todays bd or things at start"
+            // Filter strictly upcoming items: daysRemaining >= 0 (today: 0, tomorrow: 1, and future)
+            // Prioritize items occurring TODAY (daysRemaining == 0) at the very top, followed by daysRemaining ascending, then name
             this.items = deduplicated
                 .filter { it.daysRemaining >= 0 }
-                .sortedWith(compareBy({ it.daysRemaining }, { it.name }))
+                .sortedWith(compareBy(
+                    { if (it.daysRemaining == 0) 0 else 1 },
+                    { it.daysRemaining },
+                    { it.name }
+                ))
 
         } catch (e: Exception) {
             Log.e("CountdownWidget", "Error during loadData", e)
