@@ -519,7 +519,6 @@ object WidgetManager {
                 if (hasTotalFocusWidgets(context)) updateTotalFocusTimeWidget(context)
                 if (hasTimelineSubjectsWidgets(context)) updateTimelineSubjectsWidget(context)
                 if (hasPhotoShowerWidgets(context)) updatePhotoShowerWidget(context)
-                if (hasCountdownWidgets(context)) updateCountdownWidget(context)
                 if (hasTasksWidgets(context)) updateTasksWidget(context)
                 if (hasHabitsWidgets(context)) updateHabitsWidget(context)
                 if (hasSingleHabitWidgets(context)) updateSingleHabitWidget(context)

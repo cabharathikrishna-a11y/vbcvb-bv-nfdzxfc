@@ -201,14 +201,50 @@ class CountdownRemoteViewsFactory(
             // 4. Deadlines & User Countdowns
             for (deadline in deadlines) {
                 if (deadline.isCompleted) continue
-                val diffMs = deadline.targetTimestamp - todayMillis
-                val daysRemaining = maxOf(0, ((diffMs + 12 * 3600 * 1000L) / (24 * 3600 * 1000L)).toInt())
-                val targetDate = Date(deadline.targetTimestamp)
 
                 val isFestival = deadline.name.startsWith("[Festival] ") || deadline.name.startsWith("[Festivals] ")
-                val cleanName = if (isFestival) deadline.name.substringAfter("] ") else deadline.name
-                val cat = if (isFestival) "Festivals" else "Others"
-                val emoji = if (isFestival) "🎉" else "⏳"
+                val isBirthday = deadline.name.startsWith("[Birthday] ") || deadline.name.startsWith("[Birthdays] ")
+                val isAnniversary = deadline.name.startsWith("[Anniversary] ") || deadline.name.startsWith("[Anniversaries] ")
+                val isRecurring = isFestival || isBirthday || isAnniversary || deadline.name.contains("recurring", ignoreCase = true)
+
+                val cleanName = when {
+                    isFestival -> deadline.name.substringAfter("] ")
+                    isBirthday -> deadline.name.substringAfter("] ")
+                    isAnniversary -> deadline.name.substringAfter("] ")
+                    else -> deadline.name
+                }
+                val cat = when {
+                    isFestival -> "Festivals"
+                    isBirthday -> "Birthdays"
+                    isAnniversary -> "Anniversaries"
+                    else -> "Others"
+                }
+                val emoji = when {
+                    isFestival -> "🎉"
+                    isBirthday -> "🎂"
+                    isAnniversary -> "💍"
+                    else -> "⏳"
+                }
+
+                var targetTime = deadline.targetTimestamp
+                if (isRecurring) {
+                    val cal = Calendar.getInstance().apply {
+                        timeInMillis = targetTime
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                        set(Calendar.YEAR, today.get(Calendar.YEAR))
+                    }
+                    if (cal.timeInMillis < todayMillis) {
+                        cal.set(Calendar.YEAR, today.get(Calendar.YEAR) + 1)
+                    }
+                    targetTime = cal.timeInMillis
+                }
+
+                val diffMs = targetTime - todayMillis
+                val daysRemaining = maxOf(0, ((diffMs + 12 * 3600 * 1000L) / (24 * 3600 * 1000L)).toInt())
+                val targetDate = Date(targetTime)
 
                 allEvents.add(
                     CountdownWidgetEvent(
@@ -218,7 +254,7 @@ class CountdownRemoteViewsFactory(
                         daysRemaining = daysRemaining,
                         detailSubtitle = "$cat · ${dateFmt.format(targetDate)}",
                         emoji = emoji,
-                        targetTimestamp = deadline.targetTimestamp
+                        targetTimestamp = targetTime
                     )
                 )
             }
@@ -311,7 +347,12 @@ class CountdownRemoteViewsFactory(
 
     override fun getViewTypeCount(): Int = 1
 
-    override fun getItemId(position: Int): Long = position.toLong()
+    override fun getItemId(position: Int): Long {
+        if (position in items.indices) {
+            return items[position].id.hashCode().toLong()
+        }
+        return position.toLong()
+    }
 
-    override fun hasStableIds(): Boolean = false
+    override fun hasStableIds(): Boolean = true
 }

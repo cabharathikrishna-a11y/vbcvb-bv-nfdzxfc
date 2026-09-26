@@ -3247,7 +3247,7 @@ object FocusTimerManager {
                 }
             }
 
-            val initialWidthDp = if (isOverlayCollapsed) 32f else (if (areOverlayControlsVisible) expandedWidthDp else compactWidthDp)
+            val initialWidthDp = if (isOverlayCollapsed) 38f else (if (areOverlayControlsVisible) expandedWidthDp else compactWidthDp)
             
             // Query screen metrics to clamp coordinates dynamically (surviving rotation/foldables)
             val initialDisplayMetrics = android.util.DisplayMetrics()
@@ -3496,7 +3496,14 @@ object FocusTimerManager {
                 textSize = 18f
                 gravity = Gravity.CENTER
                 visibility = View.GONE
-                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
+                includeFontPadding = false
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dpToPx(context, 52f)
+                ).apply {
+                    gravity = Gravity.CENTER
+                }
+                typeface = android.graphics.Typeface.create("sans-serif-bold", android.graphics.Typeface.BOLD)
             }
             tvCollapsedArrow = arrowText
             container.addView(arrowText)
@@ -3588,6 +3595,8 @@ object FocusTimerManager {
 
                             val triggerThreshold = 0 // only minimize if forcefully pushed to edge
 
+                            val collapsedHandleWidthDp = 38f
+
                             if (wmLayoutParams.x <= triggerThreshold) {
                                 isOverlayCollapsed = true
                                 overlayCollapsedSide = "left"
@@ -3596,7 +3605,7 @@ object FocusTimerManager {
                             } else if (wmLayoutParams.x >= screenWidth - containerWidth - triggerThreshold) {
                                 isOverlayCollapsed = true
                                 overlayCollapsedSide = "right"
-                                wmLayoutParams.x = screenWidth - dpToPx(context, 32f) // keep mini handle visible
+                                wmLayoutParams.x = screenWidth - dpToPx(context, collapsedHandleWidthDp) // keep mini handle visible
                                 updateCollapsedStateViews(context)
                             } else {
                                 isOverlayCollapsed = false
@@ -3651,10 +3660,11 @@ object FocusTimerManager {
 
         val lp = container.layoutParams as? WindowManager.LayoutParams ?: return
 
+        val targetWidth = dpToPx(context, 120f)
         if (lp.x < screenWidth / 2) {
-            lp.x = 40
+            lp.x = dpToPx(context, 16f)
         } else {
-            lp.x = screenWidth - container.width - 40
+            lp.x = maxOf(0, screenWidth - targetWidth - dpToPx(context, 16f))
         }
         
         lastOverlayX = lp.x
@@ -3691,23 +3701,53 @@ object FocusTimerManager {
                 else -> 120f
             }
 
+            val collapsedWidthDp = 38f
+            val collapsedHeightDp = 52f
+
             if (isOverlayCollapsed) {
                 timerText.visibility = View.GONE
                 tvTopRow?.visibility = View.GONE
                 tvBottomRow?.visibility = View.GONE
                 arrowText.visibility = View.VISIBLE
-                if (overlayCollapsedSide == "left") {
+                
+                // Zero-padding on container and text view for unclipped, perfectly centered arrow
+                container.setPadding(0, 0, 0, 0)
+                arrowText.setPadding(0, 0, 0, 0)
+                arrowText.textSize = 20f
+                arrowText.gravity = Gravity.CENTER
+                arrowText.includeFontPadding = false
+
+                val r = dpToPx(context, 18f).toFloat()
+                val radii = if (overlayCollapsedSide == "left") {
                     arrowText.text = "❯"
-                    arrowText.setPadding(dpToPx(context, 10f), dpToPx(context, 12f), dpToPx(context, 6f), dpToPx(context, 12f))
+                    // Flat on left edge, rounded on top-right and bottom-right
+                    floatArrayOf(0f, 0f, r, r, r, r, 0f, 0f)
                 } else {
                     arrowText.text = "❮"
-                    arrowText.setPadding(dpToPx(context, 6f), dpToPx(context, 12f), dpToPx(context, 10f), dpToPx(context, 12f))
+                    // Rounded on top-left and bottom-left, flat on right edge
+                    floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
                 }
-                lp.width = dpToPx(context, 32f)
+
+                container.background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0xFF12131A.toInt())
+                    cornerRadii = radii
+                    setStroke(dpToPx(context, 1.5f), 0xFF38BDF8.toInt())
+                }
+
+                lp.width = dpToPx(context, collapsedWidthDp)
+                lp.height = dpToPx(context, collapsedHeightDp)
             } else {
                 timerText.visibility = View.VISIBLE
                 arrowText.visibility = View.GONE
 
+                container.setPadding(dpToPx(context, 6f), dpToPx(context, 4f), dpToPx(context, 6f), dpToPx(context, 4f))
+                container.background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0xFF000000.toInt())
+                    cornerRadius = dpToPx(context, 16f).toFloat()
+                    setStroke(dpToPx(context, 1f), 0xFF222222.toInt())
+                }
+
+                lp.height = WindowManager.LayoutParams.WRAP_CONTENT
                 if (areOverlayControlsVisible) {
                     tvTopRow?.visibility = View.VISIBLE
                     tvBottomRow?.visibility = View.VISIBLE
@@ -6435,7 +6475,11 @@ object FocusReconciliationEngine {
                 // Trigger outbox drain immediately so changes propagate without delay
                 OutboxDrainer.start(context)
                 
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                FocusTimerManager.setOptimisticTodayFocusSeconds(null)
+                throw e
             } catch (e: java.util.concurrent.CancellationException) {
+                FocusTimerManager.setOptimisticTodayFocusSeconds(null)
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Error during Phase 2 or Phase 3 of reconciliation", e)

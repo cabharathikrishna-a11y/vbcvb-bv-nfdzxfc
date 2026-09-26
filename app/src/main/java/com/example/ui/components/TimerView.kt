@@ -26,6 +26,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1730,137 +1732,117 @@ fun FocusRankMilestoneDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
+                .widthIn(max = 280.dp)
+                .fillMaxWidth(0.85f)
+                .padding(4.dp)
                 .testTag("rank_motivation_popup"),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF151515)),
-            border = BorderStroke(1.2.dp, WaterBlue.copy(alpha = 0.5f))
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF141416)),
+            border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.4f))
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(72.dp)
-                        .background(WaterBlue.copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center
+                // Compact Header
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = "Rank Achievements",
-                        tint = WaterBlue,
-                        modifier = Modifier.size(36.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .background(WaterBlue.copy(alpha = 0.2f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Rank Achievements",
+                            tint = WaterBlue,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                    Text(
+                        text = "Daily Focus Milestone",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = "Daily Focus Milestone",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Calculated comparing your effort yesterday",
-                    color = Color.Gray,
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
-
+                // Compact Rank & Focus metrics row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF0F0F0F), RoundedCornerShape(12.dp))
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                        .background(Color(0xFF0C0C0E), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("Rank:", color = Color.Gray, fontSize = 10.sp)
                         Text(
-                            text = "Yesterday Rank",
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "#${popupData.yesterdayRank}",
+                            "#${popupData.yesterdayRank}",
                             color = WaterBlue,
-                            fontSize = 24.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "out of ${popupData.totalPeersCount} peers",
-                            color = Color.Gray,
-                            fontSize = 10.sp
+                            "(${popupData.totalPeersCount})",
+                            color = Color.DarkGray,
+                            fontSize = 9.sp
                         )
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .width(1.dp)
-                            .height(40.dp)
-                            .background(Color(0xFF222222))
-                    )
-
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("Focus:", color = Color.Gray, fontSize = 10.sp)
                         Text(
-                            text = "Yesterday Focus",
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = popupData.yesterdayFocusedTimeStr,
+                            popupData.yesterdayFocusedTimeStr,
                             color = Color.White,
-                            fontSize = 20.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
-
+                // Short motivational line
                 Text(
                     text = popupData.motivationalMessage,
                     color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(WaterBlue.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                        .border(BorderStroke(0.5.dp, WaterBlue.copy(alpha = 0.15f)), RoundedCornerShape(12.dp))
-                        .padding(16.dp)
+                        .background(WaterBlue.copy(alpha = 0.05f), RoundedCornerShape(6.dp))
+                        .border(BorderStroke(0.5.dp, WaterBlue.copy(alpha = 0.15f)), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
-
+                // Compact Dismiss Action
                 Button(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(30.dp)
                         .testTag("dismiss_rank_popup_btn")
                 ) {
                     Text(
                         text = "Let's Do It!",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
+                        fontSize = 11.sp
                     )
                 }
             }
@@ -5264,39 +5246,13 @@ fun TimerLiveControlContent(
                     !isStopwatchOnOrActive
                 }
                 if (shouldShowToggles) {
-                    Row(
+                    PomodoroStopwatchToggle(
+                        isTabFocusTimerSelected = isTabFocusTimerSelected,
+                        onModeSelected = { viewModel.setTabFocusTimerSelected(it) },
                         modifier = Modifier
                             .widthIn(max = 500.dp)
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(32.dp))
-                            .background(Color(0xFF151515))
-                            .border(1.dp, Color(0xFF2A2A2A), RoundedCornerShape(32.dp))
-                            .padding(4.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(if (isTabFocusTimerSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
-                                .clickable { viewModel.setTabFocusTimerSelected(true) }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Pomodoro", color = if (isTabFocusTimerSelected) Color.White else Color.Gray, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(if (!isTabFocusTimerSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
-                                .clickable { viewModel.setTabFocusTimerSelected(false) }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Stopwatch", color = if (!isTabFocusTimerSelected) Color.White else Color.Gray, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        }
-                    }
+                    )
                 }
 
                 // Numeric display unified for both Timer and Stopwatch
@@ -5305,15 +5261,26 @@ fun TimerLiveControlContent(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        val currentDisplaySeconds = if (isMinusTimerActive) {
+                            minusTimerSeconds
+                        } else if (isTabFocusTimerSelected || isInBreakMode) {
+                            timerSecondsRemaining
+                        } else {
+                            stopwatchSeconds
+                        }
+
+                        val isCurrentBlinking = if (isMinusTimerActive) false else (if (isTabFocusTimerSelected || isInBreakMode) (isInBreakMode || isPaused) else isPaused)
+
+                        RenderDigitalDigits(
+                            viewModel = viewModel,
+                            seconds = currentDisplaySeconds,
+                            isImmersive = isImmersive,
+                            isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
+                            isBlinking = isCurrentBlinking,
+                            isMinusTimer = isMinusTimerActive
+                        )
+
                         if (isMinusTimerActive) {
-                            RenderDigitalDigits(
-                                viewModel = viewModel,
-                                seconds = minusTimerSeconds,
-                                isImmersive = isImmersive,
-                                isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                                isBlinking = false,
-                                isMinusTimer = true
-                            )
                             Text(
                                 text = "FOCUS ENDED • START BREAK OR END",
                                 color = Color(0xFFEF5350),
@@ -5322,13 +5289,6 @@ fun TimerLiveControlContent(
                                 letterSpacing = 1.sp
                             )
                         } else if (isTabFocusTimerSelected || isInBreakMode) {
-                            RenderDigitalDigits(
-                                viewModel = viewModel,
-                                seconds = timerSecondsRemaining,
-                                isImmersive = isImmersive,
-                                isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                                isBlinking = isInBreakMode || isPaused
-                            )
                             Text(
                                 text = if (isTimerActive) {
                                     if (isInBreakMode) "now u r in a break" else "KEEP FOCUSING"
@@ -5345,13 +5305,6 @@ fun TimerLiveControlContent(
                                 letterSpacing = 1.sp
                             )
                         } else {
-                            RenderDigitalDigits(
-                                viewModel = viewModel,
-                                seconds = stopwatchSeconds,
-                                isImmersive = isImmersive,
-                                isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                                isBlinking = isPaused
-                            )
                             Text(
                                 text = if (isStopwatchActive) "KEEP FOCUSING" else "STOPPED",
                                 color = if (isStopwatchActive) WaterBlue else Color.Gray,
@@ -5382,12 +5335,20 @@ fun TimerLiveControlContent(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = "Focused Today", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text(text = formatLiveSeconds(globalTodaySeconds), color = WaterBlue, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        RollingFocusTimeText(
+                            targetSeconds = globalTodaySeconds,
+                            color = WaterBlue,
+                            animationTriggerKey = isTabFocusTimerSelected
+                        )
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = "Wasted Today", color = Color(0xFFEF4444), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text(text = formatMinsToHhMm(wastedMins), color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        RollingWastedTimeText(
+                            targetMins = wastedMins,
+                            color = Color(0xFFEF4444),
+                            animationTriggerKey = isTabFocusTimerSelected
+                        )
                     }
                 }
 
@@ -5585,38 +5546,12 @@ fun TimerLiveControlContent(
                     !isStopwatchOnOrActive
                 }
                 if (shouldShowToggles) {
-                    Row(
+                    PomodoroStopwatchToggle(
+                        isTabFocusTimerSelected = isTabFocusTimerSelected,
+                        onModeSelected = { viewModel.setTabFocusTimerSelected(it) },
                         modifier = Modifier
                             .fillMaxWidth(0.9f)
-                            .clip(RoundedCornerShape(32.dp))
-                            .background(Color(0xFF151515))
-                            .border(1.dp, Color(0xFF2A2A2A), RoundedCornerShape(32.dp))
-                            .padding(4.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(if (isTabFocusTimerSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
-                                .clickable { viewModel.setTabFocusTimerSelected(true) }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Pomodoro", color = if (isTabFocusTimerSelected) Color.White else Color.Gray, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(if (!isTabFocusTimerSelected) Color.White.copy(alpha = 0.15f) else Color.Transparent)
-                                .clickable { viewModel.setTabFocusTimerSelected(false) }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Stopwatch", color = if (!isTabFocusTimerSelected) Color.White else Color.Gray, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        }
-                    }
+                    )
                 } else {
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -5633,15 +5568,26 @@ fun TimerLiveControlContent(
                         verticalArrangement = Arrangement.Center
                     ) {
                         // Numeric display unified for both Timer and Stopwatch (current session timing)
+                        val currentDisplaySeconds = if (isMinusTimerActive) {
+                            minusTimerSeconds
+                        } else if (isTabFocusTimerSelected || isInBreakMode) {
+                            timerSecondsRemaining
+                        } else {
+                            stopwatchSeconds
+                        }
+
+                        val isCurrentBlinking = if (isMinusTimerActive) false else (if (isTabFocusTimerSelected || isInBreakMode) (isInBreakMode || isPaused) else isPaused)
+
+                        RenderDigitalDigits(
+                            viewModel = viewModel,
+                            seconds = currentDisplaySeconds,
+                            isImmersive = isImmersive,
+                            isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
+                            isBlinking = isCurrentBlinking,
+                            isMinusTimer = isMinusTimerActive
+                        )
+
                         if (isMinusTimerActive) {
-                            RenderDigitalDigits(
-                                viewModel = viewModel,
-                                seconds = minusTimerSeconds,
-                                isImmersive = isImmersive,
-                                isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                                isBlinking = false,
-                                isMinusTimer = true
-                            )
                             Text(
                                 text = "FOCUS ENDED • START BREAK OR END",
                                 color = Color(0xFFEF5350),
@@ -5650,13 +5596,6 @@ fun TimerLiveControlContent(
                                 letterSpacing = 1.sp
                             )
                         } else if (isTabFocusTimerSelected || isInBreakMode) {
-                            RenderDigitalDigits(
-                                viewModel = viewModel,
-                                seconds = timerSecondsRemaining,
-                                isImmersive = isImmersive,
-                                isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                                isBlinking = isInBreakMode || isPaused
-                            )
                             Text(
                                 text = if (isTimerActive) {
                                     if (isInBreakMode) "now u r in a break" else "KEEP FOCUSING"
@@ -5673,13 +5612,6 @@ fun TimerLiveControlContent(
                                 letterSpacing = 1.sp
                             )
                         } else {
-                            RenderDigitalDigits(
-                                viewModel = viewModel,
-                                seconds = stopwatchSeconds,
-                                isImmersive = isImmersive,
-                                isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                                isBlinking = isPaused
-                            )
                             Text(
                                 text = if (isStopwatchActive) "KEEP FOCUSING" else "STOPPED",
                                 color = if (isStopwatchActive) WaterBlue else Color.Gray,
@@ -5702,12 +5634,20 @@ fun TimerLiveControlContent(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(text = "Focused Today", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                                 Spacer(modifier = Modifier.height(2.dp))
-                                Text(text = formatLiveSeconds(globalTodaySeconds), color = WaterBlue, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                                RollingFocusTimeText(
+                                    targetSeconds = globalTodaySeconds,
+                                    color = WaterBlue,
+                                    animationTriggerKey = isTabFocusTimerSelected
+                                )
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(text = "Wasted Today", color = Color(0xFFEF4444), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                                 Spacer(modifier = Modifier.height(2.dp))
-                                Text(text = formatMinsToHhMm(wastedMins), color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                                RollingWastedTimeText(
+                                    targetMins = wastedMins,
+                                    color = Color(0xFFEF4444),
+                                    animationTriggerKey = isTabFocusTimerSelected
+                                )
                             }
                         }
 
@@ -5906,6 +5846,104 @@ fun TimerLiveControlContent(
 
 
 @Composable
+fun PomodoroStopwatchToggle(
+    isTabFocusTimerSelected: Boolean,
+    onModeSelected: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val targetBias = if (isTabFocusTimerSelected) -1f else 1f
+    val animatedBias by animateFloatAsState(
+        targetValue = targetBias,
+        animationSpec = spring(
+            dampingRatio = 0.82f,
+            stiffness = Spring.StiffnessHigh
+        ),
+        label = "mode_toggle_bias"
+    )
+
+    val pomoTextColor by animateColorAsState(
+        targetValue = if (isTabFocusTimerSelected) Color.White else Color(0xFF888888),
+        animationSpec = tween(100),
+        label = "pomo_color"
+    )
+    val swTextColor by animateColorAsState(
+        targetValue = if (!isTabFocusTimerSelected) Color.White else Color(0xFF888888),
+        animationSpec = tween(100),
+        label = "sw_color"
+    )
+
+    BoxWithConstraints(
+        modifier = modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(32.dp))
+            .background(Color(0xFF141416))
+            .border(1.dp, Color(0xFF28282E), RoundedCornerShape(32.dp))
+            .padding(4.dp)
+    ) {
+        val bubbleWidth = maxWidth / 2
+
+        // Animated sliding bubble indicator
+        Box(
+            modifier = Modifier
+                .align(BiasAlignment(horizontalBias = animatedBias, verticalBias = 0f))
+                .width(bubbleWidth)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(26.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.22f),
+                            Color.White.copy(alpha = 0.15f)
+                        )
+                    )
+                )
+                .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(26.dp))
+        )
+
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onModeSelected(true) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Pomodoro",
+                    color = pomoTextColor,
+                    fontWeight = if (isTabFocusTimerSelected) FontWeight.Bold else FontWeight.Medium,
+                    fontSize = 13.sp
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onModeSelected(false) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Stopwatch",
+                    color = swTextColor,
+                    fontWeight = if (!isTabFocusTimerSelected) FontWeight.Bold else FontWeight.Medium,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun RenderDigitalDigits(
     viewModel: AppViewModel,
     seconds: Int,
@@ -5915,9 +5953,44 @@ fun RenderDigitalDigits(
     isVerticalPhone: Boolean = false,
     isMinusTimer: Boolean = false
 ) {
-    val h = seconds / 3600
-    val m = (seconds % 3600) / 60
-    val s = seconds % 60
+    var animatedSeconds by remember { mutableIntStateOf(seconds) }
+
+    LaunchedEffect(seconds) {
+        val diff = seconds - animatedSeconds
+        if (kotlin.math.abs(diff) <= 1 || isMinusTimer) {
+            animatedSeconds = seconds
+        } else {
+            val startSec = animatedSeconds
+            val targetSec = seconds
+            val startM = startSec / 60
+            val targetM = targetSec / 60
+            if (startM != targetM) {
+                val totalSteps = kotlin.math.abs(targetM - startM)
+                // 42ms per minute step allows each number to be clearly visible and registered by the user
+                val delayPerStep = (1100L / totalSteps).coerceIn(38L, 55L)
+                val step = if (targetM > startM) 1 else -1
+                var currM = startM
+                while (currM != targetM) {
+                    currM += step
+                    animatedSeconds = currM * 60
+                    kotlinx.coroutines.delay(delayPerStep)
+                }
+            } else {
+                val totalSteps = 20
+                val stepSize = (targetSec - startSec) / totalSteps.toFloat()
+                for (step in 1..totalSteps) {
+                    animatedSeconds = (startSec + stepSize * step).toInt()
+                    kotlinx.coroutines.delay(35L)
+                }
+            }
+            animatedSeconds = targetSec
+        }
+    }
+
+    val displaySecs = animatedSeconds
+    val h = displaySecs / 3600
+    val m = (displaySecs % 3600) / 60
+    val s = displaySecs % 60
 
     val textString = if (isMinusTimer) {
         if (h > 0) {
@@ -5932,7 +6005,7 @@ fun RenderDigitalDigits(
             String.format(java.util.Locale.US, "%02d:%02d", m, s)
         }
     } else {
-        if (seconds >= 3600) {
+        if (displaySecs >= 3600) {
             String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s)
         } else {
             String.format(java.util.Locale.US, "%02d:%02d", m, s)
@@ -5976,16 +6049,229 @@ fun RenderDigitalDigits(
         if (seconds >= 3600) 55.sp else 86.sp
     }
 
-    Text(
-        text = textString,
-        color = if (isMinusTimer) Color(0xFFEF5350) else Color.White,
-        fontSize = dynamicDigitalFontSize,
-        fontWeight = FontWeight.Black,
-        fontFamily = FontFamily.Monospace,
-        letterSpacing = (-4).sp,
+    val digitColor = if (isMinusTimer) Color(0xFFEF5350) else Color.White
+
+    Row(
         modifier = antiBurnOffset
             .alpha(blinkAlpha)
-            .testTag("timer_digital_display")
+            .testTag("timer_digital_display"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        for (i in textString.indices) {
+            val char = textString[i]
+            if (char == ':' || char == '-') {
+                Text(
+                    text = char.toString(),
+                    color = digitColor,
+                    fontSize = dynamicDigitalFontSize,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = (-4).sp
+                )
+            } else {
+                AnimatedContent(
+                    targetState = char,
+                    transitionSpec = {
+                        if (targetState < initialState) {
+                            // Rolling down
+                            (slideInVertically(animationSpec = tween(38, easing = FastOutSlowInEasing)) { -it } + fadeIn(animationSpec = tween(38)))
+                                .togetherWith(slideOutVertically(animationSpec = tween(38, easing = FastOutSlowInEasing)) { it } + fadeOut(animationSpec = tween(38)))
+                        } else {
+                            // Rolling up
+                            (slideInVertically(animationSpec = tween(38, easing = FastOutSlowInEasing)) { it } + fadeIn(animationSpec = tween(38)))
+                                .togetherWith(slideOutVertically(animationSpec = tween(38, easing = FastOutSlowInEasing)) { -it } + fadeOut(animationSpec = tween(38)))
+                        }
+                    },
+                    label = "digit_roll_$i"
+                ) { digitChar ->
+                    Text(
+                        text = digitChar.toString(),
+                        color = digitColor,
+                        fontSize = dynamicDigitalFontSize,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = (-4).sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RollingFocusTimeText(
+    targetSeconds: Int,
+    color: Color = WaterBlue,
+    fontSize: androidx.compose.ui.unit.TextUnit = 18.sp,
+    fontWeight: FontWeight = FontWeight.ExtraBold,
+    fontFamily: androidx.compose.ui.text.font.FontFamily? = androidx.compose.ui.text.font.FontFamily.Monospace,
+    letterSpacing: androidx.compose.ui.unit.TextUnit = (-1).sp,
+    animationTriggerKey: Any? = null,
+    modifier: Modifier = Modifier
+) {
+    var animatedSeconds by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(targetSeconds, animationTriggerKey) {
+        val startSec = animatedSeconds
+        val targetSec = targetSeconds
+        val diff = targetSec - startSec
+        if (kotlin.math.abs(diff) <= 1) {
+            animatedSeconds = targetSec
+        } else {
+            val startM = startSec / 60
+            val targetM = targetSec / 60
+            if (startM != targetM) {
+                val totalSteps = kotlin.math.abs(targetM - startM).coerceIn(1, 35)
+                val delayPerStep = (900L / totalSteps).coerceIn(25L, 45L)
+                val stepSize = (targetM - startM) / totalSteps.toFloat()
+                for (step in 1..totalSteps) {
+                    val currM = (startM + stepSize * step).toInt()
+                    animatedSeconds = currM * 60
+                    kotlinx.coroutines.delay(delayPerStep)
+                }
+            } else {
+                val totalSteps = 15
+                val stepSize = (targetSec - startSec) / totalSteps.toFloat()
+                for (step in 1..totalSteps) {
+                    animatedSeconds = (startSec + stepSize * step).toInt()
+                    kotlinx.coroutines.delay(30L)
+                }
+            }
+            animatedSeconds = targetSec
+        }
+    }
+
+    val text = formatLiveSeconds(animatedSeconds)
+    RollingDigitsDisplay(
+        text = text,
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        fontFamily = fontFamily,
+        letterSpacing = letterSpacing,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun RollingWastedTimeText(
+    targetMins: Int,
+    color: Color = Color(0xFFEF4444),
+    fontSize: androidx.compose.ui.unit.TextUnit = 18.sp,
+    fontWeight: FontWeight = FontWeight.ExtraBold,
+    fontFamily: androidx.compose.ui.text.font.FontFamily? = androidx.compose.ui.text.font.FontFamily.Monospace,
+    letterSpacing: androidx.compose.ui.unit.TextUnit = (-1).sp,
+    animationTriggerKey: Any? = null,
+    modifier: Modifier = Modifier
+) {
+    var animatedMins by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(targetMins, animationTriggerKey) {
+        val startM = animatedMins
+        val targetM = targetMins
+        val diff = targetM - startM
+        if (kotlin.math.abs(diff) <= 1) {
+            animatedMins = targetM
+        } else {
+            val totalSteps = kotlin.math.abs(targetM - startM).coerceIn(1, 35)
+            val delayPerStep = (900L / totalSteps).coerceIn(25L, 45L)
+            val stepSize = (targetM - startM) / totalSteps.toFloat()
+            for (step in 1..totalSteps) {
+                animatedMins = (startM + stepSize * step).toInt()
+                kotlinx.coroutines.delay(delayPerStep)
+            }
+            animatedMins = targetM
+        }
+    }
+
+    val text = formatMinsToHhMm(animatedMins)
+    RollingDigitsDisplay(
+        text = text,
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        fontFamily = fontFamily,
+        letterSpacing = letterSpacing,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun RollingDigitsDisplay(
+    text: String,
+    color: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit = 18.sp,
+    fontWeight: FontWeight = FontWeight.ExtraBold,
+    fontFamily: androidx.compose.ui.text.font.FontFamily? = androidx.compose.ui.text.font.FontFamily.Monospace,
+    letterSpacing: androidx.compose.ui.unit.TextUnit = (-1).sp,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        for (i in text.indices) {
+            val char = text[i]
+            if (!char.isDigit()) {
+                Text(
+                    text = char.toString(),
+                    color = color,
+                    fontSize = fontSize,
+                    fontWeight = fontWeight,
+                    fontFamily = fontFamily,
+                    letterSpacing = letterSpacing
+                )
+            } else {
+                AnimatedContent(
+                    targetState = char,
+                    transitionSpec = {
+                        if (targetState < initialState) {
+                            // Rolling down
+                            (slideInVertically(animationSpec = tween(38, easing = FastOutSlowInEasing)) { -it } + fadeIn(animationSpec = tween(38)))
+                                .togetherWith(slideOutVertically(animationSpec = tween(38, easing = FastOutSlowInEasing)) { it } + fadeOut(animationSpec = tween(38)))
+                        } else {
+                            // Rolling up
+                            (slideInVertically(animationSpec = tween(38, easing = FastOutSlowInEasing)) { it } + fadeIn(animationSpec = tween(38)))
+                                .togetherWith(slideOutVertically(animationSpec = tween(38, easing = FastOutSlowInEasing)) { -it } + fadeOut(animationSpec = tween(38)))
+                        }
+                    },
+                    label = "digit_roll_$i"
+                ) { digitChar ->
+                    Text(
+                        text = digitChar.toString(),
+                        color = color,
+                        fontSize = fontSize,
+                        fontWeight = fontWeight,
+                        fontFamily = fontFamily,
+                        letterSpacing = letterSpacing
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RollingStatText(
+    text: String,
+    color: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit = 18.sp,
+    fontWeight: FontWeight = FontWeight.ExtraBold,
+    fontFamily: androidx.compose.ui.text.font.FontFamily? = androidx.compose.ui.text.font.FontFamily.Monospace,
+    letterSpacing: androidx.compose.ui.unit.TextUnit = (-1).sp,
+    animationTriggerKey: Any? = null,
+    modifier: Modifier = Modifier
+) {
+    RollingDigitsDisplay(
+        text = text,
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        fontFamily = fontFamily,
+        letterSpacing = letterSpacing,
+        modifier = modifier
     )
 }
 
@@ -6327,12 +6613,20 @@ fun LiveControlTimerBar(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(text = "Focused Today", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = formatLiveSeconds(globalTodaySeconds), color = WaterBlue, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                    RollingFocusTimeText(
+                        targetSeconds = globalTodaySeconds,
+                        color = WaterBlue,
+                        animationTriggerKey = true
+                    )
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(text = "Wasted Today", color = Color(0xFFEF4444), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = formatMinsToHhMm(wastedMins), color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                    RollingWastedTimeText(
+                        targetMins = wastedMins,
+                        color = Color(0xFFEF4444),
+                        animationTriggerKey = true
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -6359,9 +6653,9 @@ fun LiveControlTimerBar(
                     modifier = Modifier.fillMaxWidth().height(48.dp).testTag("start_timer_btn")
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Start Focus", modifier = Modifier.size(20.dp), tint = Color.Black)
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Start", modifier = Modifier.size(20.dp), tint = Color.Black)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Start Focus", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Black)
+                        Text("Start", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Black)
                     }
                 }
             }
@@ -6438,9 +6732,9 @@ fun LiveControlBreakBar(
                 modifier = Modifier.weight(1f).height(48.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Resume Stopwatch", tint = Color.Black, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Resume", tint = Color.Black, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Resume Stopwatch", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Resume", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         } else {
@@ -6455,9 +6749,9 @@ fun LiveControlBreakBar(
                 modifier = Modifier.weight(1f).height(48.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Start Pomo", tint = Color.Black, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Start", tint = Color.Black, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Start Pomo", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("Start", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -6558,12 +6852,20 @@ fun LiveControlStopwatchBar(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(text = "Focused Today", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = formatLiveSeconds(globalTodaySeconds), color = WaterBlue, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                    RollingFocusTimeText(
+                        targetSeconds = globalTodaySeconds,
+                        color = WaterBlue,
+                        animationTriggerKey = false
+                    )
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(text = "Wasted Today", color = Color(0xFFEF4444), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(text = formatMinsToHhMm(wastedMins), color = Color(0xFFEF4444), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                    RollingWastedTimeText(
+                        targetMins = wastedMins,
+                        color = Color(0xFFEF4444),
+                        animationTriggerKey = false
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -6590,9 +6892,9 @@ fun LiveControlStopwatchBar(
                     modifier = Modifier.fillMaxWidth().height(48.dp).testTag("start_stopwatch_btn")
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Start Stopwatch", modifier = Modifier.size(20.dp), tint = Color.Black)
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Start", modifier = Modifier.size(20.dp), tint = Color.Black)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Start Stopwatch", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Black)
+                        Text("Start", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Black)
                     }
                 }
             }
@@ -6787,7 +7089,7 @@ fun LiveSessionActionBar(
             )
         } else if (!isFocusPhase) {
             // State: BREAK -> 2 Buttons: Resume/Start Focus & End Session
-            val resumeText = if (wasStartedFromStopwatch) "Start Stopwatch" else "Start Pomo"
+            val resumeText = "Start"
             ActionButton(
                 text = resumeText,
                 icon = Icons.Default.PlayArrow,
@@ -6871,8 +7173,8 @@ fun LiveSessionActionBar(
                 modifier = Modifier.weight(1f)
             )
         } else {
-            // State: IDLE -> 1 Button: Start Focus / Start Stopwatch
-            val startText = if (isTabFocusTimerSelected) "Start Focus" else "Start Stopwatch"
+            // State: IDLE -> 1 Button: Start
+            val startText = "Start"
             ActionButton(
                 text = startText,
                 icon = Icons.Default.PlayArrow,

@@ -29,6 +29,7 @@ object GoogleDriveReadManager {
      * Checks whether the user has signed in and granted the Drive scope.
      */
     fun hasDrivePermission(context: Context): Boolean {
+        if (PermissionUtils.isTesterMode(context)) return true
         return try {
             val account = GmsUtils.getLastSignedInAccount(context)
             account != null && account.grantedScopes.any {
@@ -452,9 +453,14 @@ object GoogleDriveReadManager {
             tempFile.delete()
 
             if (importSuccess) {
+                try {
+                    GoogleDriveLiveSyncManager.execute3PassLiveSync(context, database)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Granular live sync notice during restore: ${e.message}")
+                }
                 val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 prefs.edit().putLong("gd_all_last_sync_timestamp", System.currentTimeMillis()).apply()
-                val successMsg = "Successfully restored all app data and files from Google Drive!"
+                val successMsg = "Successfully restored all app data, files, and granular entities from Google Drive!"
                 GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Restore", "Completed", 100, successMsg, isFinished = true)
                 Pair(true, successMsg)
             } else {

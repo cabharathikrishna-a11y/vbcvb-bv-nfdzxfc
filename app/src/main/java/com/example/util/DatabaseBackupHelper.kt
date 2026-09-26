@@ -48,6 +48,8 @@ object DatabaseBackupHelper {
             context.contentResolver.openOutputStream(uri)?.use { fos ->
                 exportDataToStream(context, database, fos, isAutoBackup)
             } ?: false
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to export data to Uri", e)
             false
@@ -582,6 +584,8 @@ object DatabaseBackupHelper {
                 }
             }
             true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to export data", e)
             false
@@ -597,6 +601,8 @@ object DatabaseBackupHelper {
                 deleteBackupFiles(context)
             }
             success
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to import data from Uri", e)
             false
@@ -1472,6 +1478,8 @@ object DatabaseBackupHelper {
                 }
             }
             if (tempFile.exists()) tempFile.delete()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to perform auto-backup", e)
         }

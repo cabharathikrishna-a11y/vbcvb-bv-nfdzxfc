@@ -99,13 +99,7 @@ private fun formatLocalMediaDuration(ms: Long): String {
 }
 
 private fun checkLocalMediaPermissions(context: android.content.Context): Boolean {
-    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_MEDIA_IMAGES) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
-        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_MEDIA_VIDEO) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
-        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_MEDIA_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-    } else {
-        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
-    }
+    return com.example.util.PermissionUtils.checkLocalMediaPermissions(context)
 }
 
 fun resolveAuthorName(context: android.content.Context): String {
@@ -2051,7 +2045,7 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                         // Get Device Location option
                         IconButton(onClick = {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                            if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)) {
                                 requestPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                             } else {
                                 Toast.makeText(context, "Pinpointing GPS...", Toast.LENGTH_SHORT).show()
@@ -2067,7 +2061,7 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                         // Snaps direct internal photo option
                         IconButton(onClick = {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                            if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.CAMERA)) {
                                 requestPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
                             } else {
                                 try {
@@ -2129,7 +2123,7 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                         // Snaps direct internal video option
                         IconButton(onClick = {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                            if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.CAMERA)) {
                                 requestPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
                             } else {
                                 val outVideoFile = File(com.example.util.StorageHelper.getAppFilesDir(context), "journal_video_${System.currentTimeMillis()}.mp4")
@@ -2150,7 +2144,7 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         // Record voice audio option
                         IconButton(
                             onClick = {
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
                                     requestPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
                                 } else {
                                     if (isRecordingAudio) {
@@ -2406,7 +2400,7 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         // Main Microphone Button inside dialog
                         IconButton(
                             onClick = {
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
                                     requestPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
                                 } else {
                                     if (isDialogRecording) {
@@ -2914,7 +2908,7 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         // 3. AI Voice Journal Note (Mic)
                         IconButton(
                             onClick = {
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
                                     requestPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
                                 }
                                 showVoiceJournalDialog = true
@@ -4722,7 +4716,7 @@ fun getCityNameFromCoords(context: Context, latitude: Double, longitude: Double)
 }
 
 private fun triggerFetchLocation(context: Context, onLocationFound: (latitude: Double, longitude: Double, name: String) -> Unit) {
-    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+    if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)) {
         onLocationFound(16.3067, 80.4365, "Guntur, Andhra Pradesh")
         return
     }
@@ -5787,7 +5781,7 @@ fun JournalMapView(
             // My Location Button Overlay on Map
             FloatingActionButton(
                 onClick = {
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)) {
                         locationPermissionLauncher.launch(
                             arrayOf(
                                 Manifest.permission.ACCESS_FINE_LOCATION,

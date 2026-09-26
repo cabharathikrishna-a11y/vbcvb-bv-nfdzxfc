@@ -577,7 +577,7 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                         // Snaps direct internal photo option
                         IconButton(onClick = {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                            if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.CAMERA)) {
                                 requestPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
                             } else {
                                 try {
@@ -604,7 +604,7 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                         // Snaps direct internal video option
                         IconButton(onClick = {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                            if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.CAMERA)) {
                                 requestPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
                             } else {
                                 val outVideoFile = com.example.util.InternalStorageManager.getFile(
@@ -629,7 +629,7 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         // Record voice audio option
                         IconButton(
                             onClick = {
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                if (!com.example.util.PermissionUtils.hasPermission(context, Manifest.permission.RECORD_AUDIO)) {
                                     requestPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
                                 } else {
                                     if (isRecordingAudio) {

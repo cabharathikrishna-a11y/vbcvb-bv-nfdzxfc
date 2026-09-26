@@ -11,6 +11,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +31,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.Habit
 import com.example.data.Task
 import com.example.ui.AppViewModel
@@ -60,9 +63,8 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     }
     var showCreateListDialog by remember { mutableStateOf(false) }
 
-    // Dialog state controllers
-    var showCreateEditDialog by remember { mutableStateOf(false) }
-    var isEditMode by remember { mutableStateOf(false) }
+    // Dialog and full-screen state controllers
+    var showHabitEditorScreen by remember { mutableStateOf(false) }
     var editingHabitTarget by remember { mutableStateOf<Habit?>(null) }
 
     val showHistoryDialog by viewModel.showHabitsHistoryDialog.collectAsState()
@@ -70,18 +72,6 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     var showLongPressOptionsForHabit by remember { mutableStateOf<Habit?>(null) }
     var showOrderMenuForHabitId by remember { mutableStateOf<Int?>(null) }
 
-    // Local form states
-    var curHabitName by remember { mutableStateOf("") }
-    var curTimeOfDay by remember { mutableStateOf("Morning") }
-    var curTargetCount by remember { mutableStateOf("1") }
-    var curFrequency by remember { mutableStateOf("DAILY") } // DAILY, WEEKLY, MONTHLY, MONTHLY_ONCE
-    var curWeeklyDay by remember { mutableStateOf(2) } // Calendar.MONDAY = 2
-    var curMonthlyStartDate by remember { mutableStateOf("1") }
-    var curMonthlyEndDate by remember { mutableStateOf("30") }
-    var curScheduledTime by remember { mutableStateOf("08:00") }
-    var curIsReminderEnabled by remember { mutableStateOf(false) }
-    var curHabitActionData by remember { mutableStateOf(TaskActionData()) }
-    var showActionConfigDialog by remember { mutableStateOf(false) }
     val contactsList by viewModel.contacts.collectAsState()
 
     val externalSelectedId by viewModel.selectedHabitId.collectAsState()
@@ -89,22 +79,15 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         externalSelectedId?.let { idVal ->
             val habit = allDbHabits.find { it.id == idVal }
             if (habit != null) {
-                isEditMode = true
                 editingHabitTarget = habit
-                curHabitName = habit.name
-                curTimeOfDay = habit.timeOfDay
-                curTargetCount = habit.targetCount.toString()
-                curFrequency = habit.frequency
-                curWeeklyDay = habit.weeklyDay
-                curMonthlyStartDate = habit.monthlyStartDate.toString()
-                curMonthlyEndDate = habit.monthlyEndDate.toString()
-                curScheduledTime = habit.scheduledTime
-                curIsReminderEnabled = habit.isReminderEnabled
-                curHabitActionData = TaskActionHelper.parseActionData(habit)
-                showCreateEditDialog = true
+                showHabitEditorScreen = true
                 viewModel.clearSelectedHabitId()
             }
         }
+    }
+
+    androidx.activity.compose.BackHandler(enabled = isSidebarExpanded) {
+        isSidebarExpanded = false
     }
 
     // Today format helper
@@ -674,18 +657,8 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                         Button(
                             onClick = {
-                                isEditMode = false
-                                curHabitName = ""
-                                curTimeOfDay = "Morning"
-                                curTargetCount = "1"
-                                curFrequency = "DAILY"
-                                curWeeklyDay = 2
-                                curMonthlyStartDate = "1"
-                                curMonthlyEndDate = "30"
-                                curScheduledTime = "08:00"
-                                curIsReminderEnabled = false
-                                curHabitActionData = TaskActionData()
-                                showCreateEditDialog = true
+                                editingHabitTarget = null
+                                showHabitEditorScreen = true
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
                             shape = RoundedCornerShape(12.dp),
@@ -876,462 +849,50 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         )
     }
 
-    // CREATE OR EDIT DIALOG with "Add or Save" button control
-    var showUnsavedDialog by remember { mutableStateOf(false) }
-
-    if (showCreateEditDialog) {
-        val handleDismissAttempt = {
-            if (curHabitName.trim().isNotEmpty()) {
-                showUnsavedDialog = true
-            } else {
-                showCreateEditDialog = false
-            }
-        }
-
-        if (showUnsavedDialog) {
-            AlertDialog(
-                onDismissRequest = { showUnsavedDialog = false },
-                title = { Text("Unsaved Changes", color = Color.White) },
-                text = { Text("You have unsaved changes. Do you want to save or discard them?", color = Color.LightGray) },
-                containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f),
-                confirmButton = {
-                    TextButton(onClick = {
-                        showUnsavedDialog = false
-                        if (curHabitName.trim().isNotEmpty()) {
-                            val targetInt = curTargetCount.toIntOrNull() ?: 1
-                            val mStart = curMonthlyStartDate.toIntOrNull() ?: 1
-                            val mEnd = curMonthlyEndDate.toIntOrNull() ?: 30
-                            
-                            val freshHabit = Habit(
-                                id = if (isEditMode) (editingHabitTarget?.id ?: 0) else 0,
-                                name = curHabitName.trim(),
-                                listCategory = if (selectedListName.equals("all", ignoreCase = true)) {
-                                    habitLists.firstOrNull { !it.equals("all", ignoreCase = true) } ?: "Health & Vigor"
-                                } else {
-                                    selectedListName
-                                },
-                                timeOfDay = curTimeOfDay,
-                                targetCount = targetInt,
-                                frequency = curFrequency,
-                                weeklyDay = curWeeklyDay,
-                                monthlyStartDate = mStart,
-                                monthlyEndDate = mEnd,
-                                streakCount = if (isEditMode) (editingHabitTarget?.streakCount ?: 0) else 0,
-                                lastCompletedTimestamp = if (isEditMode) (editingHabitTarget?.lastCompletedTimestamp) else null,
-                                scheduledTime = curScheduledTime,
-                                isReminderEnabled = curIsReminderEnabled,
-                                actionType = curHabitActionData.type,
-                                actionContactName = curHabitActionData.contactName,
-                                actionContactPhone = curHabitActionData.contactPhone,
-                                actionMessage = curHabitActionData.message
-                            )
-
-                            if (isEditMode) {
-                                viewModel.updateHabit(freshHabit)
-                            } else {
-                                viewModel.createHabit(
-                                    name = freshHabit.name,
-                                    listCategory = freshHabit.listCategory,
-                                    timeOfDay = freshHabit.timeOfDay,
-                                    targetCount = freshHabit.targetCount,
-                                    frequency = freshHabit.frequency,
-                                    weeklyDay = freshHabit.weeklyDay,
-                                    monthlyStartDate = freshHabit.monthlyStartDate,
-                                    monthlyEndDate = freshHabit.monthlyEndDate,
-                                    scheduledTime = freshHabit.scheduledTime,
-                                    isReminderEnabled = freshHabit.isReminderEnabled,
-                                    actionType = freshHabit.actionType,
-                                    actionContactName = freshHabit.actionContactName,
-                                    actionContactPhone = freshHabit.actionContactPhone,
-                                    actionMessage = freshHabit.actionMessage
-                                )
-                            }
-                        }
-                        showCreateEditDialog = false
-                    }) {
-                        Text("Save", color = WaterBlue)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        showUnsavedDialog = false
-                        showCreateEditDialog = false
-                    }) {
-                        Text("Discard", color = Color(0xFFF9325D))
-                    }
-                }
-            )
-        }
-
-        AlertDialog(
-            onDismissRequest = { handleDismissAttempt() },
-            title = { Text(if (isEditMode) "Edit Habit Plan" else "Define New Habit Plan", fontWeight = FontWeight.Bold, color = Color.White) },
-            containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f),
-            text = {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    item {
-                        TextField(
-                            value = curHabitName,
-                            onValueChange = { curHabitName = it },
-                            label = { Text("Habit name (e.g. Meditate)") },
-                            colors = TextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.LightGray,
-                                focusedContainerColor = SurfaceCard,
-                                unfocusedContainerColor = SurfaceCard
-                            ),
-                            modifier = Modifier.fillMaxWidth().testTag("add_habit_name_field")
-                        )
-                    }
-
-                    item {
-                        TextField(
-                            value = curTargetCount,
-                            onValueChange = { curTargetCount = it },
-                            label = { Text("Daily Target count") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = TextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.LightGray,
-                                focusedContainerColor = SurfaceCard,
-                                unfocusedContainerColor = SurfaceCard
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    item {
-                        Text("Day Segment", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            listOf("Morning", "Afternoon", "Evening", "Night").forEach { label ->
-                                val isSelected = curTimeOfDay == label
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(if (isSelected) WaterBlue else SurfaceCard)
-                                        .clickable { curTimeOfDay = label }
-                                        .padding(vertical = 6.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(label, color = if (isSelected) Color.Black else Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        val timeParts = curScheduledTime.split(":")
-                                        val initialHour = timeParts.getOrNull(0)?.toIntOrNull() ?: 8
-                                        val initialMinute = timeParts.getOrNull(1)?.toIntOrNull() ?: 0
-                                        android.app.TimePickerDialog(
-                                            dialogContext,
-                                            { _, hourOfDay, minute ->
-                                                curScheduledTime = String.format("%02d:%02d", hourOfDay, minute)
-                                            },
-                                            initialHour,
-                                            initialMinute,
-                                            true
-                                        ).show()
-                                    }
-                            ) {
-                                TextField(
-                                    value = curScheduledTime,
-                                    onValueChange = { },
-                                    readOnly = true,
-                                    enabled = false,
-                                    label = { Text("Scheduled Time") },
-                                    placeholder = { Text("e.g. 08:00") },
-                                    colors = TextFieldDefaults.colors(
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.LightGray,
-                                        disabledTextColor = Color.White,
-                                        focusedContainerColor = SurfaceCard,
-                                        unfocusedContainerColor = SurfaceCard,
-                                        disabledContainerColor = SurfaceCard,
-                                        disabledLabelColor = Color.Gray,
-                                        disabledPlaceholderColor = Color.Gray
-                                    ),
-                                    trailingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.AccessTime,
-                                            contentDescription = "Select Time",
-                                            tint = WaterBlue
-                                        )
-                                    },
-                                    modifier = Modifier.fillMaxWidth().testTag("habit_time_field")
-                                )
-                            }
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Reminder", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Switch(
-                                    checked = curIsReminderEnabled,
-                                    onCheckedChange = { curIsReminderEnabled = it },
-                                    colors = SwitchDefaults.colors(checkedThumbColor = WaterBlue, checkedTrackColor = WaterBlue.copy(alpha = 0.5f))
-                                )
-                            }
-                        }
-                    }
-
-                    item {
-                        Text("Scheduling Profile", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            listOf("DAILY", "WEEKLY", "MONTHLY", "MONTHLY_ONCE").forEach { freq ->
-                                val isSelected = curFrequency == freq
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(if (isSelected) WaterBlue else SurfaceCard)
-                                        .clickable { curFrequency = freq }
-                                        .padding(vertical = 6.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = when(freq) {
-                                            "DAILY" -> "Daily"
-                                            "WEEKLY" -> "Weekly"
-                                            "MONTHLY" -> "Month Span"
-                                            else -> "Month Day"
-                                        },
-                                        color = if (isSelected) Color.Black else Color.LightGray,
-                                        fontSize = 8.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Schedule option parameters based on Selected Frequency profile
-                    if (curFrequency == "WEEKLY") {
-                        item {
-                            Text("Repeat Weekly on:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                // Maps 2=Monday, 3=Tuesday, 4=Wednesday, 5=Thursday, 6=Friday, 7=Saturday, 1=Sunday
-                                listOf(
-                                    2 to "M", 3 to "T", 4 to "W", 5 to "T", 6 to "F", 7 to "S", 1 to "S"
-                                ).forEach { (calIdx, shortLabel) ->
-                                    val isSelected = curWeeklyDay == calIdx
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(CircleShape)
-                                            .background(if (isSelected) WaterBlue else SurfaceCard)
-                                            .clickable { curWeeklyDay = calIdx }
-                                            .padding(vertical = 8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(shortLabel, color = if (isSelected) Color.Black else Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (curFrequency == "MONTHLY") {
-                        item {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("Monthly Span Dates (e.g. from 1st to 15th of the month)", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    TextField(
-                                        value = curMonthlyStartDate,
-                                        onValueChange = { curMonthlyStartDate = it },
-                                        label = { Text("From Date (1-31)") },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.LightGray, focusedContainerColor = SurfaceCard, unfocusedContainerColor = SurfaceCard),
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    TextField(
-                                        value = curMonthlyEndDate,
-                                        onValueChange = { curMonthlyEndDate = it },
-                                        label = { Text("To Date (1-31)") },
-                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                        colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.LightGray, focusedContainerColor = SurfaceCard, unfocusedContainerColor = SurfaceCard),
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (curFrequency == "MONTHLY_ONCE") {
-                        item {
-                            TextField(
-                                value = curMonthlyStartDate,
-                                onValueChange = { curMonthlyStartDate = it },
-                                label = { Text("Repeat monthly on Day of Month (1-31)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.LightGray, focusedContainerColor = SurfaceCard, unfocusedContainerColor = SurfaceCard),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    item {
-                        Text("HABIT ACTION", color = WaterBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(SurfaceCard)
-                                .clickable { showActionConfigDialog = true }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(
-                                    imageVector = Icons.Default.FlashOn,
-                                    contentDescription = "Habit Action",
-                                    tint = WaterBlue,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "Action",
-                                        color = Color.White,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    if (curHabitActionData.type.isNotEmpty()) {
-                                        val summary = when (curHabitActionData.type.uppercase()) {
-                                            "CALL" -> "📞 Call ${curHabitActionData.contactName.ifEmpty { curHabitActionData.contactPhone }}"
-                                            "SMS" -> "💬 SMS ${curHabitActionData.contactName.ifEmpty { curHabitActionData.contactPhone }}"
-                                            "WHATSAPP" -> "🟢 WhatsApp ${curHabitActionData.contactName.ifEmpty { curHabitActionData.contactPhone }}"
-                                            else -> curHabitActionData.type
-                                        }
-                                        Text(
-                                            text = summary,
-                                            color = WaterBlue,
-                                            fontSize = 11.sp,
-                                            maxLines = 1
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "Call, SMS, or WhatsApp reminder",
-                                            color = Color.Gray,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                }
-                            }
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = Color.Gray,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (curHabitName.trim().isNotEmpty()) {
-                            val targetInt = curTargetCount.toIntOrNull() ?: 1
-                            val mStart = curMonthlyStartDate.toIntOrNull() ?: 1
-                            val mEnd = curMonthlyEndDate.toIntOrNull() ?: 30
-                            
-                            val freshHabit = Habit(
-                                id = if (isEditMode) (editingHabitTarget?.id ?: 0) else 0,
-                                name = curHabitName.trim(),
-                                listCategory = if (selectedListName.equals("all", ignoreCase = true)) {
-                                    habitLists.firstOrNull { !it.equals("all", ignoreCase = true) } ?: "Health & Vigor"
-                                } else {
-                                    selectedListName
-                                },
-                                timeOfDay = curTimeOfDay,
-                                targetCount = targetInt,
-                                frequency = curFrequency,
-                                weeklyDay = curWeeklyDay,
-                                monthlyStartDate = mStart,
-                                monthlyEndDate = mEnd,
-                                streakCount = if (isEditMode) (editingHabitTarget?.streakCount ?: 0) else 0,
-                                lastCompletedTimestamp = if (isEditMode) (editingHabitTarget?.lastCompletedTimestamp) else null,
-                                scheduledTime = curScheduledTime,
-                                isReminderEnabled = curIsReminderEnabled,
-                                actionType = curHabitActionData.type,
-                                actionContactName = curHabitActionData.contactName,
-                                actionContactPhone = curHabitActionData.contactPhone,
-                                actionMessage = curHabitActionData.message
-                            )
-
-                            if (isEditMode) {
-                                viewModel.updateHabit(freshHabit)
-                            } else {
-                                viewModel.createHabit(
-                                    name = freshHabit.name,
-                                    listCategory = freshHabit.listCategory,
-                                    timeOfDay = freshHabit.timeOfDay,
-                                    targetCount = freshHabit.targetCount,
-                                    frequency = freshHabit.frequency,
-                                    weeklyDay = freshHabit.weeklyDay,
-                                    monthlyStartDate = freshHabit.monthlyStartDate,
-                                    monthlyEndDate = freshHabit.monthlyEndDate,
-                                    scheduledTime = freshHabit.scheduledTime,
-                                    isReminderEnabled = freshHabit.isReminderEnabled,
-                                    actionType = freshHabit.actionType,
-                                    actionContactName = freshHabit.actionContactName,
-                                    actionContactPhone = freshHabit.actionContactPhone,
-                                    actionMessage = freshHabit.actionMessage
-                                )
-                            }
-                        }
-                        showCreateEditDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
-                ) {
-                    Text("Add or Save", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateEditDialog = false }) {
-                    Text("Cancel", color = Color.White)
-                }
-            }
-        )
-    }
-
-    if (showActionConfigDialog) {
-        TaskActionConfigDialog(
-            initialAction = curHabitActionData,
-            contacts = contactsList,
-            onSave = { updatedAction ->
-                curHabitActionData = updatedAction
-                showActionConfigDialog = false
-            },
+    // Full-screen Habit Creator and Editor Page (matching Task creation page)
+    if (showHabitEditorScreen) {
+        HabitEditorFullScreen(
+            habit = editingHabitTarget,
+            initialListName = selectedListName,
+            allLists = habitLists.filter { !it.equals("all", ignoreCase = true) },
+            contactsList = contactsList,
             onDismiss = {
-                showActionConfigDialog = false
+                showHabitEditorScreen = false
+                editingHabitTarget = null
+            },
+            onSave = { resultHabit ->
+                if (editingHabitTarget != null) {
+                    viewModel.updateHabit(resultHabit)
+                } else {
+                    viewModel.createHabit(
+                        name = resultHabit.name,
+                        listCategory = resultHabit.listCategory,
+                        timeOfDay = resultHabit.timeOfDay,
+                        targetCount = resultHabit.targetCount,
+                        frequency = resultHabit.frequency,
+                        weeklyDay = resultHabit.weeklyDay,
+                        monthlyStartDate = resultHabit.monthlyStartDate,
+                        monthlyEndDate = resultHabit.monthlyEndDate,
+                        scheduledTime = resultHabit.scheduledTime,
+                        isReminderEnabled = resultHabit.isReminderEnabled,
+                        actionType = resultHabit.actionType,
+                        actionContactName = resultHabit.actionContactName,
+                        actionContactPhone = resultHabit.actionContactPhone,
+                        actionMessage = resultHabit.actionMessage
+                    )
+                }
+                showHabitEditorScreen = false
+                editingHabitTarget = null
+            },
+            onDelete = {
+                editingHabitTarget?.let { viewModel.deleteHabit(it) }
+                showHabitEditorScreen = false
+                editingHabitTarget = null
+            },
+            onAddList = { newCat ->
+                if (newCat.isNotBlank() && !habitLists.contains(newCat)) {
+                    habitLists.add(newCat)
+                }
             }
         )
     }
@@ -1660,19 +1221,8 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 ) {
                     Button(
                         onClick = {
-                            isEditMode = true
                             editingHabitTarget = targetHabit
-                            curHabitName = targetHabit.name
-                            curTimeOfDay = targetHabit.timeOfDay
-                            curTargetCount = targetHabit.targetCount.toString()
-                            curFrequency = targetHabit.frequency
-                            curWeeklyDay = targetHabit.weeklyDay
-                            curMonthlyStartDate = targetHabit.monthlyStartDate.toString()
-                            curMonthlyEndDate = targetHabit.monthlyEndDate.toString()
-                            curScheduledTime = targetHabit.scheduledTime
-                            curIsReminderEnabled = targetHabit.isReminderEnabled
-                            curHabitActionData = TaskActionHelper.parseActionData(targetHabit)
-                            showCreateEditDialog = true
+                            showHabitEditorScreen = true
                             showLongPressOptionsForHabit = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
@@ -1714,6 +1264,924 @@ private fun getWeeklyDayName(day: Int): String {
         Calendar.FRIDAY -> "Friday"
         Calendar.SATURDAY -> "Saturday"
         else -> "Monday"
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HabitEditorFullScreen(
+    habit: Habit?, // null if creating a new habit, non-null if editing
+    initialListName: String,
+    allLists: List<String>,
+    contactsList: List<com.example.data.Contact>,
+    onDismiss: () -> Unit,
+    onSave: (Habit) -> Unit,
+    onDelete: (() -> Unit)? = null,
+    onAddList: ((String) -> Unit)? = null
+) {
+    var habitName by remember(habit) { mutableStateOf(habit?.name ?: "") }
+    var selectedList by remember(habit, initialListName) {
+        mutableStateOf(
+            habit?.listCategory ?: (if (initialListName.equals("all", ignoreCase = true)) "Health & Vigor" else initialListName)
+        )
+    }
+    var timeOfDay by remember(habit) { mutableStateOf(habit?.timeOfDay ?: "Morning") }
+    var targetCount by remember(habit) { mutableStateOf(habit?.targetCount ?: 1) }
+    var frequency by remember(habit) { mutableStateOf(habit?.frequency ?: "DAILY") }
+    var weeklyDay by remember(habit) { mutableStateOf(habit?.weeklyDay ?: 2) }
+    var monthlyStartDateStr by remember(habit) { mutableStateOf((habit?.monthlyStartDate ?: 1).toString()) }
+    var monthlyEndDateStr by remember(habit) { mutableStateOf((habit?.monthlyEndDate ?: 30).toString()) }
+    var scheduledTime by remember(habit) { mutableStateOf(habit?.scheduledTime ?: "08:00") }
+    var isReminderEnabled by remember(habit) { mutableStateOf(habit?.isReminderEnabled ?: false) }
+
+    var habitActionData by remember(habit) {
+        mutableStateOf(habit?.let { TaskActionHelper.parseActionData(it) } ?: TaskActionData())
+    }
+    var showActionConfigDialog by remember { mutableStateOf(false) }
+    var showNewListDialog by remember { mutableStateOf(false) }
+    var newListNameInput by remember { mutableStateOf("") }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showUnsavedDialog by remember { mutableStateOf(false) }
+
+    val initialName = remember(habit) { habit?.name ?: "" }
+    val initialTimeOfDay = remember(habit) { habit?.timeOfDay ?: "Morning" }
+    val initialFreq = remember(habit) { habit?.frequency ?: "DAILY" }
+    val initialTime = remember(habit) { habit?.scheduledTime ?: "08:00" }
+    val initialReminder = remember(habit) { habit?.isReminderEnabled ?: false }
+
+    val isModified = remember(habitName, timeOfDay, frequency, scheduledTime, isReminderEnabled, targetCount) {
+        habitName != initialName ||
+        timeOfDay != initialTimeOfDay ||
+        frequency != initialFreq ||
+        scheduledTime != initialTime ||
+        isReminderEnabled != initialReminder ||
+        targetCount != (habit?.targetCount ?: 1)
+    }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val dialogContext = remember(context) {
+        var cur = context
+        while (cur is android.content.ContextWrapper) {
+            if (cur is android.app.Activity) return@remember cur
+            cur = cur.baseContext
+        }
+        context
+    }
+
+    val handleDismissAttempt = {
+        if (isModified && habitName.trim().isNotEmpty()) {
+            showUnsavedDialog = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    val saveCurrentHabit = {
+        if (habitName.trim().isNotEmpty()) {
+            val mStart = monthlyStartDateStr.toIntOrNull()?.coerceIn(1, 31) ?: 1
+            val mEnd = monthlyEndDateStr.toIntOrNull()?.coerceIn(1, 31) ?: 30
+
+            val resultHabit = Habit(
+                id = habit?.id ?: 0,
+                name = habitName.trim(),
+                listCategory = selectedList,
+                timeOfDay = timeOfDay,
+                targetCount = targetCount.coerceAtLeast(1),
+                frequency = frequency,
+                weeklyDay = weeklyDay,
+                monthlyStartDate = mStart,
+                monthlyEndDate = mEnd,
+                streakCount = habit?.streakCount ?: 0,
+                lastCompletedTimestamp = habit?.lastCompletedTimestamp,
+                scheduledTime = scheduledTime,
+                isReminderEnabled = isReminderEnabled,
+                orderIndex = habit?.orderIndex ?: 0,
+                actionType = habitActionData.type,
+                actionContactName = habitActionData.contactName,
+                actionContactPhone = habitActionData.contactPhone,
+                actionMessage = habitActionData.message
+            )
+            onSave(resultHabit)
+        }
+    }
+
+    androidx.activity.compose.BackHandler(enabled = true) {
+        handleDismissAttempt()
+    }
+
+    Dialog(
+        onDismissRequest = { handleDismissAttempt() },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            color = Color.Black
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Unsaved Changes Confirmation Dialog
+                if (showUnsavedDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showUnsavedDialog = false },
+                        title = { Text("Unsaved Changes", color = Color.White, fontWeight = FontWeight.Bold) },
+                        text = { Text("You have unsaved changes in this habit. Do you want to save them or discard?", color = Color.LightGray) },
+                        containerColor = SurfaceCard,
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showUnsavedDialog = false
+                                saveCurrentHabit()
+                            }) {
+                                Text("Save", color = WaterBlue, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                showUnsavedDialog = false
+                                onDismiss()
+                            }) {
+                                Text("Discard", color = Color(0xFFF9325D))
+                            }
+                        }
+                    )
+                }
+
+                // Delete Confirmation Dialog
+                if (showDeleteConfirmDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showDeleteConfirmDialog = false },
+                        title = { Text("Delete Habit?", color = Color.White, fontWeight = FontWeight.Bold) },
+                        text = { Text("Are you sure you want to delete \"${habit?.name}\"? This action cannot be undone.", color = Color.LightGray) },
+                        containerColor = SurfaceCard,
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showDeleteConfirmDialog = false
+                                onDelete?.invoke()
+                            }) {
+                                Text("Delete", color = Color(0xFFF9325D), fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                                Text("Cancel", color = Color.White)
+                            }
+                        }
+                    )
+                }
+
+                // Create New Category / List Dialog
+                if (showNewListDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showNewListDialog = false },
+                        title = { Text("New Habit Category", color = Color.White, fontWeight = FontWeight.Bold) },
+                        text = {
+                            OutlinedTextField(
+                                value = newListNameInput,
+                                onValueChange = { newListNameInput = it },
+                                label = { Text("Category Name") },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = WaterBlue,
+                                    unfocusedBorderColor = Color.Gray
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        },
+                        containerColor = SurfaceCard,
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    val trimmed = newListNameInput.trim()
+                                    if (trimmed.isNotEmpty()) {
+                                        onAddList?.invoke(trimmed)
+                                        selectedList = trimmed
+                                        newListNameInput = ""
+                                        showNewListDialog = false
+                                    }
+                                },
+                                enabled = newListNameInput.trim().isNotEmpty()
+                            ) {
+                                Text("Add", color = WaterBlue, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showNewListDialog = false }) {
+                                Text("Cancel", color = Color.White)
+                            }
+                        }
+                    )
+                }
+
+                // Action Configuration Dialog
+                if (showActionConfigDialog) {
+                    TaskActionConfigDialog(
+                        initialAction = habitActionData,
+                        contacts = contactsList,
+                        onSave = { updatedAction ->
+                            habitActionData = updatedAction
+                            showActionConfigDialog = false
+                        },
+                        onDismiss = { showActionConfigDialog = false }
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                ) {
+                    // Top App Bar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(onClick = { handleDismissAttempt() }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
+
+                        Column(
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = if (habit == null) "Create Habit" else "Edit Habit",
+                                color = Color.White,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (habit == null) "Build a new daily routine" else "Update habit parameters",
+                                color = Color.Gray,
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (habit != null) {
+                                IconButton(onClick = { showDeleteConfirmDialog = true }) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "Delete Habit",
+                                        tint = Color(0xFFF9325D)
+                                    )
+                                }
+                            }
+
+                            Button(
+                                onClick = { saveCurrentHabit() },
+                                enabled = habitName.trim().isNotEmpty(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = WaterBlue,
+                                    contentColor = Color.Black,
+                                    disabledContainerColor = WaterBlue.copy(alpha = 0.3f),
+                                    disabledContentColor = Color.DarkGray
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (habit == null) "Create" else "Save",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // Main Scrollable Page Content
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Section 1: Habit Information (Hero Card)
+                        item {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = habitName,
+                                        onValueChange = { habitName = it },
+                                        label = { Text("Habit Name") },
+                                        placeholder = { Text("e.g., Morning Run, Read 20 mins, Meditate", color = Color.Gray) },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = WaterBlue)
+                                        },
+                                        trailingIcon = {
+                                            if (habitName.isNotEmpty()) {
+                                                IconButton(onClick = { habitName = "" }) {
+                                                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color.Gray)
+                                                }
+                                            }
+                                        },
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedBorderColor = WaterBlue,
+                                            unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                                            focusedLabelColor = WaterBlue,
+                                            unfocusedLabelColor = Color.LightGray
+                                        ),
+                                        modifier = Modifier.fillMaxWidth().testTag("add_habit_name_field")
+                                    )
+
+                                    // Category / List Selector Chips
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = "CATEGORY / LIST",
+                                            color = Color.Gray,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp
+                                        )
+
+                                        LazyRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            items(allLists) { listName ->
+                                                val isSelected = selectedList.equals(listName, ignoreCase = true)
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(20.dp))
+                                                        .background(if (isSelected) WaterBlue else Color.White.copy(alpha = 0.08f))
+                                                        .border(
+                                                            1.dp,
+                                                            if (isSelected) WaterBlue else Color.White.copy(alpha = 0.15f),
+                                                            RoundedCornerShape(20.dp)
+                                                        )
+                                                        .clickable { selectedList = listName }
+                                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = listName,
+                                                        color = if (isSelected) Color.Black else Color.White,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                        fontSize = 12.sp
+                                                    )
+                                                }
+                                            }
+
+                                            item {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(20.dp))
+                                                        .background(Color.White.copy(alpha = 0.05f))
+                                                        .border(
+                                                            1.dp,
+                                                            BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)).brush,
+                                                            RoundedCornerShape(20.dp)
+                                                        )
+                                                        .clickable { showNewListDialog = true }
+                                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Icon(Icons.Default.Add, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("New List", color = WaterBlue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 2: Time of Day Segment Card
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.WbSunny, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(18.dp))
+                                        Text(
+                                            text = "TIME OF DAY SEGMENT",
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
+
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        listOf(
+                                            "Morning" to "🌅 Morning",
+                                            "Afternoon" to "☀️ Noon",
+                                            "Evening" to "🌆 Evening",
+                                            "Night" to "🌙 Night",
+                                            "Anytime" to "⚡ Any"
+                                        ).forEach { (segKey, label) ->
+                                            val isSelected = timeOfDay.equals(segKey, ignoreCase = true)
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (isSelected) WaterBlue else Color.White.copy(alpha = 0.06f))
+                                                    .border(
+                                                        1.dp,
+                                                        if (isSelected) WaterBlue else Color.Transparent,
+                                                        RoundedCornerShape(10.dp)
+                                                    )
+                                                    .clickable { timeOfDay = segKey }
+                                                    .padding(vertical = 10.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    color = if (isSelected) Color.Black else Color.LightGray,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 3: Frequency & Repetition Schedule Card
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Repeat, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(18.dp))
+                                        Text(
+                                            text = "FREQUENCY & TARGET GOAL",
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
+
+                                    // Frequency Selector Pills
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        listOf(
+                                            "DAILY" to "Daily",
+                                            "WEEKLY" to "Weekly",
+                                            "MONTHLY" to "Month Span",
+                                            "MONTHLY_ONCE" to "Month Day"
+                                        ).forEach { (freqKey, label) ->
+                                            val isSelected = frequency == freqKey
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (isSelected) WaterBlue else Color.White.copy(alpha = 0.06f))
+                                                    .border(
+                                                        1.dp,
+                                                        if (isSelected) WaterBlue else Color.Transparent,
+                                                        RoundedCornerShape(10.dp)
+                                                    )
+                                                    .clickable { frequency = freqKey }
+                                                    .padding(vertical = 10.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    color = if (isSelected) Color.Black else Color.LightGray,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Dynamic Sub-options based on Frequency
+                                    if (frequency == "WEEKLY") {
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text(
+                                                text = "Select Day of Week:",
+                                                color = Color.LightGray,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                // Calendar mappings: 2=Mon, 3=Tue, 4=Wed, 5=Thu, 6=Fri, 7=Sat, 1=Sun
+                                                listOf(
+                                                    2 to "M", 3 to "T", 4 to "W", 5 to "T", 6 to "F", 7 to "S", 1 to "S"
+                                                ).forEach { (calIdx, shortLabel) ->
+                                                    val isSelected = weeklyDay == calIdx
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .aspectRatio(1f)
+                                                            .clip(CircleShape)
+                                                            .background(if (isSelected) WaterBlue else Color.White.copy(alpha = 0.08f))
+                                                            .border(
+                                                                1.dp,
+                                                                if (isSelected) WaterBlue else Color.Transparent,
+                                                                CircleShape
+                                                            )
+                                                            .clickable { weeklyDay = calIdx },
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = shortLabel,
+                                                            color = if (isSelected) Color.Black else Color.White,
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (frequency == "MONTHLY") {
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Text(
+                                                text = "Active Monthly Span (Dates 1 - 31):",
+                                                color = Color.LightGray,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                OutlinedTextField(
+                                                    value = monthlyStartDateStr,
+                                                    onValueChange = { monthlyStartDateStr = it },
+                                                    label = { Text("From Day (1-31)") },
+                                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                    colors = OutlinedTextFieldDefaults.colors(
+                                                        focusedTextColor = Color.White,
+                                                        unfocusedTextColor = Color.White,
+                                                        focusedBorderColor = WaterBlue,
+                                                        unfocusedBorderColor = Color.Gray
+                                                    ),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                OutlinedTextField(
+                                                    value = monthlyEndDateStr,
+                                                    onValueChange = { monthlyEndDateStr = it },
+                                                    label = { Text("To Day (1-31)") },
+                                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                    colors = OutlinedTextFieldDefaults.colors(
+                                                        focusedTextColor = Color.White,
+                                                        unfocusedTextColor = Color.White,
+                                                        focusedBorderColor = WaterBlue,
+                                                        unfocusedBorderColor = Color.Gray
+                                                    ),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (frequency == "MONTHLY_ONCE") {
+                                        OutlinedTextField(
+                                            value = monthlyStartDateStr,
+                                            onValueChange = { monthlyStartDateStr = it },
+                                            label = { Text("Day of Month to Repeat (1-31)") },
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White,
+                                                focusedBorderColor = WaterBlue,
+                                                unfocusedBorderColor = Color.Gray
+                                            ),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+
+                                    Divider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+
+                                    // Target completions stepper
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "Target Completions",
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = "How many times per interval",
+                                                color = Color.Gray,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            IconButton(
+                                                onClick = { if (targetCount > 1) targetCount-- },
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color.White.copy(alpha = 0.08f))
+                                            ) {
+                                                Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = Color.White, modifier = Modifier.size(16.dp))
+                                            }
+
+                                            Text(
+                                                text = "$targetCount time${if (targetCount > 1) "s" else ""}",
+                                                color = WaterBlue,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 4.dp)
+                                            )
+
+                                            IconButton(
+                                                onClick = { if (targetCount < 50) targetCount++ },
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color.White.copy(alpha = 0.08f))
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = "Increase", tint = Color.White, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 4: Scheduled Time & Notification Reminder Card
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Alarm, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(18.dp))
+                                        Text(
+                                            text = "NOTIFICATION & SCHEDULE",
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
+
+                                    // Reminder Switch Row
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Daily Reminder Alert",
+                                                color = Color.White,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = "Send alert notification when it's time",
+                                                color = Color.Gray,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+
+                                        Switch(
+                                            checked = isReminderEnabled,
+                                            onCheckedChange = { isReminderEnabled = it },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.Black,
+                                                checkedTrackColor = WaterBlue,
+                                                uncheckedThumbColor = Color.LightGray,
+                                                uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                                            )
+                                        )
+                                    }
+
+                                    Divider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+
+                                    // Scheduled Time Picker
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color.White.copy(alpha = 0.05f))
+                                            .clickable {
+                                                val timeParts = scheduledTime.split(":")
+                                                val initialHour = timeParts.getOrNull(0)?.toIntOrNull() ?: 8
+                                                val initialMinute = timeParts.getOrNull(1)?.toIntOrNull() ?: 0
+                                                android.app.TimePickerDialog(
+                                                    dialogContext,
+                                                    { _, hourOfDay, minute ->
+                                                        scheduledTime = String.format(Locale.US, "%02d:%02d", hourOfDay, minute)
+                                                    },
+                                                    initialHour,
+                                                    initialMinute,
+                                                    true
+                                                ).show()
+                                            }
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                Icons.Default.AccessTime,
+                                                contentDescription = null,
+                                                tint = WaterBlue,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text("Scheduled Time", color = Color.Gray, fontSize = 11.sp)
+                                                Text(scheduledTime, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+
+                                        Text("Change", color = WaterBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Section 5: Habit Smart Action Automation Card
+                        item {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.FlashOn, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(18.dp))
+                                        Text(
+                                            text = "SMART ACTION AUTOMATION",
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color.White.copy(alpha = 0.05f))
+                                            .clickable { showActionConfigDialog = true }
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column {
+                                                Text(
+                                                    text = "Automated Trigger Action",
+                                                    color = Color.White,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                if (habitActionData.type.isNotEmpty()) {
+                                                    val summary = when (habitActionData.type.uppercase()) {
+                                                        "CALL" -> "📞 Call ${habitActionData.contactName.ifEmpty { habitActionData.contactPhone }}"
+                                                        "SMS" -> "💬 SMS ${habitActionData.contactName.ifEmpty { habitActionData.contactPhone }}"
+                                                        "WHATSAPP" -> "🟢 WhatsApp ${habitActionData.contactName.ifEmpty { habitActionData.contactPhone }}"
+                                                        else -> habitActionData.type
+                                                    }
+                                                    Text(
+                                                        text = summary,
+                                                        color = WaterBlue,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        maxLines = 1
+                                                    )
+                                                } else {
+                                                    Text(
+                                                        text = "Call, SMS, or WhatsApp reminder (Optional)",
+                                                        color = Color.Gray,
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Icon(
+                                            imageVector = Icons.Default.ChevronRight,
+                                            contentDescription = null,
+                                            tint = Color.Gray,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Bottom Action CTA Button
+                        item {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = { saveCurrentHabit() },
+                                enabled = habitName.trim().isNotEmpty(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = WaterBlue,
+                                    contentColor = Color.Black,
+                                    disabledContainerColor = WaterBlue.copy(alpha = 0.3f),
+                                    disabledContentColor = Color.DarkGray
+                                ),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (habit == null) "Create Habit Plan" else "Save Changes",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(24.dp))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

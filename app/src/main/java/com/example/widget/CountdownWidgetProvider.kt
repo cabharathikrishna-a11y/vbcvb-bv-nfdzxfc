@@ -104,22 +104,6 @@ class CountdownWidgetProvider : AppWidgetProvider() {
             )
             views.setPendingIntentTemplate(R.id.countdown_widget_list, itemClickPending)
 
-            // Asynchronously fetch count to display on header badge
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val db = AppDatabase.getInstance(context)
-                    val contacts = db.contactDao().getAllContactsDirect()
-                    val deadlines = db.deadlineDao().getAllDeadlinesDirect()
-                    val totalCount = BUILT_IN_FESTIVALS.size +
-                            contacts.count { it.dobString.isNotBlank() } +
-                            contacts.count { it.anniversaryString.isNotBlank() } +
-                            deadlines.count { !it.isCompleted }
-
-                    views.setTextViewText(R.id.countdown_count_badge, "$totalCount")
-                    appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
-                } catch (_: Exception) {}
-            }
-
             appWidgetManager.updateAppWidget(appWidgetId, views)
             appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.countdown_widget_list)
         }
@@ -128,9 +112,9 @@ class CountdownWidgetProvider : AppWidgetProvider() {
             val appWidgetManager = AppWidgetManager.getInstance(context) ?: return
             val thisWidget = ComponentName(context, CountdownWidgetProvider::class.java)
             val allIds = appWidgetManager.getAppWidgetIds(thisWidget)
-            for (id in allIds) {
-                updateAppWidget(context, appWidgetManager, id)
-            }
+            if (allIds.isEmpty()) return
+            // Notify list data change smoothly without re-inflating RemoteViews
+            appWidgetManager.notifyAppWidgetViewDataChanged(allIds, R.id.countdown_widget_list)
         }
     }
 
@@ -161,6 +145,7 @@ class CountdownWidgetProvider : AppWidgetProvider() {
         val appWidgetManager = AppWidgetManager.getInstance(context) ?: return
         val thisWidget = ComponentName(context, CountdownWidgetProvider::class.java)
         val allIds = appWidgetManager.getAppWidgetIds(thisWidget)
+        if (allIds.isEmpty()) return
 
         when (action) {
             ACTION_SCROLL_TO_TOP -> {
@@ -175,14 +160,11 @@ class CountdownWidgetProvider : AppWidgetProvider() {
                 }
             }
             ACTION_REFRESH_COUNTDOWNS,
-            Intent.ACTION_TIME_TICK,
             Intent.ACTION_DATE_CHANGED,
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED -> {
+                // Smooth in-place data refresh without resetting the ListView
                 appWidgetManager.notifyAppWidgetViewDataChanged(allIds, R.id.countdown_widget_list)
-                for (id in allIds) {
-                    updateAppWidget(context, appWidgetManager, id)
-                }
             }
         }
     }

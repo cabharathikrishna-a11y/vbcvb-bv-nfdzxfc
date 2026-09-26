@@ -701,6 +701,13 @@ object GoogleDriveWriteManager {
             tempFile.delete()
 
             if (uploadSuccess) {
+                GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Granular Sync", 90, "Syncing granular per-entity files with UID & timestamps to Drive...")
+                try {
+                    GoogleDriveLiveSyncManager.execute3PassLiveSync(context, database)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Granular per-entity sync notice during backup: ${e.message}")
+                }
+
                 GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Finalizing", 95, "Cleaning duplicate files & updating permissions...")
                 if (targetFolderId != null) {
                     deleteOlderDuplicateFiles(token, targetFolderId, fileName, keepLatestId = fileId)
@@ -708,7 +715,7 @@ object GoogleDriveWriteManager {
                 makeFilePublic(token, fileId)
                 val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 prefs.edit().putLong("gd_all_last_sync_timestamp", System.currentTimeMillis()).apply()
-                val successMsg = "Successfully backed up all app data ($formattedTotal) to Google Drive (${GoogleDriveUploadManager.PRIMARY_VAULT_FOLDER_NAME}/App_Backups)."
+                val successMsg = "Successfully backed up all app data ($formattedTotal) and granular per-entity files to Google Drive!"
                 GoogleDriveSyncProgressTracker.updateProgress(context, "Cloud Backup", "Completed", 100, successMsg, isFinished = true)
                 Pair(true, successMsg)
             } else {

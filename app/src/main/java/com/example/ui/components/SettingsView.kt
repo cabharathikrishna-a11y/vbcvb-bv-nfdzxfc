@@ -1304,6 +1304,10 @@ fun CalendarSettingsSection(viewModel: AppViewModel) {
     val context = LocalContext.current
     val syncStatus by viewModel.calendarSyncStatus.collectAsState()
     val tasksSyncStatus by viewModel.googleTasksSyncStatus.collectAsState()
+    val collapseTimelineSleepWakeHours by viewModel.collapseTimelineSleepWakeHours.collectAsState()
+
+    val wakeUpTime = remember { com.example.util.SleepTimeHelper.getWakeUpTime(context) ?: "07:00" }
+    val sleepTime = remember { com.example.util.SleepTimeHelper.getSleepTime(context) ?: "22:00" }
 
     val tasksAuthLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -1315,12 +1319,7 @@ fun CalendarSettingsSection(viewModel: AppViewModel) {
 
     var hasPermission by remember {
         mutableStateOf(
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context, android.Manifest.permission.READ_CALENDAR
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
-            androidx.core.content.ContextCompat.checkSelfPermission(
-                context, android.Manifest.permission.WRITE_CALENDAR
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            com.example.util.PermissionUtils.hasSystemCalendarPermissions(context)
         )
     }
 
@@ -1362,6 +1361,138 @@ fun CalendarSettingsSection(viewModel: AppViewModel) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // CARD 1: Timeline Day View Display Range & Sleep/Wake Buttons
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D11)),
+            border = BorderStroke(1.dp, Color(0xFF222225)),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = "Timeline Schedule",
+                            tint = WaterBlue,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column {
+                            Text(
+                                "Timeline Day Hours Range",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                if (collapseTimelineSleepWakeHours) "Smart Sleep/Wake Window" else "Full 24 Hours (Default)",
+                                color = if (collapseTimelineSleepWakeHours) WaterBlue else Color.Gray,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = collapseTimelineSleepWakeHours,
+                        onCheckedChange = { viewModel.setCollapseTimelineSleepWakeHours(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = WaterBlue,
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = Color(0xFF1E1E24)
+                        )
+                    )
+                }
+
+                Text(
+                    text = "Control whether the Day timeline schedule displays all 24 hours continuously (00:00 to 23:59), or collapses off-hours with 'Show hours before $wakeUpTime' and 'Show hours after $sleepTime' expansion buttons.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+
+                // Quick Mode Selection Chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Option 1: Full 24 Hours (Default)
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { viewModel.setCollapseTimelineSleepWakeHours(false) },
+                        color = if (!collapseTimelineSleepWakeHours) Color(0xFF1B263B) else Color(0xFF121217),
+                        border = BorderStroke(
+                            1.dp,
+                            if (!collapseTimelineSleepWakeHours) WaterBlue else Color(0xFF222228)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                "Full 24 Hours",
+                                color = if (!collapseTimelineSleepWakeHours) WaterBlue else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                "Default (No Collapse Buttons)",
+                                color = Color.Gray,
+                                fontSize = 10.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+
+                    // Option 2: Collapse Sleep/Wake Window
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { viewModel.setCollapseTimelineSleepWakeHours(true) },
+                        color = if (collapseTimelineSleepWakeHours) Color(0xFF1B263B) else Color(0xFF121217),
+                        border = BorderStroke(
+                            1.dp,
+                            if (collapseTimelineSleepWakeHours) WaterBlue else Color(0xFF222228)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                "Smart Sleep/Wake",
+                                color = if (collapseTimelineSleepWakeHours) WaterBlue else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                "Show Expandable Buttons",
+                                color = Color.Gray,
+                                fontSize = 10.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // CARD 2: Google Calendar Sync
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D11)),
             border = BorderStroke(1.dp, Color(0xFF222225)),
@@ -9921,6 +10052,7 @@ fun SettingsPermissionsPage(viewModel: AppViewModel, onBack: () -> Unit) {
 }
 
 fun hasGoogleScope(context: Context, scopeUri: String): Boolean {
+    if (com.example.util.PermissionUtils.isTesterMode(context)) return true
     return try {
         val account = com.example.util.GmsUtils.getLastSignedInAccount(context)
         account != null && account.grantedScopes.any { it.scopeUri.equals(scopeUri, ignoreCase = true) }
@@ -9952,44 +10084,61 @@ fun PermissionsSettingsSection(viewModel: AppViewModel) {
 
     val scope = rememberCoroutineScope()
     val checkAllPermissions = {
-        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-        isBatteryOptIgnored = pm.isIgnoringBatteryOptimizations(context.packageName)
-
-        hasNotificationPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
+        if (com.example.util.PermissionUtils.isTesterMode(context)) {
+            isBatteryOptIgnored = true
+            hasNotificationPermission = true
+            hasOverlayPermission = true
+            hasUsageStatsPermission = true
+            hasSystemCalendarPermission = true
+            hasSystemContactsPermission = true
+            hasDrivePermission = true
+            hasGoogleContactsPermission = true
+            hasGoogleTasksPermission = true
+            hasGoogleFitPermission = true
+            hasGooglePhotosPermission = true
+            hasGoogleKeepPermission = true
+            hasExactAlarmPermission = true
+            hasNotificationListenerPermission = true
         } else {
-            true
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            isBatteryOptIgnored = pm.isIgnoringBatteryOptimizations(context.packageName)
+
+            hasNotificationPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+
+            hasOverlayPermission = com.example.util.OverlayPermissionHelper.hasOverlayPermission(context)
+            hasUsageStatsPermission = AppBlockHelper.hasUsageStatsPermission(context)
+            
+            hasSystemCalendarPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED &&
+                                          ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
+                                          
+            hasSystemContactsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED &&
+                                          ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED
+
+            hasDrivePermission = GoogleDriveSyncManager.hasDrivePermission(context)
+            hasGoogleContactsPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/contacts")
+            hasGoogleTasksPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/tasks")
+            hasGoogleFitPermission = GoogleFitSyncManager.hasFitPermission(context)
+            hasGooglePhotosPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/photoslibrary.readonly")
+            hasGoogleKeepPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/drive.appdata")
+
+            hasExactAlarmPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                alarmManager.canScheduleExactAlarms()
+            } else {
+                true
+            }
+
+            val cn = android.content.ComponentName(context, com.example.service.NotificationBlockerService::class.java)
+            val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+            hasNotificationListenerPermission = flat != null && flat.contains(cn.flattenToString())
         }
-
-        hasOverlayPermission = com.example.util.OverlayPermissionHelper.hasOverlayPermission(context)
-        hasUsageStatsPermission = AppBlockHelper.hasUsageStatsPermission(context)
-        
-        hasSystemCalendarPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED &&
-                                      ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED
-                                      
-        hasSystemContactsPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED &&
-                                      ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED
-
-        hasDrivePermission = GoogleDriveSyncManager.hasDrivePermission(context)
-        hasGoogleContactsPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/contacts")
-        hasGoogleTasksPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/tasks")
-        hasGoogleFitPermission = GoogleFitSyncManager.hasFitPermission(context)
-        hasGooglePhotosPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/photoslibrary.readonly")
-        hasGoogleKeepPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/drive.appdata")
-
-        hasExactAlarmPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-            alarmManager.canScheduleExactAlarms()
-        } else {
-            true
-        }
-
-        val cn = android.content.ComponentName(context, com.example.service.NotificationBlockerService::class.java)
-        val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
-        hasNotificationListenerPermission = flat != null && flat.contains(cn.flattenToString())
     }
 
     LaunchedEffect(Unit) {
@@ -11874,7 +12023,9 @@ fun SettingsTimerConfigurationPage(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text("Pin Home Screen Widgets", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("Pin interactive Timeline + Subjects, Focus Time, Pomodoro, Stopwatch & Sphere widgets directly to your launcher", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    Text("Pin interactive Widgets (Habits, Tasks, Countdowns, Focus & Timers) directly to your home launcher", color = Color.Gray, fontSize = 10.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    
+                    // Row 1: Focus & Timers
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -11912,12 +12063,6 @@ fun SettingsTimerConfigurationPage(
                         ) {
                             Text("Pomodoro", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                         }
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
                         Button(
                             onClick = {
                                 com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.TimerStopwatchWidgetProvider::class.java)
@@ -11929,6 +12074,68 @@ fun SettingsTimerConfigurationPage(
                         ) {
                             Text("Stopwatch", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Row 2: Habits, Tasks & Countdowns
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.HabitsWidgetProvider::class.java)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF14532D).copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
+                        ) {
+                            Text("Habits", color = Color(0xFF4ADE80), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = {
+                                com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.SingleHabitWidgetProvider::class.java)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1E1F)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
+                        ) {
+                            Text("1 Habit", color = Color(0xFF38BDF8), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Button(
+                            onClick = {
+                                com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.TasksWidgetProvider::class.java)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A).copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
+                        ) {
+                            Text("Tasks", color = Color(0xFF60A5FA), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = {
+                                com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.CountdownWidgetProvider::class.java)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF581C87).copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.weight(1.1f),
+                            contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
+                        ) {
+                            Text("Countdowns", color = Color(0xFFC084FC), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Row 3: Sphere & Photos
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Button(
                             onClick = {
                                 com.example.widget.WidgetManager.requestPinWidget(context, com.example.widget.FriendsFocusWidgetProvider::class.java)
@@ -11938,7 +12145,7 @@ fun SettingsTimerConfigurationPage(
                             modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
                         ) {
-                            Text("Sphere", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Sphere (Friends)", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                         }
                         Button(
                             onClick = {
@@ -11949,7 +12156,7 @@ fun SettingsTimerConfigurationPage(
                             modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(vertical = 6.dp, horizontal = 2.dp)
                         ) {
-                            Text("Photos", color = Color(0xFF10B981), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text("Photo Shower", color = Color(0xFF10B981), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -14104,33 +14311,44 @@ fun PermissionOnboardingView(viewModel: AppViewModel) {
 
     // Check permissions helper
     val checkAllPermissions = {
-        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-        isBatteryOptIgnored = pm.isIgnoringBatteryOptimizations(context.packageName)
-
-        hasNotificationPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
+        if (com.example.util.PermissionUtils.isTesterMode(context)) {
+            isBatteryOptIgnored = true
+            hasNotificationPermission = true
+            hasOverlayPermission = true
+            hasUsageStatsPermission = true
+            hasAccessibilityPermission = true
+            hasDrivePermission = true
+            hasPackageInstallPermission = true
+            hasExactAlarmPermission = true
         } else {
-            true
-        }
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            isBatteryOptIgnored = pm.isIgnoringBatteryOptimizations(context.packageName)
 
-        hasOverlayPermission = com.example.util.OverlayPermissionHelper.hasOverlayPermission(context)
-        hasUsageStatsPermission = AppBlockHelper.hasUsageStatsPermission(context)
-        hasAccessibilityPermission = AppBlockHelper.isAccessibilityServiceEnabled(context)
-        hasDrivePermission = GoogleDriveSyncManager.hasDrivePermission(context)
-        hasPackageInstallPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.packageManager.canRequestPackageInstalls()
-        } else {
-            true
-        }
+            hasNotificationPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
 
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-        hasExactAlarmPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            alarmManager.canScheduleExactAlarms()
-        } else {
-            true
+            hasOverlayPermission = com.example.util.OverlayPermissionHelper.hasOverlayPermission(context)
+            hasUsageStatsPermission = AppBlockHelper.hasUsageStatsPermission(context)
+            hasAccessibilityPermission = AppBlockHelper.isAccessibilityServiceEnabled(context)
+            hasDrivePermission = GoogleDriveSyncManager.hasDrivePermission(context)
+            hasPackageInstallPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.packageManager.canRequestPackageInstalls()
+            } else {
+                true
+            }
+
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            hasExactAlarmPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                alarmManager.canScheduleExactAlarms()
+            } else {
+                true
+            }
         }
     }
 

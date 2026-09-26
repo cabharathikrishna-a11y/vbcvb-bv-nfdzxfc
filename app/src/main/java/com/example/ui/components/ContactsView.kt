@@ -81,6 +81,10 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     var selectedContact by remember { mutableStateOf<Contact?>(null) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
 
+    // Scroll state preservation across contact views
+    val contactsListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var lastOpenedContactId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Int?>(null) }
+
     // Dialog triggering states for Folders
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
@@ -161,7 +165,7 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         
                         val photoToSave = selectedAvatar.takeIf { it.isNotEmpty() }
                         if (screenState == ContactScreen.EDIT && selectedContact != null) {
-                            // Update existing logic
+                            // Update existing logic - preserve old and new photos
                             val currentAttached = mutableListOf<String>()
                             if (selectedContact!!.attachedFilesJson.isNotEmpty()) {
                                 try {
@@ -172,7 +176,12 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     }
                                 } catch (_: Exception) {}
                             }
-                            if (!photoToSave.isNullOrEmpty() && !currentAttached.contains(photoToSave)) {
+                            val oldPhoto = selectedContact!!.photoUri
+                            if (!oldPhoto.isNullOrEmpty() && !currentAttached.contains(oldPhoto)) {
+                                currentAttached.add(oldPhoto)
+                            }
+                            if (!photoToSave.isNullOrEmpty()) {
+                                currentAttached.remove(photoToSave)
                                 currentAttached.add(0, photoToSave)
                             }
                             val updated = selectedContact!!.copy(
@@ -354,6 +363,16 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             contacts.filter { it.folder == selectedFolder }
                         }
                         base.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { "${it.firstName} ${it.lastName}".trim() })
+                    }
+
+                    // Restore scroll position to the last viewed contact (e.g. contact V) when returning from detail
+                    LaunchedEffect(selectedContact) {
+                        if (selectedContact == null && lastOpenedContactId != null) {
+                            val targetIdx = sortedFilteredContacts.indexOfFirst { it.id == lastOpenedContactId }
+                            if (targetIdx >= 0) {
+                                contactsListState.scrollToItem(targetIdx)
+                            }
+                        }
                     }
 
                     Column(
@@ -540,6 +559,7 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             )
                         } else {
                             LazyColumn(
+                                state = contactsListState,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f),
@@ -551,8 +571,12 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             .fillMaxWidth()
                                             .border(1.dp, Color.Transparent, RoundedCornerShape(12.dp))
                                             .combinedClickable(
-                                                onClick = { selectedContact = contact },
+                                                onClick = {
+                                                    lastOpenedContactId = contact.id
+                                                    selectedContact = contact
+                                                },
                                                 onLongClick = {
+                                                    lastOpenedContactId = contact.id
                                                     longPressedContact = contact
                                                     showContactActionDialog = true
                                                 }
@@ -563,7 +587,7 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             modifier = Modifier.padding(12.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            // Profile picture layout (Circle)
+                                            // Profile picture layout (Circle) - load downloaded photo immediately at 1st place
                                             Box(
                                                 modifier = Modifier
                                                     .size(40.dp)
@@ -578,11 +602,29 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 15.sp
                                                 )
-                                                if (!contact.photoUri.isNullOrEmpty()) {
-                                                    val imageModel = remember(contact.photoUri) {
-                                                        val raw = contact.photoUri?.trim()
+                                                val resolvedPhotoPath = remember(contact.photoUri, contact.attachedFilesJson) {
+                                                    val raw = contact.photoUri?.trim()
+                                                    if (raw.isNullOrEmpty() || raw.startsWith("http://") || raw.startsWith("https://")) {
+                                                        val safeName = (contact.googleContactId ?: "contact_${contact.id}").replace("/", "_").replace(":", "_")
+                                                        val destFile = com.example.util.InternalStorageManager.getFile(
+                                                            context,
+                                                            com.example.util.InternalStorageManager.Category.CONTACTS,
+                                                            "g_avatar_${safeName}.jpg"
+                                                        )
+                                                        if (destFile.exists() && destFile.length() > 0L) {
+                                                            destFile.absolutePath
+                                                        } else {
+                                                            raw
+                                                        }
+                                                    } else {
+                                                        raw
+                                                    }
+                                                }
+                                                if (!resolvedPhotoPath.isNullOrEmpty()) {
+                                                    val imageModel = remember(resolvedPhotoPath) {
+                                                        val raw = resolvedPhotoPath.trim()
                                                         when {
-                                                            raw.isNullOrEmpty() -> null
+                                                            raw.isEmpty() -> null
                                                             raw.startsWith("content://") || raw.startsWith("file://") -> Uri.parse(raw)
                                                             raw.startsWith("http://") || raw.startsWith("https://") -> raw
                                                             else -> {
@@ -883,11 +925,29 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 24.sp
                                         )
-                                        if (!contact.photoUri.isNullOrEmpty()) {
-                                            val imageModel = remember(contact.photoUri) {
-                                                val raw = contact.photoUri?.trim()
+                                        val resolvedDetailPhotoPath = remember(contact.photoUri, contact.attachedFilesJson) {
+                                            val raw = contact.photoUri?.trim()
+                                            if (raw.isNullOrEmpty() || raw.startsWith("http://") || raw.startsWith("https://")) {
+                                                val safeName = (contact.googleContactId ?: "contact_${contact.id}").replace("/", "_").replace(":", "_")
+                                                val destFile = com.example.util.InternalStorageManager.getFile(
+                                                    context,
+                                                    com.example.util.InternalStorageManager.Category.CONTACTS,
+                                                    "g_avatar_${safeName}.jpg"
+                                                )
+                                                if (destFile.exists() && destFile.length() > 0L) {
+                                                    destFile.absolutePath
+                                                } else {
+                                                    raw
+                                                }
+                                            } else {
+                                                raw
+                                            }
+                                        }
+                                        if (!resolvedDetailPhotoPath.isNullOrEmpty()) {
+                                            val imageModel = remember(resolvedDetailPhotoPath) {
+                                                val raw = resolvedDetailPhotoPath.trim()
                                                 when {
-                                                    raw.isNullOrEmpty() -> null
+                                                    raw.isEmpty() -> null
                                                     raw.startsWith("content://") || raw.startsWith("file://") -> Uri.parse(raw)
                                                     raw.startsWith("http://") || raw.startsWith("https://") -> raw
                                                     else -> {
@@ -1667,7 +1727,12 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             }
                                         } catch (_: Exception) {}
                                     }
-                                    if (!photoToSave.isNullOrEmpty() && !currentAttached.contains(photoToSave)) {
+                                    val oldPhoto = selectedContact!!.photoUri
+                                    if (!oldPhoto.isNullOrEmpty() && !currentAttached.contains(oldPhoto)) {
+                                        currentAttached.add(oldPhoto)
+                                    }
+                                    if (!photoToSave.isNullOrEmpty()) {
+                                        currentAttached.remove(photoToSave)
                                         currentAttached.add(0, photoToSave)
                                     }
                                     val updated = selectedContact!!.copy(

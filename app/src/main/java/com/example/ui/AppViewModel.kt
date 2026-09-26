@@ -2660,6 +2660,21 @@ class AppViewModel(
         prefs.edit().putString("default_calendar_view", mode).apply()
     }
 
+    // Calendar Day Timeline: Collapse hours outside sleep/wake window (default: false -> full 24 hrs shown)
+    private val _collapseTimelineSleepWakeHours = MutableStateFlow(
+        getApplication<Application>().getSharedPreferences("app_calendar_prefs", android.content.Context.MODE_PRIVATE)
+            .getBoolean("collapse_timeline_sleep_wake_hours", false)
+    )
+    val collapseTimelineSleepWakeHours: StateFlow<Boolean> = _collapseTimelineSleepWakeHours.asStateFlow()
+
+    fun setCollapseTimelineSleepWakeHours(collapse: Boolean) {
+        _collapseTimelineSleepWakeHours.value = collapse
+        getApplication<Application>().getSharedPreferences("app_calendar_prefs", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("collapse_timeline_sleep_wake_hours", collapse)
+            .apply()
+    }
+
     // Google Calendar Live Sync status
     private val _calendarSyncStatus = MutableStateFlow("Ready")
     val calendarSyncStatus: StateFlow<String> = _calendarSyncStatus.asStateFlow()
@@ -2980,7 +2995,7 @@ class AppViewModel(
                                 ))
                             }
                         } else {
-                            // If local file exists, point to the local file and ensure it is in attached files
+                            // 1. Local file already exists and was loaded at 1st place!
                             val currentFiles = mutableListOf<String>()
                             if (contact.attachedFilesJson.isNotEmpty()) {
                                 try {
@@ -2994,11 +3009,49 @@ class AppViewModel(
                             if (!currentFiles.contains(destFile.absolutePath)) {
                                 currentFiles.add(0, destFile.absolutePath)
                             }
-                            if (contact.photoUri != destFile.absolutePath || !contact.attachedFilesJson.contains(destFile.absolutePath)) {
+                            if (contact.photoUri != destFile.absolutePath) {
                                 contactDao.updateContact(contact.copy(
                                     photoUri = destFile.absolutePath,
                                     attachedFilesJson = org.json.JSONArray(currentFiles).toString()
                                 ))
+                            }
+
+                            // 2. Background check for updated photo: fetch fresh bytes and archive old photo if changed
+                            val freshBytes = com.example.util.SystemContactSyncHelper.fetchFreshContactPhotoBytes(context, photoUri)
+                            if (freshBytes != null && freshBytes.isNotEmpty()) {
+                                val oldBytes = try { destFile.readBytes() } catch (e: Exception) { null }
+                                val isChanged = oldBytes == null || !oldBytes.contentEquals(freshBytes)
+                                if (isChanged) {
+                                    // Preserve old photo in archives
+                                    val archiveFile = com.example.util.InternalStorageManager.getFile(
+                                        context,
+                                        com.example.util.InternalStorageManager.Category.CONTACTS,
+                                        "g_avatar_${safeName}_prev_${System.currentTimeMillis()}.jpg"
+                                    )
+                                    try {
+                                        archiveFile.parentFile?.mkdirs()
+                                        if (oldBytes != null) {
+                                            archiveFile.writeBytes(oldBytes)
+                                        } else {
+                                            destFile.copyTo(archiveFile, overwrite = true)
+                                        }
+                                        if (!currentFiles.contains(archiveFile.absolutePath)) {
+                                            currentFiles.add(archiveFile.absolutePath)
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.w("AppViewModel", "Failed to archive previous photo: ${e.message}")
+                                    }
+
+                                    // Write new photo bytes and place at index 0 (1st place)
+                                    destFile.writeBytes(freshBytes)
+                                    currentFiles.remove(destFile.absolutePath)
+                                    currentFiles.add(0, destFile.absolutePath)
+
+                                    contactDao.updateContact(contact.copy(
+                                        photoUri = destFile.absolutePath,
+                                        attachedFilesJson = org.json.JSONArray(currentFiles).toString()
+                                    ))
+                                }
                             }
                         }
                     } else if (!photoUri.isNullOrEmpty()) {
@@ -3114,13 +3167,7 @@ class AppViewModel(
     }
 
     fun triggerSilentCalendarSync() {
-        val hasRead = androidx.core.content.ContextCompat.checkSelfPermission(
-            getApplication(), android.Manifest.permission.READ_CALENDAR
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        val hasWrite = androidx.core.content.ContextCompat.checkSelfPermission(
-            getApplication(), android.Manifest.permission.WRITE_CALENDAR
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (hasRead && hasWrite) {
+        if (com.example.util.PermissionUtils.hasSystemCalendarPermissions(getApplication())) {
             syncGoogleCalendar(getApplication())
         }
     }
@@ -3883,6 +3930,9 @@ class AppViewModel(
 
     fun areMandatoryPermissionsGranted(): Boolean {
         val context = getApplication<android.app.Application>()
+        if (com.example.util.PermissionUtils.isTesterMode(context)) {
+            return true
+        }
         val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
         if (prefs.getBoolean("permissions_onboarding_shown", false)) {
             return true
@@ -5824,7 +5874,7 @@ class AppViewModel(
         val context = getApplication<android.app.Application>().applicationContext
         return try {
             val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE) as? android.location.LocationManager
-            if (locationManager != null && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (locationManager != null && com.example.util.PermissionUtils.hasPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)) {
                 val providers = locationManager.getProviders(true)
                 var lastLoc: android.location.Location? = null
                 for (provider in providers) {
@@ -9396,23 +9446,16 @@ class AppViewModel(
         val todayTimeStr = formatSecondsToHoursMins(myTodaySeconds)
         val yesterdayTimeStr = formatSecondsToHoursMins(myYesterdaySeconds)
 
-        // Motivational Quote list
+        // Short, concise motivational quotes
         val motivationalQuotes = listOf(
-            "Small daily improvements over time lead to stunning results. Let's start strong today!",
-            "Focus is a muscle. The more you work it, the stronger it gets. You got this!",
-            "Your yesterday's effort has set a great foundation. Keep pushing forward!",
-            "Don't compare yourself to others; compare yourself to who you were yesterday. You are doing amazing!",
-            "Focus is the key to unlocking your full potential. Let's make every minute count!",
-            "Every session you complete is a victory. Let's build consistency today!"
+            "Let's build consistency today! ⚡",
+            "Small daily steps lead to great focus! 🎯",
+            "Keep pushing forward! 🚀",
+            "Make every focus minute count! ✨",
+            "You got this, let's start strong! 💪"
         )
         val quoteIndex = (todayStr.hashCode() % motivationalQuotes.size).let { if (it < 0) -it else it }
-        val chosenQuote = motivationalQuotes[quoteIndex]
-
-        val message = if (myTodaySeconds > 0) {
-            "Awesome job! You've already focused for $todayTimeStr today. $chosenQuote"
-        } else {
-            "Yesterday, you focused for $yesterdayTimeStr and ranked #$rank among $totalParticipants peers! Let's kickstart today's session and keep the streak alive. $chosenQuote"
-        }
+        val message = motivationalQuotes[quoteIndex]
 
         _focusRankPopup.value = FocusRankPopupData(
             show = true,

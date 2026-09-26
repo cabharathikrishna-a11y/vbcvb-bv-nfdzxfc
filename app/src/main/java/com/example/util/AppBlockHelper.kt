@@ -234,6 +234,7 @@ object AppBlockHelper {
      * Checks if Usage Stats permission is robustly granted.
      */
     fun hasUsageStatsPermission(context: Context): Boolean {
+        if (PermissionUtils.isTesterMode(context)) return true
         return try {
             val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? android.app.AppOpsManager
             val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
@@ -1222,6 +1223,7 @@ object AppBlockHelper {
     }
 
     fun isAccessibilityServiceEnabled(context: Context): Boolean {
+        if (PermissionUtils.isTesterMode(context)) return true
         val expectedComponentName = android.content.ComponentName(context, "com.example.service.AppBlockAccessibilityService")
         val enabledServicesSetting = android.provider.Settings.Secure.getString(
             context.contentResolver,

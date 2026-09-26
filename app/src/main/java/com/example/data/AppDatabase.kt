@@ -364,6 +364,9 @@ interface FocusRecordDao {
     @Query("SELECT * FROM focus_records ORDER BY timestamp DESC")
     fun getAllRecords(): Flow<List<FocusRecordEntity>>
 
+    @Query("SELECT * FROM focus_records ORDER BY timestamp DESC")
+    suspend fun getAllRecordsDirect(): List<FocusRecordEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRecord(record: FocusRecordEntity): Long
 

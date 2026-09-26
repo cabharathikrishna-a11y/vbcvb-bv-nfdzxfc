@@ -305,7 +305,7 @@ object CameraXHelper {
             val outputOptions = FileOutputOptions.Builder(outputFile).build()
             var pendingRecording = vCap.output.prepareRecording(context, outputOptions)
 
-            if (recordAudio && ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (recordAudio && PermissionUtils.hasPermission(context, android.Manifest.permission.RECORD_AUDIO)) {
                 pendingRecording = pendingRecording.withAudioEnabled()
             }
 

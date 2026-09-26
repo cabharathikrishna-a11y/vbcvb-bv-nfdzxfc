@@ -7268,8 +7268,9 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         val wakeUpHour = wakeUpTime.split(":").firstOrNull()?.toIntOrNull() ?: 7
                         val sleepHour = sleepTime.split(":").firstOrNull()?.toIntOrNull() ?: 22
 
-                        var showEarlyHours by remember { mutableStateOf(false) }
-                        var showLateHours by remember { mutableStateOf(false) }
+                        val collapseSleepWakeHours by viewModel.collapseTimelineSleepWakeHours.collectAsState()
+                        var showEarlyHours by remember(collapseSleepWakeHours) { mutableStateOf(!collapseSleepWakeHours) }
+                        var showLateHours by remember(collapseSleepWakeHours) { mutableStateOf(!collapseSleepWakeHours) }
 
                         Column(modifier = Modifier.fillMaxSize()) {
                             val currentDayBirthdays = getContactBirthdaysForDate(contacts, selectedMonthCalendar.time)
@@ -7524,8 +7525,8 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                                     Spacer(modifier = Modifier.height(8.dp))
 
-                                    // 1. "Above Wake-Up Time" button if there are early hours and they are not shown yet
-                                    if (!showEarlyHours && wakeUpHour > 0) {
+                                    // 1. "Above Wake-Up Time" button if collapse is enabled, early hours exist, and they are not shown yet
+                                    if (collapseSleepWakeHours && !showEarlyHours && wakeUpHour > 0) {
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -7557,11 +7558,15 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         }
                                     }
 
-                                    // Generate active hours based on sleep optimization settings
-                                    val earlyHours = if (showEarlyHours) (0 until wakeUpHour).toList() else emptyList()
-                                    val coreHours = (wakeUpHour..sleepHour).toList()
-                                    val lateHours = if (showLateHours) ((sleepHour + 1)..23).toList() else emptyList()
-                                    val hoursToRender = earlyHours + coreHours + lateHours
+                                    // Generate active hours based on sleep optimization settings (or full 24h by default)
+                                    val hoursToRender = if (!collapseSleepWakeHours) {
+                                        (0..23).toList()
+                                    } else {
+                                        val earlyHours = if (showEarlyHours) (0 until wakeUpHour).toList() else emptyList()
+                                        val coreHours = (wakeUpHour..sleepHour).toList()
+                                        val lateHours = if (showLateHours) ((sleepHour + 1)..23).toList() else emptyList()
+                                        earlyHours + coreHours + lateHours
+                                    }
 
                                     val hourHeight = 44.dp
                                     val totalGridHeight = hourHeight * hoursToRender.size
@@ -7885,8 +7890,8 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         }
                                     }
 
-                                    // 3. "Below Sleep Time" button if there are late hours and they are not shown yet
-                                    if (!showLateHours && sleepHour < 23) {
+                                    // 3. "Below Sleep Time" button if collapse is enabled, there are late hours, and they are not shown yet
+                                    if (collapseSleepWakeHours && !showLateHours && sleepHour < 23) {
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()

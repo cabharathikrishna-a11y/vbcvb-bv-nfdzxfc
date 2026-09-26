@@ -52,14 +52,7 @@ fun SettingsNotificationPage(
         // Check Android 13+ runtime POST_NOTIFICATIONS permission
         var hasSystemPermission by remember {
             mutableStateOf(
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.POST_NOTIFICATIONS
-                    ) == PackageManager.PERMISSION_GRANTED
-                } else {
-                    true
-                }
+                com.example.util.PermissionUtils.areNotificationsEnabled(context)
             )
         }
 

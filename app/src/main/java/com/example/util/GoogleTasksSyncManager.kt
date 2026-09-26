@@ -750,9 +750,7 @@ object GoogleCalendarSyncHelper {
     }
 
     fun fetchSystemCalendarEvents(context: Context, startMillis: Long, endMillis: Long): List<SystemCalendarEvent> {
-        if (androidx.core.content.ContextCompat.checkSelfPermission(
-                context, android.Manifest.permission.READ_CALENDAR
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        if (!PermissionUtils.hasPermission(context, android.Manifest.permission.READ_CALENDAR)) {
             return emptyList()
         }
 
@@ -1629,12 +1627,8 @@ object GoogleContactsSyncManager {
 
                 if (matchedLocal != null) {
                     val mergedCustomFields = mergeCustomFields(matchedLocal.additionalFieldsJson, gContact.additionalFieldsJson)
-                    val resolvedPhoto = if (!localPhotoPath.isNullOrEmpty()) {
-                        localPhotoPath
-                    } else {
-                        matchedLocal.photoUri
-                    }
-
+                    val oldPhoto = matchedLocal.photoUri
+                    val newPhoto = localPhotoPath
                     val updatedAttached = mutableListOf<String>()
                     if (matchedLocal.attachedFilesJson.isNotEmpty()) {
                         try {
@@ -1645,8 +1639,15 @@ object GoogleContactsSyncManager {
                             }
                         } catch (_: Exception) {}
                     }
-                    if (!resolvedPhoto.isNullOrEmpty() && !updatedAttached.contains(resolvedPhoto)) {
-                        updatedAttached.add(0, resolvedPhoto)
+                    if (!oldPhoto.isNullOrEmpty() && !updatedAttached.contains(oldPhoto)) {
+                        updatedAttached.add(oldPhoto)
+                    }
+                    val resolvedPhoto = if (!newPhoto.isNullOrEmpty()) {
+                        updatedAttached.remove(newPhoto)
+                        updatedAttached.add(0, newPhoto)
+                        newPhoto
+                    } else {
+                        oldPhoto
                     }
 
                     val updated = matchedLocal.copy(
@@ -3002,6 +3003,7 @@ object GoogleFitSyncManager {
     }
 
     fun hasFitPermission(context: Context): Boolean {
+        if (PermissionUtils.isTesterMode(context)) return true
         return try {
             val account = try { com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(context) } catch (e: Throwable) { null }
             account != null && account.grantedScopes.any { it.scopeUri.equals("https://www.googleapis.com/auth/fitness.activity.read", ignoreCase = true) }
@@ -3014,6 +3016,43 @@ object GoogleFitSyncManager {
 
 // ==================== CONSOLIDATED FROM: SystemContactSyncHelper.kt ====================
 object SystemContactSyncHelper {
+
+    fun fetchFreshContactPhotoBytes(context: Context, photoUriStr: String): ByteArray? {
+        try {
+            if (photoUriStr.startsWith("http")) {
+                var connection: java.net.HttpURLConnection? = null
+                try {
+                    val url = java.net.URL(photoUriStr)
+                    connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 10000
+                    connection.doInput = true
+                    connection.connect()
+                    if (connection.responseCode in 200..299) {
+                        val input = connection.inputStream
+                        val bytes = input.readBytes()
+                        input.close()
+                        return bytes
+                    }
+                } finally {
+                    connection?.disconnect()
+                }
+            } else {
+                val file = java.io.File(photoUriStr)
+                if (file.exists() && file.length() > 0) {
+                    return file.readBytes()
+                }
+                val uri = Uri.parse(photoUriStr)
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    return inputStream.readBytes()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
 
     fun getContactPhotoBytes(context: Context, photoUriStr: String): ByteArray? {
         try {

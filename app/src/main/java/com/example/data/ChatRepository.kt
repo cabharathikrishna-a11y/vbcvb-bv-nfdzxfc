@@ -99,17 +99,20 @@ class ChatRepository(
         val cachedPinned = getPinnedCachedMessages()
         val remotePinned = mutableListOf<ChatMessage>()
 
-        try {
-            val supabasePinned = SupabaseManager.client.from("messages")
-                .select {
-                    filter {
-                        eq("is_pinned", true)
+        val client = SupabaseManager.client
+        if (client != null) {
+            try {
+                val supabasePinned = client.from("messages")
+                    .select {
+                        filter {
+                            eq("is_pinned", true)
+                        }
                     }
-                }
-                .decodeList<ChatMessage>()
-            remotePinned.addAll(supabasePinned)
-        } catch (e: Exception) {
-            e.printStackTrace()
+                    .decodeList<ChatMessage>()
+                remotePinned.addAll(supabasePinned)
+            } catch (e: Exception) {
+                // Silently fallback to cached on network failure
+            }
         }
 
         val combinedMap = LinkedHashMap<Long, ChatMessage>()
@@ -186,35 +189,27 @@ class ChatRepository(
 
     suspend fun fetchAndCacheRecentMessages(limit: Int): List<ChatMessage> {
         val pinned = fetchPinnedMessages()
-        val recent = try {
-            val remoteMessages = SupabaseManager.client.from("messages")
-                .select {
-                    order("created_at", Order.DESCENDING)
-                    limit(limit.toLong())
-                }
-                .decodeList<ChatMessage>()
-                .reversed()
-
-            if (remoteMessages.isNotEmpty()) {
-                chatMessageDao?.insertMessages(remoteMessages)
-            }
-            val cached = chatMessageDao?.getRecentCachedMessages(limit)
-            if (!cached.isNullOrEmpty()) cached else remoteMessages
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val client = SupabaseManager.client
+        val recent = if (client != null) {
             try {
-                val fallbackRemote = SupabaseManager.client.from("messages")
+                val remoteMessages = client.from("messages")
                     .select {
-                        order("created_at", Order.ASCENDING)
+                        order("created_at", Order.DESCENDING)
+                        limit(limit.toLong())
                     }
                     .decodeList<ChatMessage>()
-                if (fallbackRemote.isNotEmpty()) {
-                    chatMessageDao?.insertMessages(fallbackRemote)
+                    .reversed()
+
+                if (remoteMessages.isNotEmpty()) {
+                    chatMessageDao?.insertMessages(remoteMessages)
                 }
-                chatMessageDao?.getRecentCachedMessages(limit) ?: fallbackRemote
-            } catch (e2: Exception) {
+                val cached = chatMessageDao?.getRecentCachedMessages(limit)
+                if (!cached.isNullOrEmpty()) cached else remoteMessages
+            } catch (e: Exception) {
                 chatMessageDao?.getRecentCachedMessages(limit) ?: emptyList()
             }
+        } else {
+            chatMessageDao?.getRecentCachedMessages(limit) ?: emptyList()
         }
 
         val map = LinkedHashMap<Long, ChatMessage>()
@@ -260,26 +255,20 @@ class ChatRepository(
             replyToText = replyToText,
             replyToSender = replyToSender
         )
-        val sent = try {
-            val res = SupabaseManager.client.from("messages")
-                .insert(message) {
-                    select()
-                }
-                .decodeSingle<ChatMessage>()
-            if (res.id != 0L) res else res.copy(id = uniqueId)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            // Fallback if Supabase schema is missing reply_to columns
+        val client = SupabaseManager.client
+        val sent = if (client != null) {
             try {
-                val fallbackMsg = ChatMessage(id = uniqueId, senderId = senderId, text = text, status = "SENT")
-                val res2 = SupabaseManager.client.from("messages")
-                    .insert(fallbackMsg) { select() }
+                val res = client.from("messages")
+                    .insert(message) {
+                        select()
+                    }
                     .decodeSingle<ChatMessage>()
-                    .copy(replyToId = replyToId, replyToText = replyToText, replyToSender = replyToSender)
-                if (res2.id != 0L) res2 else res2.copy(id = uniqueId)
-            } catch (e2: Exception) {
+                if (res.id != 0L) res else res.copy(id = uniqueId)
+            } catch (e: Exception) {
                 message
             }
+        } else {
+            message
         }
 
         try {
@@ -307,71 +296,78 @@ class ChatRepository(
     }
 
     suspend fun editMessage(messageId: Long, newText: String): ChatMessage? {
-        return try {
-            val updated = SupabaseManager.client.from("messages")
-                .update({
-                    set("text", newText)
-                }) {
-                    filter {
-                        eq("id", messageId)
+        val client = SupabaseManager.client
+        if (client != null) {
+            try {
+                val updated = client.from("messages")
+                    .update({
+                        set("text", newText)
+                    }) {
+                        filter {
+                            eq("id", messageId)
+                        }
+                        select()
                     }
-                    select()
-                }
-                .decodeSingleOrNull<ChatMessage>()
+                    .decodeSingleOrNull<ChatMessage>()
 
-            if (updated != null) {
-                try {
-                    chatMessageDao?.insertMessage(updated)
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                if (updated != null) {
+                    try {
+                        chatMessageDao?.insertMessage(updated)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                    return updated
                 }
+            } catch (e: Exception) {
+                // Ignore remote edit errors in offline mode
             }
-            updated
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
         }
+        return null
     }
 
     suspend fun updateMessageReaction(messageId: Long, reactions: String) {
-        try {
-            SupabaseManager.client.from("messages")
-                .update({
-                    set("reactions", reactions)
-                }) {
-                    filter {
-                        eq("id", messageId)
+        val client = SupabaseManager.client
+        if (client != null) {
+            try {
+                client.from("messages")
+                    .update({
+                        set("reactions", reactions)
+                    }) {
+                        filter {
+                            eq("id", messageId)
+                        }
                     }
-                }
+            } catch (e: Exception) {
+                // Ignore remote errors
+            }
+        }
+        try {
             chatMessageDao?.updateMessageReactions(messageId, reactions)
         } catch (e: Exception) {
             e.printStackTrace()
-            try {
-                chatMessageDao?.updateMessageReactions(messageId, reactions)
-            } catch (e2: Exception) {
-                e2.printStackTrace()
-            }
         }
     }
 
     suspend fun pinMessage(messageId: Long, isPinned: Boolean) {
-        try {
-            SupabaseManager.client.from("messages")
-                .update({
-                    set("is_pinned", isPinned)
-                }) {
-                    filter {
-                        eq("id", messageId)
+        val client = SupabaseManager.client
+        if (client != null) {
+            try {
+                client.from("messages")
+                    .update({
+                        set("is_pinned", isPinned)
+                    }) {
+                        filter {
+                            eq("id", messageId)
+                        }
                     }
-                }
+            } catch (e: Exception) {
+                // Ignore remote errors
+            }
+        }
+        try {
             chatMessageDao?.updateMessagePinned(messageId, isPinned)
         } catch (e: Exception) {
             e.printStackTrace()
-            try {
-                chatMessageDao?.updateMessagePinned(messageId, isPinned)
-            } catch (e2: Exception) {
-                e2.printStackTrace()
-            }
         }
 
         try {
@@ -387,72 +383,84 @@ class ChatRepository(
     }
 
     suspend fun markIncomingMessagesAsRead(currentUserId: String = "user_me") {
-        try {
-            SupabaseManager.client.from("messages")
-                .update({
-                    set("status", "READ")
-                }) {
-                    filter {
-                        neq("sender_id", currentUserId)
-                        neq("status", "READ")
+        val client = SupabaseManager.client
+        if (client != null) {
+            try {
+                client.from("messages")
+                    .update({
+                        set("status", "READ")
+                    }) {
+                        filter {
+                            neq("sender_id", currentUserId)
+                            neq("status", "READ")
+                        }
                     }
-                }
+            } catch (e: Exception) {
+                // Ignore remote errors
+            }
+        }
+        try {
             chatMessageDao?.markIncomingMessagesAsRead()
         } catch (e: Exception) {
             e.printStackTrace()
-            try {
-                chatMessageDao?.markIncomingMessagesAsRead()
-            } catch (e2: Exception) {
-                e2.printStackTrace()
-            }
         }
     }
 
     suspend fun markMessagesAsRead(messageIds: List<Long>) {
         if (messageIds.isEmpty()) return
-        try {
-            messageIds.forEach { id ->
-                SupabaseManager.client.from("messages")
-                    .update({
-                        set("status", "READ")
-                    }) {
-                        filter {
-                            eq("id", id)
+        val client = SupabaseManager.client
+        if (client != null) {
+            try {
+                messageIds.forEach { id ->
+                    client.from("messages")
+                        .update({
+                            set("status", "READ")
+                        }) {
+                            filter {
+                                eq("id", id)
+                            }
                         }
-                    }
+                }
+            } catch (e: Exception) {
+                // Ignore remote errors
             }
+        }
+        try {
             chatMessageDao?.markMessagesAsRead(messageIds)
         } catch (e: Exception) {
             e.printStackTrace()
-            try {
-                chatMessageDao?.markMessagesAsRead(messageIds)
-            } catch (e2: Exception) {
-                e2.printStackTrace()
-            }
         }
     }
 
     suspend fun deleteMessage(messageId: Long) {
-        try {
-            SupabaseManager.client.from("messages")
-                .delete {
-                    filter {
-                        eq("id", messageId)
+        val client = SupabaseManager.client
+        if (client != null) {
+            try {
+                client.from("messages")
+                    .delete {
+                        filter {
+                            eq("id", messageId)
+                        }
                     }
-                }
+            } catch (e: Exception) {
+                // Ignore remote errors
+            }
+        }
+        try {
             chatMessageDao?.deleteMessageById(messageId)
         } catch (e: Exception) {
             e.printStackTrace()
-            try {
-                chatMessageDao?.deleteMessageById(messageId)
-            } catch (e2: Exception) {
-                e2.printStackTrace()
-            }
         }
     }
 
     fun subscribeToNewMessages(): Flow<ChatMessage> = callbackFlow {
-        val channel = SupabaseManager.client.channel("public:messages")
+        val client = SupabaseManager.client
+        if (client == null) {
+            // Offline fallback: closed cleanly
+            awaitClose { }
+            return@callbackFlow
+        }
+        val channel = client.channel("public:messages")
         val changeFlow = channel.postgresChangeFlow<PostgresAction>(schema = "public") {
             table = "messages"
         }
@@ -494,7 +502,7 @@ class ChatRepository(
                     }
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                // Realtime subscription failed gracefully
             }
         }
         awaitClose {
@@ -502,7 +510,7 @@ class ChatRepository(
                 try {
                     channel.unsubscribe()
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    // Ignore
                 }
             }
             job.cancel()
@@ -512,7 +520,14 @@ class ChatRepository(
     private var presenceChannel: io.github.jan.supabase.realtime.RealtimeChannel? = null
 
     fun subscribeToPresence(currentUserId: String): Flow<Map<String, UserPresence>> = callbackFlow {
-        val channel = SupabaseManager.client.channel("presence:study_group")
+        val client = SupabaseManager.client
+        if (client == null) {
+            val selfPresence = mapOf(currentUserId to UserPresence(currentUserId, true, false, System.currentTimeMillis()))
+            trySend(selfPresence)
+            awaitClose { }
+            return@callbackFlow
+        }
+        val channel = client.channel("presence:study_group")
         presenceChannel = channel
         val presenceMap = mutableMapOf<String, UserPresence>()
 
@@ -546,7 +561,7 @@ class ChatRepository(
                     trySend(presenceMap.toMap())
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                // Presence subscription failed gracefully
             }
         }
 
@@ -563,7 +578,7 @@ class ChatRepository(
                     )
                     channel.unsubscribe()
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    // Ignore
                 }
             }
             job.cancel()
@@ -572,8 +587,9 @@ class ChatRepository(
     }
 
     suspend fun updatePresenceStatus(currentUserId: String, isTyping: Boolean) {
+        val client = SupabaseManager.client ?: return
         try {
-            val channel = presenceChannel ?: SupabaseManager.client.channel("presence:study_group")
+            val channel = presenceChannel ?: client.channel("presence:study_group")
             channel.track(
                 buildJsonObject {
                     put("userId", currentUserId)
@@ -583,7 +599,7 @@ class ChatRepository(
                 }
             )
         } catch (e: Exception) {
-            e.printStackTrace()
+            // Ignore presence errors
         }
     }
 }

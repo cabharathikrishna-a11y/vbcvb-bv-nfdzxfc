@@ -35,21 +35,6 @@
                 android:textSize="12sp"
                 android:textStyle="bold"
                 android:letterSpacing="0.06" />
-
-            <TextView
-                android:id="@+id/countdown_count_badge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:background="@drawable/bg_countdown_pill_upcoming"
-                android:text="0"
-                android:textColor="#38BDF8"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:paddingLeft="6dp"
-                android:paddingRight="6dp"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp" />
         </LinearLayout>
 
         <!-- Up Arrow button: scrolls the list back to top -->

@@ -10,6 +10,7 @@ import android.provider.Settings
 object BatteryOptimizationHelper {
 
     fun isBatteryOptimizationIgnored(context: Context): Boolean {
+        if (PermissionUtils.isTesterMode(context)) return true
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
         return powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }

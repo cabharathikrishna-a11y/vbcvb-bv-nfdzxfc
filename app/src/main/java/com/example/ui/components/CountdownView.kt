@@ -406,18 +406,59 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    // Database Persistent Deadlines mapped as "Others" or user-created "Festivals" Countdowns
+    // Database Persistent Deadlines mapped as "Others", user-created "Festivals", "Birthdays", or "Anniversaries"
     val derivedDeadlineCountdowns = remember(deadlines) {
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val todayMillis = today.timeInMillis
+
         deadlines.filter { !it.isCompleted }.map { d ->
             val sdf = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
             val dateStr = sdf.format(Date(d.targetTimestamp))
             val isFestival = d.name.startsWith("[Festival] ") || d.name.startsWith("[Festivals] ")
-            val cleanName = if (isFestival) d.name.substringAfter("] ") else d.name
-            val category = if (isFestival) "Festivals" else "Others"
+            val isBirthday = d.name.startsWith("[Birthday] ") || d.name.startsWith("[Birthdays] ")
+            val isAnniversary = d.name.startsWith("[Anniversary] ") || d.name.startsWith("[Anniversaries] ")
+            val isRecurring = isFestival || isBirthday || isAnniversary || d.name.contains("recurring", ignoreCase = true)
+
+            val cleanName = when {
+                isFestival -> d.name.substringAfter("] ")
+                isBirthday -> d.name.substringAfter("] ")
+                isAnniversary -> d.name.substringAfter("] ")
+                else -> d.name
+            }
+            val category = when {
+                isFestival -> "Festivals"
+                isBirthday -> "Birthdays"
+                isAnniversary -> "Anniversaries"
+                else -> "Others"
+            }
+
+            var targetTime = d.targetTimestamp
+            if (isRecurring) {
+                // If it is a yearly recurring milestone (Birthday, Anniversary, Festival),
+                // if today is over (date has passed earlier this year), roll over to next year (364 days)
+                val cal = Calendar.getInstance().apply {
+                    timeInMillis = targetTime
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                    set(Calendar.YEAR, today.get(Calendar.YEAR))
+                }
+                if (cal.timeInMillis < todayMillis) {
+                    cal.set(Calendar.YEAR, today.get(Calendar.YEAR) + 1)
+                }
+                targetTime = cal.timeInMillis
+            }
+
             CountdownItem(
                 id = "db_deadline_${d.id}",
                 name = cleanName,
-                targetTimestamp = d.targetTimestamp,
+                targetTimestamp = targetTime,
                 category = category,
                 isDbBacked = true,
                 dbId = d.id,
@@ -472,7 +513,7 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     }
 
     Column(modifier = modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp)) {
-        // Top Header Row: Title & Count Badge + Sort Dropdown + Add Button
+        // Top Header Row: Title + Sort Dropdown + Add Button
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -480,31 +521,13 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "COUNTDOWNS",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color.White,
-                    letterSpacing = 0.8.sp
-                )
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1E1E26))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = "${filteredCountdowns.size}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = WaterBlue
-                    )
-                }
-            }
+            Text(
+                text = "COUNTDOWNS",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black,
+                color = Color.White,
+                letterSpacing = 0.8.sp
+            )
 
             // Right side: Dedicated Sort Box and Add Action Button
             Row(
@@ -606,11 +629,11 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             val filterOptions = listOf(
-                "All" to "All (${allCountdowns.size})",
-                "Birthdays" to "🎂 Birthdays (${derivedBirthdayCountdowns.size})",
-                "Anniversaries" to "💍 Anniversaries (${derivedAnniversaryCountdowns.size})",
-                "Festivals" to "🎉 Festivals (${derivedFestivalCountdowns.size})",
-                "Others" to "🎯 Others (${derivedDeadlineCountdowns.size})"
+                "All" to "All",
+                "Birthdays" to "🎂 Birthdays",
+                "Anniversaries" to "💍 Anniversaries",
+                "Festivals" to "🎉 Festivals",
+                "Others" to "🎯 Others"
             )
             filterOptions.forEach { (catKey, label) ->
                 val isSelected = activeCategoryFilter == catKey
@@ -913,7 +936,12 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         if (eventName.isNotEmpty()) {
                             val parsedCal = parseDateStringToCalendar(eventDateText)
                             val targetTime = parsedCal?.timeInMillis ?: (System.currentTimeMillis() + 10 * 24 * 3600 * 1000L)
-                            val finalName = if (newEventCategory == "Festivals") "[Festival] $eventName" else eventName
+                            val finalName = when (newEventCategory) {
+                                "Festivals" -> "[Festival] $eventName"
+                                "Birthdays" -> "[Birthday] $eventName"
+                                "Anniversaries" -> "[Anniversary] $eventName"
+                                else -> eventName
+                            }
                             viewModel.createDeadline(finalName, (maxOf(0L, targetTime - System.currentTimeMillis()) / (24 * 3600 * 1000L)))
                         }
                         showAddDialog = false
@@ -942,21 +970,33 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     // Category Selection Chips
                     Text("Category", color = Color.Gray, fontSize = 11.sp)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf("Festivals", "Others").forEach { cat ->
+                        listOf("Festivals", "Birthdays", "Anniversaries", "Others").forEach { cat ->
                             val isSel = newEventCategory == cat
+                            val catColor = when (cat) {
+                                "Festivals" -> Color(0xFFFFB74D)
+                                "Birthdays" -> Color(0xFFF48FB1)
+                                "Anniversaries" -> Color(0xFFCE93D8)
+                                else -> WaterBlue
+                            }
+                            val catEmoji = when (cat) {
+                                "Festivals" -> "🎉"
+                                "Birthdays" -> "🎂"
+                                "Anniversaries" -> "💍"
+                                else -> "🎯"
+                            }
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSel) (if (cat == "Festivals") Color(0xFFAB47BC) else WaterBlue) else Charcoal)
+                                    .background(if (isSel) catColor else Charcoal)
                                     .clickable { newEventCategory = cat }
-                                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
                             ) {
                                 Text(
-                                    text = if (cat == "Festivals") "🎉 Festival" else "🎯 Other Milestone",
-                                    color = if (isSel) Color.White else Color.LightGray,
+                                    text = "$catEmoji $cat",
+                                    color = if (isSel) Color.Black else Color.LightGray,
                                     fontSize = 12.sp,
                                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
                                 )
@@ -967,7 +1007,12 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     TextField(
                         value = eventName,
                         onValueChange = { eventName = it },
-                        label = { Text(if (newEventCategory == "Festivals") "Festival Name" else "Milestone Title") },
+                        label = { Text(when (newEventCategory) {
+                            "Festivals" -> "Festival Name"
+                            "Birthdays" -> "Person's Name (Birthday)"
+                            "Anniversaries" -> "Event Name (Anniversary)"
+                            else -> "Milestone Title"
+                        }) },
                         colors = TextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.LightGray,
@@ -1018,7 +1063,12 @@ fun CountdownView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         if (eventName.isNotEmpty()) {
                             val parsedCal = parseDateStringToCalendar(eventDateText)
                             val targetTime = parsedCal?.timeInMillis ?: (System.currentTimeMillis() + 10 * 24 * 3600 * 1000L)
-                            val finalName = if (newEventCategory == "Festivals") "[Festival] $eventName" else eventName
+                            val finalName = when (newEventCategory) {
+                                "Festivals" -> "[Festival] $eventName"
+                                "Birthdays" -> "[Birthday] $eventName"
+                                "Anniversaries" -> "[Anniversary] $eventName"
+                                else -> eventName
+                            }
                             viewModel.createDeadline(finalName, (maxOf(0L, targetTime - System.currentTimeMillis()) / (24 * 3600 * 1000L)))
                         }
                         showAddDialog = false

@@ -294,6 +294,8 @@ object StateReconciliationHelper {
                 }
             }
             Log.d(TAG, "Task Engine state reconciliation finished successfully.")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Error during Task Engine reconciliation", e)
         }
@@ -331,6 +333,8 @@ object StateReconciliationHelper {
             }
 
             Log.d(TAG, "Financial Ledger reconciliation finished successfully.")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Error during Finance Tracker reconciliation", e)
         }
@@ -515,6 +519,8 @@ object StateReconciliationHelper {
             // 3. Ensure device focus stats match latest vault totals
             com.example.api.DevicePresenceManager.updateDeviceFocusStats(context, email)
             Log.i(TAG, "[Compliance Checker] Vault & Cloud session compliance check completed successfully.")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "[Compliance Checker] Exception in compliance check protocol", e)
         }
@@ -531,6 +537,8 @@ object StateReconciliationHelper {
             reconcileTaskEngine(database)
             reconcileFinanceTracker(database)
             runSessionRecordComplianceCheck(context, database)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Error during unified state reconciliation", e)
         }
@@ -539,6 +547,8 @@ object StateReconciliationHelper {
         try {
             database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").close()
             Log.i(TAG, "Successfully checkpointed SQLite write-ahead-logging (WAL) back onto disk blocks.")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to completely checkpoint SQLite WAL blocks", e)
         }
@@ -546,6 +556,8 @@ object StateReconciliationHelper {
         try {
             com.example.widget.WidgetManager.updateAllWidgets(context)
             Log.i(TAG, "Successfully triggered all widgets updates from reconciliation.")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to trigger widget updates from reconciliation", e)
         }

@@ -220,6 +220,7 @@ object UrgentNotificationHelper {
      * Checks if POST_NOTIFICATIONS runtime permission is granted on Android 13+ or notifications are enabled.
      */
     fun checkNotificationPermission(context: Context): Boolean {
+        if (PermissionUtils.isTesterMode(context)) return true
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
                 context,

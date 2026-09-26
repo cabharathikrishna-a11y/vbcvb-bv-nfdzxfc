@@ -353,7 +353,7 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf(false)
                 }
                 LaunchedEffect(isLoggedInState) {
-                    if (isLoggedInState) {
+                    if (isLoggedInState && !com.example.util.PermissionUtils.isTesterMode(this@MainActivity)) {
                         // Request Notification Permission on Android 13+ (API 33)
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                             val permissionCheck = androidx.core.content.ContextCompat.checkSelfPermission(
@@ -1986,6 +1986,8 @@ class MainActivity : ComponentActivity() {
             lifecycleScope.launch {
                 try {
                     com.example.util.FocusReconciliationEngine.runReconciliation(applicationContext, currentUsername)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // Normal coroutine cancellation, ignore
                 } catch (e: Exception) {
                     android.util.Log.e("MainActivity", "FocusReconciliationEngine failed on event: ${e.message}", e)
                 }
@@ -2019,20 +2021,25 @@ class MainActivity : ComponentActivity() {
         }
 
         // Auto-reconcile and Auto-backup to public storage before potential uninstall/force-stop
-        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        // Run safely on NonCancellable IO scope so lifecycle termination doesn't cancel backup mid-stream
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()).launch {
             try {
-                if (::database.isInitialized) {
-                    // Ensure state consistency and flush memoryWAL files cleanly before backup
-                    com.example.util.StateReconciliationHelper.runUnifiedReconciliation(applicationContext, database)
-                    com.example.util.DatabaseBackupHelper.autoBackup(applicationContext, database)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    if (::database.isInitialized) {
+                        // Ensure state consistency and flush memoryWAL files cleanly before backup
+                        com.example.util.StateReconciliationHelper.runUnifiedReconciliation(applicationContext, database)
+                        com.example.util.DatabaseBackupHelper.autoBackup(applicationContext, database)
+                    }
+                    
+                    // If the user has signed in and granted Drive permissions, auto-sync backup before potential uninstallation
+                    if (com.example.util.GoogleDriveSyncManager.hasDrivePermission(applicationContext) && ::database.isInitialized) {
+                        android.util.Log.i("MainActivity", "Auto-backing up all app data to Google Drive on stop...")
+                        val (success, msg) = com.example.util.GoogleDriveSyncManager.backupAllAppData(applicationContext, database)
+                        android.util.Log.i("MainActivity", "Google Drive auto-backup all on stop result: success=$success, msg=$msg")
+                    }
                 }
-                
-                // If the user has signed in and granted Drive permissions, auto-sync backup before potential uninstallation
-                if (com.example.util.GoogleDriveSyncManager.hasDrivePermission(applicationContext) && ::database.isInitialized) {
-                    android.util.Log.i("MainActivity", "Auto-backing up all app data to Google Drive on stop...")
-                    val (success, msg) = com.example.util.GoogleDriveSyncManager.backupAllAppData(applicationContext, database)
-                    android.util.Log.i("MainActivity", "Google Drive auto-backup all on stop result: success=$success, msg=$msg")
-                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Normal coroutine cancellation
             } catch (e: Exception) {
                 android.util.Log.e("MainActivity", "State reconciliation, auto-backup, or Google Drive backup failed on stop", e)
             }
