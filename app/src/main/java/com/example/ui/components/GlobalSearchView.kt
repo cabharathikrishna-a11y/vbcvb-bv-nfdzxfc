@@ -144,7 +144,6 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
                 modifier = Modifier
                     .weight(1f)
-                    .height(50.dp)
                     .clip(RoundedCornerShape(25.dp))
                     .testTag("global_search_input")
             )
@@ -270,88 +269,16 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     }
                 }
             } else {
-                // When History is Empty: Perfectly centered modern explore state with glowing futuristic badge & centered clean text
-                Box(
+                // When History is Empty: Perfectly centered modern explore state with glowing animated futuristic badge
+                CenteredEmptyStateView(
+                    icon = Icons.Default.Search,
+                    title = "Search Life OS",
+                    subtitle = "Start typing keywords to search across tasks, habits, journals, contacts, finances, notes, and settings",
+                    accentColor = WaterBlue,
                     modifier = Modifier
                         .fillMaxSize()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                    ) {
-                        // Modern futuristic search orb badge (no outdated "i" circle)
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.radialGradient(
-                                        colors = listOf(
-                                            WaterBlue.copy(alpha = 0.30f),
-                                            Color(0xFF1A1F2E),
-                                            Color(0xFF10121A)
-                                        )
-                                    )
-                                )
-                                .border(
-                                    1.5.dp,
-                                    Brush.sweepGradient(
-                                        listOf(
-                                            WaterBlue.copy(alpha = 0.7f),
-                                            Color(0xFF818CF8).copy(alpha = 0.5f),
-                                            WaterBlue.copy(alpha = 0.15f),
-                                            WaterBlue.copy(alpha = 0.7f)
-                                        )
-                                    ),
-                                    CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Search",
-                                    tint = WaterBlue,
-                                    modifier = Modifier.size(36.dp)
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFD54F),
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .offset(x = 14.dp, y = (-14).dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        Text(
-                            text = "Search Life OS",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Text(
-                            text = "Start typing keywords to search across tasks, habits, journals, contacts, finances, notes, and settings",
-                            color = Color.Gray,
-                            fontSize = 12.sp,
-                            lineHeight = 18.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                    }
-                }
+                        .weight(1f)
+                )
             }
         } else {
             val DateRegex = Regex("""^(\d{1,2})/(\d{1,2})/(\d{4})$""")
@@ -383,92 +310,20 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 val totalCount = finalTasks.size + finalHabits.size + finalJournals.size + finalContacts.size + finalFinances.size + finalNotes.size + finalSettings.size
 
                 if (totalCount == 0) {
-                    Box(
+                    CenteredEmptyStateView(
+                        icon = Icons.Default.SearchOff,
+                        title = "No matches found for \"$inputQuery\"",
+                        subtitle = if (activeFilter != SearchFilter.ALL)
+                            "No matching results under ${activeFilter.name.lowercase().replaceFirstChar { it.titlecase() }}. Try switching to \"All\" categories or checking spelling."
+                        else
+                            "Check your spelling or try searching with alternative keywords across tasks, habits, and journals.",
+                        accentColor = Color(0xFFFFB74D),
+                        actionButtonText = if (activeFilter != SearchFilter.ALL) "Search All Categories" else null,
+                        onActionClick = if (activeFilter != SearchFilter.ALL) { { activeFilter = SearchFilter.ALL } } else null,
                         modifier = Modifier
                             .fillMaxSize()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(76.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        Brush.radialGradient(
-                                            listOf(
-                                                Color(0xFFFFB74D).copy(alpha = 0.2f),
-                                                Color(0xFF221C16),
-                                                Color(0xFF141210)
-                                            )
-                                        )
-                                    )
-                                    .border(
-                                        1.5.dp,
-                                        Brush.sweepGradient(
-                                            listOf(
-                                                Color(0xFFFFB74D).copy(alpha = 0.6f),
-                                                Color(0xFFFF7043).copy(alpha = 0.4f),
-                                                Color(0xFFFFB74D).copy(alpha = 0.1f),
-                                                Color(0xFFFFB74D).copy(alpha = 0.6f)
-                                            )
-                                        ),
-                                        CircleShape
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SearchOff,
-                                    contentDescription = "No results",
-                                    tint = Color(0xFFFFB74D),
-                                    modifier = Modifier.size(34.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(18.dp))
-
-                            Text(
-                                text = "No matches found for \"$inputQuery\"",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Text(
-                                text = if (activeFilter != SearchFilter.ALL)
-                                    "No matching results under ${activeFilter.name.lowercase().replaceFirstChar { it.titlecase() }}. Try switching to \"All\" categories or checking spelling."
-                                else
-                                    "Check your spelling or try searching with alternative keywords across tasks, habits, and journals.",
-                                color = Color.Gray,
-                                fontSize = 12.sp,
-                                lineHeight = 18.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-
-                            if (activeFilter != SearchFilter.ALL) {
-                                Spacer(modifier = Modifier.height(16.dp))
-                                OutlinedButton(
-                                    onClick = { activeFilter = SearchFilter.ALL },
-                                    shape = RoundedCornerShape(12.dp),
-                                    border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.5f)),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = WaterBlue),
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                                ) {
-                                    Text("Search All Categories", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-                        }
-                    }
+                            .weight(1f)
+                    )
                 } else {
                     LazyColumn(
                         modifier = Modifier.weight(1f),

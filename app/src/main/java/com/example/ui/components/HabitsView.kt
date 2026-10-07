@@ -71,6 +71,12 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     var countLogTarget by remember { mutableStateOf<Habit?>(null) }
     var showLongPressOptionsForHabit by remember { mutableStateOf<Habit?>(null) }
     var showOrderMenuForHabitId by remember { mutableStateOf<Int?>(null) }
+    var isReorderMode by remember { mutableStateOf(false) }
+
+    androidx.activity.compose.BackHandler(enabled = isReorderMode) {
+        isReorderMode = false
+        showOrderMenuForHabitId = null
+    }
 
     val contactsList by viewModel.contacts.collectAsState()
 
@@ -162,13 +168,46 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             }
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = selectedListName.uppercase(),
+                text = if (isReorderMode) "REARRANGE ORDER" else selectedListName.uppercase(),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color.White,
+                color = if (isReorderMode) WaterBlue else Color.White,
                 letterSpacing = 1.sp
             )
             Spacer(modifier = Modifier.weight(1f))
+
+            if (isReorderMode) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            isReorderMode = false
+                            showOrderMenuForHabitId = null
+                            android.widget.Toast.makeText(context, "Habit order saved!", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
+                        shape = RoundedCornerShape(20.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier.testTag("habits_finish_reorder_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Finish Rearranging Order",
+                            tint = Color.Black,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Done",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
         }
 
         // Premium Custom Tab Bar
@@ -300,81 +339,175 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             .border(1.dp, Color(0xFF27272A), RoundedCornerShape(12.dp))
                                             .combinedClickable(
                                                 onClick = {
+                                                    if (isReorderMode) {
+                                                        // In reorder mode, do not trigger habit progress logging
+                                                        return@combinedClickable
+                                                    }
                                                     if (habit.frequency.uppercase() == "WEEKLY" && habit.weeklyDay != currentDayOfWeek) {
                                                         android.widget.Toast.makeText(context, "Weekly habits can only be updated on their designated day!", android.widget.Toast.LENGTH_SHORT).show()
                                                     } else {
                                                         countLogTarget = habit
                                                     }
                                                 },
-                                                onLongClick = { showLongPressOptionsForHabit = habit }
+                                                onLongClick = {
+                                                    if (!isReorderMode) {
+                                                        showLongPressOptionsForHabit = habit
+                                                    }
+                                                }
                                             )
                                             .padding(horizontal = 12.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // 6-dot drag toggle on left
-                                        Box(
-                                            modifier = Modifier
-                                                .padding(end = 10.dp)
-                                                .clickable { showOrderMenuForHabitId = habit.id }
-                                                .padding(vertical = 4.dp, horizontal = 2.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Column(
-                                                verticalArrangement = Arrangement.spacedBy(2.5.dp),
-                                                horizontalAlignment = Alignment.CenterHorizontally
+                                        // 6-dot drag toggle on left (only visible when in reorder mode)
+                                        if (isReorderMode) {
+                                            val listToReorder = displayedHabits
+                                            val indexInFiltered = listToReorder.indexOf(habit)
+                                            val canMoveUp = indexInFiltered > 0
+                                            val canMoveDown = indexInFiltered in 0 until (listToReorder.size - 1)
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(end = 10.dp)
                                             ) {
-                                                Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
-                                                }
-                                                Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
-                                                }
-                                                Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
-                                                    Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(Color(0xFF71717A)))
-                                                }
-                                            }
-
-                                            DropdownMenu(
-                                                expanded = showOrderMenuForHabitId == habit.id,
-                                                onDismissRequest = { showOrderMenuForHabitId = null },
-                                                modifier = Modifier.background(Charcoal)
-                                            ) {
-                                                val listToReorder = displayedHabits
-                                                val indexInFiltered = listToReorder.indexOf(habit)
-
-                                                DropdownMenuItem(
-                                                    text = { Text("Move Up", color = Color.White, fontSize = 13.sp) },
-                                                    leadingIcon = { Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(16.dp)) },
-                                                    enabled = indexInFiltered > 0,
-                                                    onClick = {
-                                                        showOrderMenuForHabitId = null
-                                                        val mutableFiltered = listToReorder.toMutableList()
-                                                        val temp = mutableFiltered[indexInFiltered]
-                                                        mutableFiltered[indexInFiltered] = mutableFiltered[indexInFiltered - 1]
-                                                        mutableFiltered[indexInFiltered - 1] = temp
-
-                                                        val updatedList = mutableFiltered.mapIndexed { idx, h -> h.copy(orderIndex = idx) }
-                                                        viewModel.updateHabitsOrder(updatedList)
+                                                Column(
+                                                    verticalArrangement = Arrangement.Center,
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    modifier = Modifier.padding(end = 4.dp)
+                                                ) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            if (canMoveUp) {
+                                                                val mutableFiltered = listToReorder.toMutableList()
+                                                                val temp = mutableFiltered[indexInFiltered]
+                                                                mutableFiltered[indexInFiltered] = mutableFiltered[indexInFiltered - 1]
+                                                                mutableFiltered[indexInFiltered - 1] = temp
+                                                                val updatedList = mutableFiltered.mapIndexed { idx, h -> h.copy(orderIndex = idx) }
+                                                                viewModel.updateHabitsOrder(updatedList)
+                                                            }
+                                                        },
+                                                        enabled = canMoveUp,
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.KeyboardArrowUp,
+                                                            contentDescription = "Move Habit Up",
+                                                            tint = if (canMoveUp) WaterBlue else Color(0xFF404040),
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
                                                     }
-                                                )
-                                                DropdownMenuItem(
-                                                    text = { Text("Move Down", color = Color.White, fontSize = 13.sp) },
-                                                    leadingIcon = { Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(16.dp)) },
-                                                    enabled = indexInFiltered < listToReorder.size - 1,
-                                                    onClick = {
-                                                        showOrderMenuForHabitId = null
-                                                        val mutableFiltered = listToReorder.toMutableList()
-                                                        val temp = mutableFiltered[indexInFiltered]
-                                                        mutableFiltered[indexInFiltered] = mutableFiltered[indexInFiltered + 1]
-                                                        mutableFiltered[indexInFiltered + 1] = temp
 
-                                                        val updatedList = mutableFiltered.mapIndexed { idx, h -> h.copy(orderIndex = idx) }
-                                                        viewModel.updateHabitsOrder(updatedList)
+                                                    IconButton(
+                                                        onClick = {
+                                                            if (canMoveDown) {
+                                                                val mutableFiltered = listToReorder.toMutableList()
+                                                                val temp = mutableFiltered[indexInFiltered]
+                                                                mutableFiltered[indexInFiltered] = mutableFiltered[indexInFiltered + 1]
+                                                                mutableFiltered[indexInFiltered + 1] = temp
+                                                                val updatedList = mutableFiltered.mapIndexed { idx, h -> h.copy(orderIndex = idx) }
+                                                                viewModel.updateHabitsOrder(updatedList)
+                                                            }
+                                                        },
+                                                        enabled = canMoveDown,
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.KeyboardArrowDown,
+                                                            contentDescription = "Move Habit Down",
+                                                            tint = if (canMoveDown) WaterBlue else Color(0xFF404040),
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
                                                     }
-                                                )
+                                                }
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(WaterBlue.copy(alpha = 0.15f))
+                                                        .clickable { showOrderMenuForHabitId = habit.id }
+                                                        .padding(vertical = 6.dp, horizontal = 4.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Column(
+                                                        verticalArrangement = Arrangement.spacedBy(2.5.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally
+                                                    ) {
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                                                            Box(modifier = Modifier.size(3.5.dp).clip(CircleShape).background(WaterBlue))
+                                                            Box(modifier = Modifier.size(3.5.dp).clip(CircleShape).background(WaterBlue))
+                                                        }
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                                                            Box(modifier = Modifier.size(3.5.dp).clip(CircleShape).background(WaterBlue))
+                                                            Box(modifier = Modifier.size(3.5.dp).clip(CircleShape).background(WaterBlue))
+                                                        }
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                                                            Box(modifier = Modifier.size(3.5.dp).clip(CircleShape).background(WaterBlue))
+                                                            Box(modifier = Modifier.size(3.5.dp).clip(CircleShape).background(WaterBlue))
+                                                        }
+                                                    }
+
+                                                    DropdownMenu(
+                                                        expanded = showOrderMenuForHabitId == habit.id,
+                                                        onDismissRequest = { showOrderMenuForHabitId = null },
+                                                        modifier = Modifier.background(Charcoal)
+                                                    ) {
+                                                        DropdownMenuItem(
+                                                            text = { Text("Move to Top", color = Color.White, fontSize = 13.sp) },
+                                                            leadingIcon = { Icon(Icons.Default.VerticalAlignTop, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(16.dp)) },
+                                                            enabled = canMoveUp,
+                                                            onClick = {
+                                                                showOrderMenuForHabitId = null
+                                                                val mutableFiltered = listToReorder.toMutableList()
+                                                                val item = mutableFiltered.removeAt(indexInFiltered)
+                                                                mutableFiltered.add(0, item)
+                                                                val updatedList = mutableFiltered.mapIndexed { idx, h -> h.copy(orderIndex = idx) }
+                                                                viewModel.updateHabitsOrder(updatedList)
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Move Up", color = Color.White, fontSize = 13.sp) },
+                                                            leadingIcon = { Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(16.dp)) },
+                                                            enabled = canMoveUp,
+                                                            onClick = {
+                                                                showOrderMenuForHabitId = null
+                                                                val mutableFiltered = listToReorder.toMutableList()
+                                                                val temp = mutableFiltered[indexInFiltered]
+                                                                mutableFiltered[indexInFiltered] = mutableFiltered[indexInFiltered - 1]
+                                                                mutableFiltered[indexInFiltered - 1] = temp
+
+                                                                val updatedList = mutableFiltered.mapIndexed { idx, h -> h.copy(orderIndex = idx) }
+                                                                viewModel.updateHabitsOrder(updatedList)
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Move Down", color = Color.White, fontSize = 13.sp) },
+                                                            leadingIcon = { Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = Color.LightGray, modifier = Modifier.size(16.dp)) },
+                                                            enabled = canMoveDown,
+                                                            onClick = {
+                                                                showOrderMenuForHabitId = null
+                                                                val mutableFiltered = listToReorder.toMutableList()
+                                                                val temp = mutableFiltered[indexInFiltered]
+                                                                mutableFiltered[indexInFiltered] = mutableFiltered[indexInFiltered + 1]
+                                                                mutableFiltered[indexInFiltered + 1] = temp
+
+                                                                val updatedList = mutableFiltered.mapIndexed { idx, h -> h.copy(orderIndex = idx) }
+                                                                viewModel.updateHabitsOrder(updatedList)
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Move to Bottom", color = Color.White, fontSize = 13.sp) },
+                                                            leadingIcon = { Icon(Icons.Default.VerticalAlignBottom, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(16.dp)) },
+                                                            enabled = canMoveDown,
+                                                            onClick = {
+                                                                showOrderMenuForHabitId = null
+                                                                val mutableFiltered = listToReorder.toMutableList()
+                                                                val item = mutableFiltered.removeAt(indexInFiltered)
+                                                                mutableFiltered.add(item)
+                                                                val updatedList = mutableFiltered.mapIndexed { idx, h -> h.copy(orderIndex = idx) }
+                                                                viewModel.updateHabitsOrder(updatedList)
+                                                            }
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -1187,20 +1320,92 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     showLongPressOptionsForHabit?.let { targetHabit ->
         AlertDialog(
             onDismissRequest = { showLongPressOptionsForHabit = null },
-            title = { Text("Manage Habit: ${targetHabit.name}", fontWeight = FontWeight.Bold, color = Color.White) },
-            containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = WaterBlue,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = targetHabit.name,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            },
+            containerColor = Color(0xFF1E1E24),
+            shape = RoundedCornerShape(16.dp),
             text = {
-                Column {
-                    Text("Select an action to modify or delete this habit plan.", color = Color.LightGray, fontSize = 14.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Choose an option to manage this habit plan:",
+                        color = Color.LightGray,
+                        fontSize = 13.sp
+                    )
+
+                    // 1. Edit Habit Option
+                    Button(
+                        onClick = {
+                            editingHabitTarget = targetHabit
+                            showHabitEditorScreen = true
+                            showLongPressOptionsForHabit = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF27272A), contentColor = Color.White),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("habit_edit_option")
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = WaterBlue)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Edit Habit", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    }
+
+                    // 2. Delete Habit Option
+                    Button(
+                        onClick = {
+                            viewModel.deleteHabit(targetHabit)
+                            showLongPressOptionsForHabit = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B1515), contentColor = Color(0xFFFF6B6B)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("habit_delete_option")
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFFFF6B6B))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Delete Habit", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    }
+
+                    // 3. Rearrange Order Option
+                    Button(
+                        onClick = {
+                            isReorderMode = true
+                            showLongPressOptionsForHabit = null
+                            showOrderMenuForHabitId = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue.copy(alpha = 0.2f), contentColor = WaterBlue),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("habit_reorder_option")
+                    ) {
+                        Icon(Icons.Default.SwapVert, contentDescription = null, modifier = Modifier.size(18.dp), tint = WaterBlue)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Rearrange Order", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+
+                    // 4. Action button if habit has contact action
                     val actData = remember(targetHabit) { TaskActionHelper.parseActionData(targetHabit) }
                     if (actData.type.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(12.dp))
                         Button(
                             onClick = {
                                 TaskActionHelper.executeAction(context, actData)
                                 showLongPressOptionsForHabit = null
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = WaterBlue.copy(alpha = 0.25f)),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             val actLabel = when (actData.type.uppercase()) {
@@ -1214,40 +1419,10 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     }
                 }
             },
-            confirmButton = {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = {
-                            editingHabitTarget = targetHabit
-                            showHabitEditorScreen = true
-                            showLongPressOptionsForHabit = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Edit", fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = {
-                            viewModel.deleteHabit(targetHabit)
-                            showLongPressOptionsForHabit = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828), contentColor = Color.White)
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Delete", fontWeight = FontWeight.Bold)
-                    }
-                }
-            },
+            confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showLongPressOptionsForHabit = null }) {
-                    Text("Cancel", color = Color.White)
+                    Text("Cancel", color = Color.Gray, fontWeight = FontWeight.SemiBold)
                 }
             }
         )

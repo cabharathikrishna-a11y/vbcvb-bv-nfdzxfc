@@ -2636,7 +2636,7 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             )
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(
-                                                text = entryItem.dateString,
+                                                text = com.example.util.SystemTimeService.formatDisplayDate(entryItem.dateString),
                                                 color = WaterBlue,
                                                 fontSize = 10.sp
                                             )
@@ -2657,13 +2657,13 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         }
     } else {
         // Main Journal Dashboard Layout representation with Sidebar Toggle control
-        Box(modifier = modifier.fillMaxSize()) {
+        Box(modifier = modifier.fillMaxSize().statusBarsPadding()) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Top header bar containing sidebar toggle, scope selector, and modernized action tools
+                // Top header bar: clean, borderless, perfectly aligned and placed up
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(start = 6.dp, end = 6.dp, top = 0.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -2675,54 +2675,49 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         IconButton(
                             onClick = { isSidebarExpanded = !isSidebarExpanded },
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF16161A))
-                                .border(1.dp, Color(0xFF262630), RoundedCornerShape(10.dp))
+                                .size(40.dp)
+                                .testTag("journal_sidebar_toggle_btn")
                         ) {
                             Icon(
                                 Icons.Default.Menu,
                                 contentDescription = "Toggle Sidebar Manager",
                                 tint = Color.White,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
 
                         var topScopeDropdownExpanded by remember { mutableStateOf(false) }
                         Box {
                             Row(
                                 modifier = Modifier
-                                    .height(36.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFF16161A))
-                                    .border(1.dp, Color(0xFF262630), RoundedCornerShape(10.dp))
+                                    .clip(RoundedCornerShape(8.dp))
                                     .clickable { topScopeDropdownExpanded = true }
-                                    .padding(horizontal = 10.dp),
+                                    .padding(horizontal = 6.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = if (selectedJournalScope == "Personal Journal") Icons.Default.Person else Icons.Default.Group,
                                     contentDescription = null,
                                     tint = WaterBlue,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = selectedJournalScope,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
                                     color = Color.White,
                                     maxLines = 1,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                    modifier = Modifier.widthIn(max = 120.dp)
+                                    modifier = Modifier.widthIn(max = 130.dp)
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Icon(
                                     imageVector = Icons.Default.ArrowDropDown,
                                     contentDescription = "Select Scope",
                                     tint = Color.LightGray,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
 
@@ -2778,10 +2773,10 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
                     }
 
-                    // Right: Modernized and organized tool cluster (Calendar, AI Summary, Voice Mic, Add Entry)
+                    // Right: Clean tool cluster with no borders - just the logos/icons (Calendar, AI Summary, Voice Mic, Add Entry)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         var isSummarizing by remember { mutableStateOf(false) }
 
@@ -2859,17 +2854,14 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 datePickerDialog.show()
                             },
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF16161A))
-                                .border(1.dp, Color(0xFF262630), RoundedCornerShape(10.dp))
+                                .size(40.dp)
                                 .testTag("journal_calendar_picker_btn")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DateRange,
                                 contentDescription = "Select Date",
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(17.dp)
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
 
@@ -2883,24 +2875,21 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 }
                             },
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF0D221E))
-                                .border(1.dp, Color(0xFF00BFA5).copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                                .size(40.dp)
                                 .testTag("summarize_today_btn")
                         ) {
                             if (isSummarizing) {
                                 CircularProgressIndicator(
-                                    color = Color(0xFF00BFA5),
-                                    modifier = Modifier.size(16.dp),
+                                    color = WaterBlue,
+                                    modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp
                                 )
                             } else {
                                 Icon(
                                     imageVector = Icons.Default.AutoAwesome,
                                     contentDescription = "AI Summarize Today",
-                                    tint = Color(0xFF00BFA5),
-                                    modifier = Modifier.size(17.dp)
+                                    tint = WaterBlue,
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
@@ -2914,17 +2903,14 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 showVoiceJournalDialog = true
                             },
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF261416))
-                                .border(1.dp, Color(0xFFFF4D4D).copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                .size(40.dp)
                                 .testTag("ai_voice_journal_btn")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Mic,
                                 contentDescription = "AI Voice Journal Note",
                                 tint = Color(0xFFFF5252),
-                                modifier = Modifier.size(17.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
 
@@ -2957,29 +2943,27 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 }
                             },
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(WaterBlue)
+                                .size(40.dp)
                                 .testTag("create_diary_btn")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Add,
+                                imageVector = Icons.Default.AddCircle,
                                 contentDescription = "Add Diary entry",
-                                tint = Color.Black,
-                                modifier = Modifier.size(20.dp)
+                                tint = WaterBlue,
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                     }
                 }
 
                 // Dashboard views switcher
-                Card(
-                    modifier = Modifier.fillMaxSize(),
-                    colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f)),
-                    shape = RoundedCornerShape(12.dp)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, top = 2.dp)
                 ) {
-                    Box(modifier = Modifier.padding(16.dp)) {
-                        when (currentJournalTab) {
+                    when (currentJournalTab) {
                             "Timeline" -> {
                                 Column(modifier = Modifier.fillMaxSize()) {
                                     Text(
@@ -4219,7 +4203,6 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
                     }
                 }
-            }
 
             // Floating Custom Navigation Drawer Sidebar Overlay
             androidx.compose.animation.AnimatedVisibility(
@@ -4517,8 +4500,8 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val entrySdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
-                        val formattedTimeStr = entrySdfTime.format(Date(entry.timestamp))
+                        val formattedTimeStr = com.example.util.SystemTimeService.formatDisplayTime(entry.timestamp)
+                        val displayDateStr = com.example.util.SystemTimeService.formatDisplayDate(entry.dateString)
 
                         val authorTag = entry.attachmentsJson
                             .split(";;")
@@ -4526,9 +4509,9 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             ?.removePrefix("author:")
 
                         val subtitleText = if (!authorTag.isNullOrEmpty()) {
-                            "${entry.dateString} at $formattedTimeStr • By $authorTag"
+                            "$displayDateStr at $formattedTimeStr • By $authorTag"
                         } else {
-                            "${entry.dateString} at $formattedTimeStr"
+                            "$displayDateStr at $formattedTimeStr"
                         }
 
                         Text(
@@ -5950,7 +5933,7 @@ fun JournalMapView(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = entry.dateString,
+                                    text = com.example.util.SystemTimeService.formatDisplayDate(entry.dateString),
                                     color = Color.Gray,
                                     fontSize = 10.sp
                                 )

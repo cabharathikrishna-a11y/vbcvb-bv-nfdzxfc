@@ -2,9 +2,46 @@ package com.example
 
 import android.app.Application
 import androidx.work.Configuration
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import coil.decode.SvgDecoder
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
+import java.io.File
 import java.util.concurrent.Executors
+import okhttp3.OkHttpClient
 
-class MainApplication : Application(), Configuration.Provider {
+class MainApplication : Application(), Configuration.Provider, ImageLoaderFactory {
+
+    override fun newImageLoader(): ImageLoader {
+        val okHttpClient = OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .retryOnConnectionFailure(true)
+            .build()
+
+        return ImageLoader.Builder(this)
+            .okHttpClient(okHttpClient)
+            .components {
+                add(SvgDecoder.Factory())
+            }
+            .memoryCache {
+                MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(File(cacheDir, "image_cache"))
+                    .maxSizeBytes(64L * 1024 * 1024)
+                    .build()
+            }
+            .respectCacheHeaders(false)
+            .crossfade(true)
+            .build()
+    }
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()

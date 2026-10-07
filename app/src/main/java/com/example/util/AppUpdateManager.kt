@@ -431,6 +431,12 @@ object AppUpdateManager {
      * Checks for updates from Firebase Realtime Database.
      */
     suspend fun checkForUpdates(context: Context, manualCheck: Boolean = false) {
+        if (PermissionUtils.isTesterMode(context)) {
+            Log.i(TAG, "Tester Mode active: bypassing update checks.")
+            _updateStatus.value = UpdateStatus.NoUpdateAvailable(getCurrentVersionCode(context), getCurrentVersionCode(context))
+            return
+        }
+
         if (_updateStatus.value is UpdateStatus.Downloading) {
             Log.i(TAG, "Already downloading an update, ignoring check request")
             return
@@ -922,6 +928,12 @@ object AppUpdateManager {
      * Downloads and installs the update.
      */
     suspend fun downloadAndInstallUpdate(context: Context, providedFileId: String?) {
+        if (PermissionUtils.isTesterMode(context)) {
+            Log.i(TAG, "Tester Mode active: update downloading disabled.")
+            _updateStatus.value = UpdateStatus.Error("Updates are disabled in Tester Mode.")
+            return
+        }
+
         synchronized(this) {
             if (isDownloadingActive) {
                 Log.i(TAG, "Download is already in progress, ignoring duplicate request.")

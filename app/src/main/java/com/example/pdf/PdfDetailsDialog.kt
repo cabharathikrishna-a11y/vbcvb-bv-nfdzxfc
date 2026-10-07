@@ -24,7 +24,7 @@ fun PdfDetailsDialog(
     onPrint: () -> Unit,
     onShare: () -> Unit
 ) {
-    val dateFormat = SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault())
+    val dateFormat = SimpleDateFormat("dd/MM/yyyy • hh:mm a", Locale.US)
     val lastOpenedText = dateFormat.format(Date(item.lastOpenedTimestamp))
 
     AlertDialog(

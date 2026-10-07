@@ -97,7 +97,7 @@ object ModelDownloadManager {
     }
 
     fun isFlagshipModelDownloaded(context: Context): Boolean {
-        return isModelDownloaded(context, ModelRepository.FLAGSHIP_QWEN_CODER)
+        return isModelDownloaded(context, ModelRepository.FLAGSHIP_GEMINI_NANO)
     }
 
     fun isModelDownloaded(context: Context, model: LocalAiModel): Boolean {
@@ -110,7 +110,7 @@ object ModelDownloadManager {
         return if (file.exists() && file.length() > 50 * 1024 * 1024) file else null
     }
 
-    fun checkStorageSpace(context: Context, minRequiredGb: Double = 1.3): StorageCheckResult {
+    fun checkStorageSpace(context: Context, minRequiredGb: Double = 1.2): StorageCheckResult {
         val specs = DeviceSpecsManager.getDeviceSpecs(context)
         val freeGb = specs.freeStorageGb
         val hasEnough = freeGb >= minRequiredGb
@@ -145,7 +145,7 @@ object ModelDownloadManager {
 
     fun startDownload(
         context: Context,
-        model: LocalAiModel = ModelRepository.FLAGSHIP_QWEN_CODER,
+        model: LocalAiModel = ModelRepository.FLAGSHIP_GEMINI_NANO,
         speedMode: DownloadSpeedMode = DownloadSpeedMode.FAST,
         coroutineScope: CoroutineScope,
         onComplete: (Boolean, String?) -> Unit

@@ -27,8 +27,8 @@ data class GoogleDriveSyncStatus(
  * GoogleDriveSyncProgressTracker
  *
  * Singleton state manager and broadcaster for Google Drive tasks.
- * Ensures every sync event posts silent progress updates to the system notification
- * and broadcasts live state to Compose UI components.
+ * Ensures every sync event smoothly updates live state in Compose UI
+ * while maintaining a single, quiet, in-place updating system notification that auto-dismisses.
  */
 object GoogleDriveSyncProgressTracker {
 
@@ -38,8 +38,13 @@ object GoogleDriveSyncProgressTracker {
     private val trackerScope = CoroutineScope(Dispatchers.Main.immediate + Job())
     private var dismissJob: Job? = null
 
+    // Throttling fields to prevent notification subsystem stutter and rapid text flickering
+    private var lastNotifiedProgress = -1
+    private var lastNotifiedPhase = ""
+    private var lastNotifyTimestamp = 0L
+
     /**
-     * Updates the sync progress and automatically posts a silent notification on the user device.
+     * Updates the sync progress and updates the single silent notification in-place.
      */
     fun updateProgress(
         context: Context,
@@ -61,40 +66,67 @@ object GoogleDriveSyncProgressTracker {
             timestamp = System.currentTimeMillis()
         )
 
+        // Always update Compose UI state immediately
         _syncStatus.value = status
 
-        // Post silent system notification
-        val notifTitle = if (operationType.isNotBlank()) "Google Drive: $operationType" else "Google Drive Sync"
-        val notifMessage = if (isFinished) {
-            if (isError) "⚠️ $message" else "✅ $message"
-        } else {
-            "[$phase - $clampedProgress%] $message"
+        val now = System.currentTimeMillis()
+        val shouldNotifySystem = isFinished || isError ||
+                phase != lastNotifiedPhase ||
+                Math.abs(clampedProgress - lastNotifiedProgress) >= 10 ||
+                (now - lastNotifyTimestamp >= 1200L)
+
+        if (shouldNotifySystem) {
+            lastNotifiedProgress = clampedProgress
+            lastNotifiedPhase = phase
+            lastNotifyTimestamp = now
+
+            val notifTitle = if (operationType.isNotBlank()) "Google Drive: $operationType" else "Google Drive Sync"
+            val cleanMessage = when {
+                isError -> {
+                    val safeMsg = when {
+                        message.contains("connection", ignoreCase = true) || message.contains("connect", ignoreCase = true) -> "Sync paused (waiting for connection)"
+                        message.contains("401") || message.contains("Auth", ignoreCase = true) -> "Drive authorization required"
+                        message.contains("timeout", ignoreCase = true) -> "Sync temporarily delayed"
+                        message.contains("Pull succeeded, but Push failed", ignoreCase = true) -> "Sync paused (will retry)"
+                        else -> {
+                            val sanitized = message.replace(Regex("failed\\s*\\d+", RegexOption.IGNORE_CASE), "retrying")
+                            if (sanitized.length > 75) sanitized.take(72) + "..." else sanitized
+                        }
+                    }
+                    "⚠️ $safeMsg"
+                }
+                isFinished -> "✅ $message"
+                else -> "[$phase - $clampedProgress%] $message"
+            }
+
+            GoogleDriveSyncNotificationHelper.notifyProgress(
+                context = context,
+                title = notifTitle,
+                message = cleanMessage,
+                progress = clampedProgress,
+                indeterminate = clampedProgress == 0 && !isFinished,
+                isFinished = isFinished,
+                isError = isError
+            )
         }
 
-        GoogleDriveSyncNotificationHelper.notifyProgress(
-            context = context,
-            title = notifTitle,
-            message = notifMessage,
-            progress = clampedProgress,
-            indeterminate = clampedProgress == 0 && !isFinished,
-            isFinished = isFinished,
-            isError = isError
-        )
-
-        // If finished successfully, auto-dismiss notification after 6 seconds so status bar stays tidy
+        // Auto-dismiss the notification for both success and error after 4.5 seconds so status bar stays tidy
         dismissJob?.cancel()
-        if (isFinished && !isError) {
+        if (isFinished) {
             dismissJob = trackerScope.launch {
-                delay(6000L)
+                delay(4500L)
                 GoogleDriveSyncNotificationHelper.cancelNotification(context)
             }
         }
     }
 
     /**
-     * Resets the status to Idle.
+     * Resets the status to Idle and cleans up any persistent notification.
      */
-    fun reset() {
+    fun reset(context: Context? = null) {
         _syncStatus.value = GoogleDriveSyncStatus()
+        lastNotifiedProgress = -1
+        lastNotifiedPhase = ""
+        context?.let { GoogleDriveSyncNotificationHelper.cancelNotification(it) }
     }
 }

@@ -319,10 +319,10 @@ interface FinancialGoalDao {
 
 @Dao
 interface ContactDao {
-    @Query("SELECT * FROM contacts ORDER BY firstName ASC, lastName ASC")
+    @Query("SELECT * FROM contacts ORDER BY firstName COLLATE NOCASE ASC, lastName COLLATE NOCASE ASC")
     fun getAllContacts(): Flow<List<Contact>>
 
-    @Query("SELECT * FROM contacts ORDER BY firstName ASC, lastName ASC")
+    @Query("SELECT * FROM contacts ORDER BY firstName COLLATE NOCASE ASC, lastName COLLATE NOCASE ASC")
     suspend fun getAllContactsDirect(): List<Contact>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

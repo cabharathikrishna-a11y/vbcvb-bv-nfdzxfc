@@ -41,13 +41,19 @@ if (secretsRepoEnabled) {
     println("DEBUG: Starting download of secrets from external repository...")
     try {
         val rootEnv = rootProject.file(".env")
-        downloadSecretFile(".env", rootEnv)
+        if (!rootEnv.exists() || rootEnv.length() == 0L) {
+            downloadSecretFile(".env", rootEnv)
+        }
 
         val googleServicesJson = project.file("google-services.json")
-        downloadSecretFile("google-services.json", googleServicesJson)
+        if (!googleServicesJson.exists() || googleServicesJson.length() == 0L) {
+            downloadSecretFile("google-services.json", googleServicesJson)
+        }
 
         val debugKeystoreBase64 = rootProject.file("debug.keystore.base64")
-        downloadSecretFile("debug.keystore.base64", debugKeystoreBase64)
+        if (!debugKeystoreBase64.exists() || debugKeystoreBase64.length() == 0L) {
+            downloadSecretFile("debug.keystore.base64", debugKeystoreBase64)
+        }
     } catch (e: Exception) {
         println("WARNING: Error during secret files download process: ${e.message}")
     }
@@ -224,6 +230,7 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
+  implementation(libs.coil.svg)
   implementation(libs.converter.moshi)
   // implementation(libs.firebase.ai)
   implementation(platform(libs.firebase.bom))

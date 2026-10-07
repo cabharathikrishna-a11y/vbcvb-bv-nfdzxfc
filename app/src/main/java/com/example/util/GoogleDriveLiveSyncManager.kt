@@ -291,7 +291,7 @@ object GoogleDriveLiveSyncManager {
             // 5. Sync Contacts Sector
             onProgress("Pass 2: Execute", 70, "Synchronizing Contacts Vault...")
             subfolderMap[Folders.CONTACTS]?.let { folderId ->
-                val (up, down) = syncContacts(token, folderId, database, mergedTombstones, cloudFilesMap[Folders.CONTACTS] ?: emptyList())
+                val (up, down) = syncContacts(token, folderId, database, mergedTombstones, cloudFilesMap[Folders.CONTACTS] ?: emptyList(), context)
                 uploadedCount += up
                 downloadedCount += down
             }
@@ -928,12 +928,32 @@ object GoogleDriveLiveSyncManager {
     // 5. CONTACTS SECTOR SYNC
     // =========================================================================
 
+    private fun generateContactSyncUid(c: Contact): String {
+        if (!c.googleContactId.isNullOrBlank()) {
+            val safeG = c.googleContactId.replace("/", "_").replace(":", "_").replace(" ", "_")
+            return "CONT_G_$safeG"
+        }
+        val f = c.firstName.lowercase().trim()
+        val m = c.middleName.lowercase().trim()
+        val l = c.lastName.lowercase().trim()
+        val p = c.phone.trim().replace(Regex("[^0-9+]"), "")
+        val e = c.email.lowercase().trim()
+        val key = "${f}_${m}_${l}_${p}_${e}"
+        if (key.replace("_", "").isNotBlank()) {
+            val hash = key.hashCode().and(0x7FFFFFFF).toString(36)
+            val safeName = "${f}_${l}".replace(Regex("[^a-z0-9]"), "").take(12)
+            return "CONT_C_${safeName}_$hash"
+        }
+        return "CONT_ID_${c.id}"
+    }
+
     private suspend fun syncContacts(
         accessToken: String,
         folderId: String,
         database: AppDatabase,
         tombstones: TombstoneRegistry,
-        remoteFiles: List<RemoteEntityItem>
+        remoteFiles: List<RemoteEntityItem>,
+        context: Context? = null
     ): Pair<Int, Int> = withContext(Dispatchers.IO) {
         var uploaded = 0
         var downloaded = 0
@@ -941,15 +961,18 @@ object GoogleDriveLiveSyncManager {
         val remoteMap = resolveRemoteMapAndCleanDuplicates(accessToken, remoteFiles)
 
         for (c in localContacts) {
-            val uid = "CONT_${c.id}"
-            if (tombstones.tombstones.containsKey(uid)) {
+            val uid = generateContactSyncUid(c)
+            val legacyUid = "CONT_${c.id}"
+            if (tombstones.tombstones.containsKey(uid) || tombstones.tombstones.containsKey(legacyUid)) {
                 database.contactDao().deleteContact(c)
                 remoteMap[uid]?.let { deleteDriveFile(accessToken, it.fileId) }
+                remoteMap[legacyUid]?.let { deleteDriveFile(accessToken, it.fileId) }
                 continue
             }
 
-            val localTimestamp = (1600000000000L + (c.id.toLong() * 1000L) + (c.firstName + c.lastName + c.phone).hashCode().toLong().and(0x7FFFFFFFL))
-            val remoteItem = remoteMap[uid]
+            val contentHash = (c.firstName + c.middleName + c.lastName + c.phone + c.email + c.dobString + c.anniversaryString + c.photoUri + c.folder + c.additionalFieldsJson + c.additionalDatesJson).hashCode().toLong().and(0x7FFFFFFFL)
+            val localTimestamp = maxOf(1600000000000L, c.id.toLong() * 1000L) + contentHash
+            val remoteItem = remoteMap[uid] ?: remoteMap[legacyUid]
             val fileName = buildEntityFileName(uid, localTimestamp)
 
             if (remoteItem == null || localTimestamp > remoteItem.timestamp) {
@@ -965,14 +988,19 @@ object GoogleDriveLiveSyncManager {
                     put("jobTitle", c.jobTitle)
                     put("dobString", c.dobString)
                     put("anniversaryString", c.anniversaryString)
+                    put("photoUri", c.photoUri ?: "")
                     put("folder", c.folder)
                     put("attachedFilesJson", c.attachedFilesJson)
                     put("additionalFieldsJson", c.additionalFieldsJson)
                     put("additionalDatesJson", c.additionalDatesJson)
+                    put("googleContactId", c.googleContactId ?: "")
+                    put("systemContactId", c.systemContactId ?: -1L)
                 }
-                val audit = SyncAuditRecord(uid = uid, entityType = "CONT", createdAt = localTimestamp, initialContent = "${c.firstName} ${c.lastName}", lastModifiedAt = localTimestamp, payloadJson = p)
+                val audit = SyncAuditRecord(uid = uid, entityType = "CONT", createdAt = localTimestamp, initialContent = "${c.firstName} ${c.lastName}".trim(), lastModifiedAt = localTimestamp, payloadJson = p)
                 uploadOrUpdateJsonFile(accessToken, folderId, fileName, audit.toJson().toString(2), null)
-                if (remoteItem != null) deleteDriveFile(accessToken, remoteItem.fileId)
+                if (remoteItem != null && remoteItem.rawName != fileName) {
+                    deleteDriveFile(accessToken, remoteItem.fileId)
+                }
                 uploaded++
             } else if (remoteItem.timestamp > localTimestamp) {
                 val content = downloadFileContent(accessToken, remoteItem.fileId)
@@ -980,19 +1008,21 @@ object GoogleDriveLiveSyncManager {
                     try {
                         val p = SyncAuditRecord.fromJson(JSONObject(content)).payloadJson
                         val updatedContact = c.copy(
-                            firstName = p.optString("firstName", c.firstName),
-                            middleName = p.optString("middleName", c.middleName),
-                            lastName = p.optString("lastName", c.lastName),
-                            phone = p.optString("phone", c.phone),
-                            email = p.optString("email", c.email),
-                            address = p.optString("address", c.address),
-                            jobTitle = p.optString("jobTitle", c.jobTitle),
-                            dobString = p.optString("dobString", c.dobString),
-                            anniversaryString = p.optString("anniversaryString", c.anniversaryString),
+                            firstName = p.optString("firstName", "").ifEmpty { c.firstName },
+                            middleName = p.optString("middleName", "").ifEmpty { c.middleName },
+                            lastName = p.optString("lastName", "").ifEmpty { c.lastName },
+                            phone = p.optString("phone", "").ifEmpty { c.phone },
+                            email = p.optString("email", "").ifEmpty { c.email },
+                            address = p.optString("address", "").ifEmpty { c.address },
+                            jobTitle = p.optString("jobTitle", "").ifEmpty { c.jobTitle },
+                            dobString = p.optString("dobString", "").ifEmpty { c.dobString },
+                            anniversaryString = p.optString("anniversaryString", "").ifEmpty { c.anniversaryString },
+                            photoUri = p.optString("photoUri", "").ifEmpty { c.photoUri },
                             folder = p.optString("folder", c.folder),
-                            attachedFilesJson = p.optString("attachedFilesJson", c.attachedFilesJson),
-                            additionalFieldsJson = p.optString("additionalFieldsJson", c.additionalFieldsJson),
-                            additionalDatesJson = p.optString("additionalDatesJson", c.additionalDatesJson)
+                            attachedFilesJson = p.optString("attachedFilesJson", "").ifEmpty { c.attachedFilesJson },
+                            additionalFieldsJson = p.optString("additionalFieldsJson", "").ifEmpty { c.additionalFieldsJson },
+                            additionalDatesJson = p.optString("additionalDatesJson", "").ifEmpty { c.additionalDatesJson },
+                            googleContactId = p.optString("googleContactId", "").ifEmpty { c.googleContactId }
                         )
                         database.contactDao().updateContact(updatedContact)
                         downloaded++
@@ -1003,11 +1033,10 @@ object GoogleDriveLiveSyncManager {
             }
         }
 
-        val localPhonesAndNames = localContacts.map { "${it.firstName}_${it.lastName}_${it.phone}" }.toSet()
-        val localUids = localContacts.map { "CONT_${it.id}" }.toSet()
+        // Re-fetch current local state after local loop
+        val currentLocal = database.contactDao().getAllContactsDirect()
 
         for ((uid, remoteMeta) in remoteMap) {
-            if (localUids.contains(uid)) continue
             if (tombstones.tombstones.containsKey(uid)) {
                 deleteDriveFile(accessToken, remoteMeta.fileId)
                 continue
@@ -1017,34 +1046,93 @@ object GoogleDriveLiveSyncManager {
             if (!content.isNullOrBlank()) {
                 try {
                     val p = SyncAuditRecord.fromJson(JSONObject(content)).payloadJson
-                    val first = p.optString("firstName", "")
-                    val last = p.optString("lastName", "")
-                    val phone = p.optString("phone", "")
-                    val key = "${first}_${last}_${phone}"
+                    val rFirstName = p.optString("firstName", "")
+                    val rMiddleName = p.optString("middleName", "")
+                    val rLastName = p.optString("lastName", "")
+                    val rPhone = p.optString("phone", "")
+                    val rEmail = p.optString("email", "")
+                    val rAddress = p.optString("address", "")
+                    val rJobTitle = p.optString("jobTitle", "")
+                    val rDobString = p.optString("dobString", "")
+                    val rAnniversaryString = p.optString("anniversaryString", "")
+                    val rPhotoUri = p.optString("photoUri", "").ifEmpty { null }
+                    val rFolder = p.optString("folder", "All")
+                    val rAttached = p.optString("attachedFilesJson", "[]")
+                    val rFields = p.optString("additionalFieldsJson", "[]")
+                    val rDates = p.optString("additionalDatesJson", "[]")
+                    val rGoogleId = p.optString("googleContactId", "").ifEmpty { null }
 
-                    if (!localPhonesAndNames.contains(key) && (first.isNotBlank() || phone.isNotBlank())) {
-                        database.contactDao().insertContact(
-                            Contact(
-                                firstName = first,
-                                middleName = p.optString("middleName", ""),
-                                lastName = last,
-                                phone = phone,
-                                email = p.optString("email", ""),
-                                address = p.optString("address", ""),
-                                jobTitle = p.optString("jobTitle", ""),
-                                dobString = p.optString("dobString", ""),
-                                anniversaryString = p.optString("anniversaryString", ""),
-                                folder = p.optString("folder", "All"),
-                                attachedFilesJson = p.optString("attachedFilesJson", "[]"),
-                                additionalFieldsJson = p.optString("additionalFieldsJson", "[]"),
-                                additionalDatesJson = p.optString("additionalDatesJson", "[]")
-                            )
+                    val normFirst = rFirstName.lowercase().trim()
+                    val normLast = rLastName.lowercase().trim()
+                    val normPhone = rPhone.trim().replace(Regex("[^0-9+]"), "")
+                    val normEmail = rEmail.lowercase().trim()
+
+                    val matchedLocal = currentLocal.find { local ->
+                        (!rGoogleId.isNullOrEmpty() && local.googleContactId == rGoogleId) ||
+                        (generateContactSyncUid(local) == uid) ||
+                        (normFirst.isNotEmpty() && local.firstName.lowercase().trim() == normFirst && local.lastName.lowercase().trim() == normLast) ||
+                        (normPhone.isNotEmpty() && local.phone.trim().replace(Regex("[^0-9+]"), "") == normPhone) ||
+                        (normEmail.isNotEmpty() && local.email.lowercase().trim() == normEmail)
+                    }
+
+                    if (matchedLocal != null) {
+                        val mergedContact = matchedLocal.copy(
+                            firstName = rFirstName.ifEmpty { matchedLocal.firstName },
+                            middleName = rMiddleName.ifEmpty { matchedLocal.middleName },
+                            lastName = rLastName.ifEmpty { matchedLocal.lastName },
+                            phone = rPhone.ifEmpty { matchedLocal.phone },
+                            email = rEmail.ifEmpty { matchedLocal.email },
+                            address = rAddress.ifEmpty { matchedLocal.address },
+                            jobTitle = rJobTitle.ifEmpty { matchedLocal.jobTitle },
+                            dobString = rDobString.ifEmpty { matchedLocal.dobString },
+                            anniversaryString = rAnniversaryString.ifEmpty { matchedLocal.anniversaryString },
+                            photoUri = rPhotoUri ?: matchedLocal.photoUri,
+                            folder = if (rFolder != "All") rFolder else matchedLocal.folder,
+                            attachedFilesJson = if (rAttached != "[]" && rAttached.isNotBlank()) rAttached else matchedLocal.attachedFilesJson,
+                            additionalFieldsJson = if (rFields != "[]" && rFields.isNotBlank()) rFields else matchedLocal.additionalFieldsJson,
+                            additionalDatesJson = if (rDates != "[]" && rDates.isNotBlank()) rDates else matchedLocal.additionalDatesJson,
+                            googleContactId = rGoogleId ?: matchedLocal.googleContactId
                         )
-                        downloaded++
+                        if (mergedContact != matchedLocal) {
+                            database.contactDao().updateContact(mergedContact)
+                            downloaded++
+                        }
+                    } else {
+                        val hasAnyData = rFirstName.isNotBlank() || rLastName.isNotBlank() || rPhone.isNotBlank() || rEmail.isNotBlank() || rJobTitle.isNotBlank() || rDobString.isNotBlank() || rAnniversaryString.isNotBlank()
+                        if (hasAnyData) {
+                            database.contactDao().insertContact(
+                                Contact(
+                                    firstName = rFirstName,
+                                    middleName = rMiddleName,
+                                    lastName = rLastName,
+                                    phone = rPhone,
+                                    email = rEmail,
+                                    address = rAddress,
+                                    jobTitle = rJobTitle,
+                                    dobString = rDobString,
+                                    anniversaryString = rAnniversaryString,
+                                    photoUri = rPhotoUri,
+                                    folder = rFolder,
+                                    attachedFilesJson = rAttached,
+                                    additionalFieldsJson = rFields,
+                                    additionalDatesJson = rDates,
+                                    googleContactId = rGoogleId
+                                )
+                            )
+                            downloaded++
+                        }
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error importing remote contact $uid: ${e.message}")
                 }
+            }
+        }
+
+        if ((uploaded > 0 || downloaded > 0) && context != null) {
+            try {
+                com.example.widget.WidgetUpdater.updateCountdownWidget(context)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed updating countdown widget after contact sync: ${e.message}")
             }
         }
 

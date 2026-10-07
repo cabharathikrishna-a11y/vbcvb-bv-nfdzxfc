@@ -3019,33 +3019,73 @@ object SystemContactSyncHelper {
 
     fun fetchFreshContactPhotoBytes(context: Context, photoUriStr: String): ByteArray? {
         try {
-            if (photoUriStr.startsWith("http")) {
-                var connection: java.net.HttpURLConnection? = null
+            val trimmed = photoUriStr.trim()
+            if (trimmed.isEmpty()) return null
+
+            // 1. Base64
+            if (trimmed.startsWith("base64:") || trimmed.startsWith("data:image/") || (trimmed.length > 80 && !trimmed.contains(" ") && !trimmed.startsWith("http") && !trimmed.startsWith("/"))) {
                 try {
-                    val url = java.net.URL(photoUriStr)
-                    connection = url.openConnection() as java.net.HttpURLConnection
-                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
-                    connection.connectTimeout = 10000
-                    connection.readTimeout = 10000
-                    connection.doInput = true
-                    connection.connect()
-                    if (connection.responseCode in 200..299) {
-                        val input = connection.inputStream
-                        val bytes = input.readBytes()
-                        input.close()
-                        return bytes
+                    val rawData = when {
+                        trimmed.startsWith("base64:") -> trimmed.substringAfter("base64:")
+                        trimmed.contains("base64,") -> trimmed.substringAfter("base64,")
+                        else -> trimmed
                     }
-                } finally {
-                    connection?.disconnect()
+                    val decoded = android.util.Base64.decode(rawData, android.util.Base64.DEFAULT)
+                    if (decoded != null && decoded.isNotEmpty()) return decoded
+                } catch (_: Exception) {}
+            }
+
+            // 2. HTTP / HTTPS
+            if (trimmed.startsWith("http")) {
+                var curUrl = trimmed
+                for (redirectCount in 0..4) {
+                    val url = java.net.URL(curUrl)
+                    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                        instanceFollowRedirects = true
+                        connectTimeout = 12000
+                        readTimeout = 12000
+                        doInput = true
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+                        setRequestProperty("Accept", "image/*,*/*;q=0.8")
+                    }
+                    try {
+                        conn.connect()
+                        val code = conn.responseCode
+                        if (code in 300..399) {
+                            val loc = conn.getHeaderField("Location")
+                            if (!loc.isNullOrBlank()) {
+                                curUrl = loc
+                                continue
+                            }
+                        }
+                        if (code in 200..299) {
+                            val bytes = conn.inputStream.use { it.readBytes() }
+                            if (bytes.isNotEmpty()) return bytes
+                        }
+                        break
+                    } finally {
+                        conn.disconnect()
+                    }
                 }
+            } else if (trimmed.startsWith("content://")) {
+                val uri = Uri.parse(trimmed)
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        val b = inputStream.readBytes()
+                        if (b.isNotEmpty()) return b
+                    }
+                } catch (_: Exception) {}
+                try {
+                    android.provider.ContactsContract.Contacts.openContactPhotoInputStream(context.contentResolver, uri, true)?.use { inputStream ->
+                        val b = inputStream.readBytes()
+                        if (b.isNotEmpty()) return b
+                    }
+                } catch (_: Exception) {}
             } else {
-                val file = java.io.File(photoUriStr)
+                val filePath = trimmed.removePrefix("file://")
+                val file = java.io.File(filePath)
                 if (file.exists() && file.length() > 0) {
                     return file.readBytes()
-                }
-                val uri = Uri.parse(photoUriStr)
-                context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    return inputStream.readBytes()
                 }
             }
         } catch (e: Exception) {
@@ -3056,43 +3096,60 @@ object SystemContactSyncHelper {
 
     fun getContactPhotoBytes(context: Context, photoUriStr: String): ByteArray? {
         try {
-            if (photoUriStr.startsWith("http")) {
-                // Check local cache first to prevent redundant downloading
-                val cacheFile = java.io.File(context.cacheDir, "contact_photo_${photoUriStr.hashCode()}.jpg")
+            val trimmed = photoUriStr.trim()
+            if (trimmed.isEmpty()) return null
+
+            // 1. Base64
+            if (trimmed.startsWith("base64:") || trimmed.startsWith("data:image/") || (trimmed.length > 80 && !trimmed.contains(" ") && !trimmed.startsWith("http") && !trimmed.startsWith("/"))) {
+                try {
+                    val rawData = when {
+                        trimmed.startsWith("base64:") -> trimmed.substringAfter("base64:")
+                        trimmed.contains("base64,") -> trimmed.substringAfter("base64,")
+                        else -> trimmed
+                    }
+                    val decoded = android.util.Base64.decode(rawData, android.util.Base64.DEFAULT)
+                    if (decoded != null && decoded.isNotEmpty()) return decoded
+                } catch (_: Exception) {}
+            }
+
+            // 2. HTTP / HTTPS with disk cache check
+            if (trimmed.startsWith("http")) {
+                val cacheFile = java.io.File(context.cacheDir, "contact_photo_${trimmed.hashCode()}.jpg")
                 if (cacheFile.exists() && cacheFile.length() > 0) {
                     return cacheFile.readBytes()
                 }
-
-                var connection: java.net.HttpURLConnection? = null
-                try {
-                    val url = java.net.URL(photoUriStr)
-                    connection = url.openConnection() as java.net.HttpURLConnection
-                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
-                    connection.connectTimeout = 10000
-                    connection.readTimeout = 10000
-                    connection.doInput = true
-                    connection.connect()
-                    if (connection.responseCode in 200..299) {
-                        val input = connection.inputStream
-                        val bytes = input.readBytes()
-                        input.close()
-
-                        if (bytes.isNotEmpty()) {
-                            cacheFile.writeBytes(bytes)
-                        }
-                        return bytes
-                    }
-                } finally {
-                    connection?.disconnect()
+                val avatarCacheFile = java.io.File(java.io.File(context.cacheDir, "avatar_cache"), "avatar_${kotlin.math.abs(trimmed.hashCode().toLong())}.jpg")
+                if (avatarCacheFile.exists() && avatarCacheFile.length() > 0) {
+                    return avatarCacheFile.readBytes()
                 }
+
+                val fresh = fetchFreshContactPhotoBytes(context, trimmed)
+                if (fresh != null && fresh.isNotEmpty()) {
+                    try {
+                        cacheFile.parentFile?.mkdirs()
+                        cacheFile.writeBytes(fresh)
+                    } catch (_: Exception) {}
+                    return fresh
+                }
+            } else if (trimmed.startsWith("content://")) {
+                val uri = Uri.parse(trimmed)
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        val b = inputStream.readBytes()
+                        if (b.isNotEmpty()) return b
+                    }
+                } catch (_: Exception) {}
+                try {
+                    android.provider.ContactsContract.Contacts.openContactPhotoInputStream(context.contentResolver, uri, true)?.use { inputStream ->
+                        val b = inputStream.readBytes()
+                        if (b.isNotEmpty()) return b
+                    }
+                } catch (_: Exception) {}
             } else {
-                val file = java.io.File(photoUriStr)
+                val filePath = trimmed.removePrefix("file://")
+                val file = java.io.File(filePath)
                 if (file.exists() && file.length() > 0) {
                     return file.readBytes()
-                }
-                val uri = Uri.parse(photoUriStr)
-                context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    return inputStream.readBytes()
                 }
             }
         } catch (e: Exception) {

@@ -32,6 +32,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.ScrollState
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
@@ -856,17 +860,40 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
 
+                                val subTabScrollState = rememberScrollState()
+                                val subScope = rememberCoroutineScope()
+                                var subViewportCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+                                val subCoordsMap = remember { mutableStateMapOf<Screen, LayoutCoordinates>() }
+
+                                LaunchedEffect(currentScreen, groupAllScreens.size) {
+                                    kotlinx.coroutines.delay(40)
+                                    val vp = subViewportCoords ?: return@LaunchedEffect
+                                    val target = subCoordsMap[currentScreen] ?: return@LaunchedEffect
+                                    if (!vp.isAttached || !target.isAttached) return@LaunchedEffect
+                                    val inVp = vp.localPositionOf(target, Offset.Zero)
+                                    val vpW = vp.size.width
+                                    if (vpW <= 0) return@LaunchedEffect
+                                    val itemW = target.size.width
+                                    val center = inVp.x + itemW / 2f
+                                    val delta = center - vpW / 2f
+                                    val targetScroll = (subTabScrollState.value + delta).toInt().coerceIn(0, subTabScrollState.maxValue)
+                                    if (Math.abs(targetScroll - subTabScrollState.value) > 2) {
+                                        subTabScrollState.animateScrollTo(targetScroll)
+                                    }
+                                }
+
                                 Surface(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                                        .onGloballyPositioned { subViewportCoords = it },
                                     color = Color(0xFF121212),
                                     shape = RoundedCornerShape(16.dp),
                                     border = BorderStroke(1.dp, Color(0x22FFFFFF))
                                 ) {
                                     Row(
                                         modifier = Modifier
-                                            .horizontalScroll(rememberScrollState())
+                                            .horizontalScroll(subTabScrollState)
                                             .padding(horizontal = 8.dp, vertical = 6.dp),
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -877,14 +904,29 @@ class MainActivity : ComponentActivity() {
                                             val icon = screenIcons[subScreen] ?: Icons.Default.Dashboard
 
                                             Surface(
-                                                onClick = { viewModel.navigateTo(subScreen) },
+                                                onClick = {
+                                                    viewModel.navigateTo(subScreen)
+                                                    val vp = subViewportCoords
+                                                    val target = subCoordsMap[subScreen]
+                                                    if (vp != null && vp.isAttached && target != null && target.isAttached) {
+                                                        val inVp = vp.localPositionOf(target, Offset.Zero)
+                                                        val vpW = vp.size.width
+                                                        if (vpW > 0) {
+                                                            val delta = (inVp.x + target.size.width / 2f) - vpW / 2f
+                                                            val targetScroll = (subTabScrollState.value + delta).toInt().coerceIn(0, subTabScrollState.maxValue)
+                                                            subScope.launch { subTabScrollState.animateScrollTo(targetScroll) }
+                                                        }
+                                                    }
+                                                },
                                                 shape = RoundedCornerShape(12.dp),
                                                 color = if (isSubSelected) WaterBlue.copy(alpha = 0.25f) else Color(0xFF1E1E1E),
                                                 border = BorderStroke(
                                                     width = 1.dp,
                                                     color = if (isSubSelected) WaterBlue else Color(0x22FFFFFF)
                                                 ),
-                                                modifier = Modifier.testTag("nested_sub_tab_${subScreen.name.lowercase()}")
+                                                modifier = Modifier
+                                                    .onGloballyPositioned { subCoordsMap[subScreen] = it }
+                                                    .testTag("nested_sub_tab_${subScreen.name.lowercase()}")
                                             ) {
                                                 Row(
                                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -992,6 +1034,95 @@ class MainActivity : ComponentActivity() {
                 } else {
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                         val isTablet = maxWidth >= 600.dp
+                        val navCoroutineScope = rememberCoroutineScope()
+                        val topTabScrollState = rememberScrollState()
+                        val bottomTabScrollState = rememberScrollState()
+                        val leftTabScrollState = rememberScrollState()
+                        val rightTabScrollState = rememberScrollState()
+
+                        var topViewportCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+                        val topTabCoordsMap = remember { mutableStateMapOf<Screen, LayoutCoordinates>() }
+                        var topMoreCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+
+                        var bottomViewportCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+                        val bottomTabCoordsMap = remember { mutableStateMapOf<Screen, LayoutCoordinates>() }
+                        var bottomMoreCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+
+                        var leftViewportCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+                        val leftTabCoordsMap = remember { mutableStateMapOf<Screen, LayoutCoordinates>() }
+                        var leftMoreCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+
+                        var rightViewportCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+                        val rightTabCoordsMap = remember { mutableStateMapOf<Screen, LayoutCoordinates>() }
+                        var rightMoreCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+
+                        fun centerSelectedTab(
+                            scrollState: ScrollState,
+                            viewport: LayoutCoordinates?,
+                            targetCoords: LayoutCoordinates?,
+                            isVertical: Boolean = false
+                        ) {
+                            if (viewport == null || !viewport.isAttached) return
+                            if (targetCoords == null || !targetCoords.isAttached) return
+                            val itemInViewport = viewport.localPositionOf(targetCoords, Offset.Zero)
+                            if (isVertical) {
+                                val viewportH = viewport.size.height
+                                if (viewportH <= 0) return
+                                val itemH = targetCoords.size.height
+                                val itemCenter = itemInViewport.y + itemH / 2f
+                                val viewportCenter = viewportH / 2f
+                                val delta = itemCenter - viewportCenter
+                                val targetScroll = (scrollState.value + delta).toInt().coerceIn(0, scrollState.maxValue)
+                                if (Math.abs(targetScroll - scrollState.value) > 2) {
+                                    navCoroutineScope.launch {
+                                        scrollState.animateScrollTo(
+                                            targetScroll,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
+                                    }
+                                }
+                            } else {
+                                val viewportW = viewport.size.width
+                                if (viewportW <= 0) return
+                                val itemW = targetCoords.size.width
+                                val itemCenter = itemInViewport.x + itemW / 2f
+                                val viewportCenter = viewportW / 2f
+                                val delta = itemCenter - viewportCenter
+                                val targetScroll = (scrollState.value + delta).toInt().coerceIn(0, scrollState.maxValue)
+                                if (Math.abs(targetScroll - scrollState.value) > 2) {
+                                    navCoroutineScope.launch {
+                                        scrollState.animateScrollTo(
+                                            targetScroll,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        LaunchedEffect(currentScreen, navItems.size, showMoreMenuSheet) {
+                            kotlinx.coroutines.delay(40)
+                            val isOverflow = overflowTabs.contains(currentScreen) || showMoreMenuSheet
+
+                            val bTarget = if (isOverflow) bottomMoreCoords else bottomTabCoordsMap[currentScreen]
+                            centerSelectedTab(bottomTabScrollState, bottomViewportCoords, bTarget, isVertical = false)
+
+                            val tTarget = if (isOverflow) topMoreCoords else topTabCoordsMap[currentScreen]
+                            centerSelectedTab(topTabScrollState, topViewportCoords, tTarget, isVertical = false)
+
+                            val lTarget = if (isOverflow) leftMoreCoords else leftTabCoordsMap[currentScreen]
+                            centerSelectedTab(leftTabScrollState, leftViewportCoords, lTarget, isVertical = true)
+
+                            val rTarget = if (isOverflow) rightMoreCoords else rightTabCoordsMap[currentScreen]
+                            centerSelectedTab(rightTabScrollState, rightViewportCoords, rTarget, isVertical = true)
+                        }
+
                         val outerModifier = Modifier
                             .fillMaxSize()
                             .background(
@@ -1026,14 +1157,15 @@ class MainActivity : ComponentActivity() {
                                         .height(56.dp)
                                         .clip(RoundedCornerShape(28.dp))
                                         .background(Color.White.copy(alpha = 0.1f))
-                                        .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(28.dp)),
+                                        .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(28.dp))
+                                        .onGloballyPositioned { topViewportCoords = it },
                                     contentAlignment = Alignment.CenterStart
                                 ) {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .fillMaxHeight()
-                                            .horizontalScroll(rememberScrollState()),
+                                            .horizontalScroll(topTabScrollState),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
@@ -1066,13 +1198,16 @@ class MainActivity : ComponentActivity() {
 
                                             Box(
                                                 modifier = Modifier
+                                                    .onGloballyPositioned { topTabCoordsMap[item.screen] = it }
                                                     .clip(RoundedCornerShape(12.dp))
                                                     .background(WaterBlue.copy(alpha = bgAlpha))
                                                     .let { m ->
                                                         if (isSelected) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
                                                         else m
                                                     }
-                                                    .bouncyClick { viewModel.navigateTo(item.screen) }
+                                                    .bouncyClick {
+                                                        viewModel.navigateTo(item.screen)
+                                                    }
                                                     .padding(horizontal = 14.dp, vertical = 8.dp)
                                                     .testTag("nav_item_${item.label.lowercase()}"),
                                                 contentAlignment = Alignment.Center
@@ -1140,13 +1275,16 @@ class MainActivity : ComponentActivity() {
 
                                         Box(
                                             modifier = Modifier
+                                                .onGloballyPositioned { topMoreCoords = it }
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(WaterBlue.copy(alpha = moreBgAlphaTop))
                                                 .let { m ->
                                                     if (isMoreSelectedTop) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
                                                     else m
                                                 }
-                                                .bouncyClick { showMoreMenuSheet = true }
+                                                .bouncyClick {
+                                                    showMoreMenuSheet = true
+                                                }
                                                 .padding(horizontal = 14.dp, vertical = 8.dp)
                                                 .testTag("nav_item_more_menu"),
                                             contentAlignment = Alignment.Center
@@ -1164,7 +1302,7 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
 
-                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Spacer(modifier = Modifier.width(96.dp))
                                     }
                                 }
                             }
@@ -1189,14 +1327,15 @@ class MainActivity : ComponentActivity() {
                                         .height(56.dp)
                                         .clip(RoundedCornerShape(28.dp))
                                         .background(Color.White.copy(alpha = 0.1f))
-                                        .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(28.dp)),
+                                        .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(28.dp))
+                                        .onGloballyPositioned { bottomViewportCoords = it },
                                     contentAlignment = Alignment.CenterStart
                                 ) {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .fillMaxHeight()
-                                            .horizontalScroll(rememberScrollState()),
+                                            .horizontalScroll(bottomTabScrollState),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
@@ -1229,13 +1368,16 @@ class MainActivity : ComponentActivity() {
 
                                             Box(
                                                 modifier = Modifier
+                                                    .onGloballyPositioned { bottomTabCoordsMap[item.screen] = it }
                                                     .clip(RoundedCornerShape(12.dp))
                                                     .background(WaterBlue.copy(alpha = bgAlpha))
                                                     .let { m ->
                                                         if (isSelected) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
                                                         else m
                                                     }
-                                                    .bouncyClick { viewModel.navigateTo(item.screen) }
+                                                    .bouncyClick {
+                                                        viewModel.navigateTo(item.screen)
+                                                    }
                                                     .padding(horizontal = 14.dp, vertical = 8.dp)
                                                     .testTag("nav_item_${item.label.lowercase()}"),
                                                 contentAlignment = Alignment.Center
@@ -1303,13 +1445,16 @@ class MainActivity : ComponentActivity() {
 
                                         Box(
                                             modifier = Modifier
+                                                .onGloballyPositioned { bottomMoreCoords = it }
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(WaterBlue.copy(alpha = moreBgAlphaBottom))
                                                 .let { m ->
                                                     if (isMoreSelectedBottom) m.border(width = 1.dp, color = WaterBlue.copy(alpha = 0.5f), shape = RoundedCornerShape(12.dp))
                                                     else m
                                                 }
-                                                .bouncyClick { showMoreMenuSheet = true }
+                                                .bouncyClick {
+                                                    showMoreMenuSheet = true
+                                                }
                                                 .padding(horizontal = 14.dp, vertical = 8.dp)
                                                 .testTag("nav_item_more_menu"),
                                             contentAlignment = Alignment.Center
@@ -1327,7 +1472,7 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
 
-                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Spacer(modifier = Modifier.width(96.dp))
                                     }
                                 }
                             }
@@ -1351,7 +1496,8 @@ class MainActivity : ComponentActivity() {
                                         .clip(RoundedCornerShape(32.dp))
                                         .background(Color.White.copy(alpha = 0.1f))
                                         .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(32.dp))
-                                        .verticalScroll(rememberScrollState()),
+                                        .onGloballyPositioned { rightViewportCoords = it }
+                                        .verticalScroll(rightTabScrollState),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
@@ -1386,7 +1532,10 @@ class MainActivity : ComponentActivity() {
                                         Column(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .bouncyClick { viewModel.navigateTo(item.screen) }
+                                                .onGloballyPositioned { rightTabCoordsMap[item.screen] = it }
+                                                .bouncyClick {
+                                                    viewModel.navigateTo(item.screen)
+                                                }
                                                 .padding(vertical = 8.dp)
                                                 .testTag("nav_item_${item.label.lowercase()}"),
                                             horizontalAlignment = Alignment.CenterHorizontally
@@ -1451,7 +1600,10 @@ class MainActivity : ComponentActivity() {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .bouncyClick { showMoreMenuSheet = true }
+                                            .onGloballyPositioned { rightMoreCoords = it }
+                                            .bouncyClick {
+                                                showMoreMenuSheet = true
+                                            }
                                             .padding(vertical = 8.dp)
                                             .testTag("nav_item_more_menu"),
                                         horizontalAlignment = Alignment.CenterHorizontally
@@ -1476,7 +1628,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Spacer(modifier = Modifier.height(96.dp))
                                 }
                             }
                             }
@@ -1499,7 +1651,8 @@ class MainActivity : ComponentActivity() {
                                         .clip(RoundedCornerShape(32.dp))
                                         .background(Color.White.copy(alpha = 0.1f))
                                         .border(width = 1.dp, color = Color(0x18FFFFFF), shape = RoundedCornerShape(32.dp))
-                                        .verticalScroll(rememberScrollState()),
+                                        .onGloballyPositioned { leftViewportCoords = it }
+                                        .verticalScroll(leftTabScrollState),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
@@ -1534,7 +1687,10 @@ class MainActivity : ComponentActivity() {
                                         Column(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .bouncyClick { viewModel.navigateTo(item.screen) }
+                                                .onGloballyPositioned { leftTabCoordsMap[item.screen] = it }
+                                                .bouncyClick {
+                                                    viewModel.navigateTo(item.screen)
+                                                }
                                                 .padding(vertical = 8.dp)
                                                 .testTag("nav_item_${item.label.lowercase()}"),
                                             horizontalAlignment = Alignment.CenterHorizontally
@@ -1599,7 +1755,10 @@ class MainActivity : ComponentActivity() {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .bouncyClick { showMoreMenuSheet = true }
+                                            .onGloballyPositioned { leftMoreCoords = it }
+                                            .bouncyClick {
+                                                showMoreMenuSheet = true
+                                            }
                                             .padding(vertical = 8.dp)
                                             .testTag("nav_item_more_menu"),
                                         horizontalAlignment = Alignment.CenterHorizontally
@@ -1624,7 +1783,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Spacer(modifier = Modifier.height(96.dp))
                                 }
                             }
                             }
@@ -2775,6 +2934,10 @@ fun PastedLinksHubView(viewModel: AppViewModel) {
     // Read clipboard (Disabled: URL recognition must happen only if typed inside the app, no top suggestion banner)
     var clipboardUrl by remember { mutableStateOf<String?>(null) }
 
+    if (clipboardUrl == null && pastedLinks.isEmpty()) {
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -3136,9 +3299,7 @@ fun MoreAppsBottomSheet(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
+                modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Search 3-dots menu & tools...", fontSize = 13.sp, color = Color.Gray) },
                 leadingIcon = {
                     Icon(

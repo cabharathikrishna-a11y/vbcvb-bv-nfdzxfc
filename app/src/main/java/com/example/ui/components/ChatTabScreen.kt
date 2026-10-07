@@ -2797,7 +2797,7 @@ fun MessageDeliveryReportDialog(
                         focusedBorderColor = WaterBlue,
                         unfocusedBorderColor = SurfaceCard
                     ),
-                    modifier = Modifier.fillMaxWidth().height(46.dp)
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 // Filter Chips

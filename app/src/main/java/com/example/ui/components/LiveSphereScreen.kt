@@ -53,7 +53,6 @@ fun LiveSphereScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showLogDialog by remember { mutableStateOf(false) }
     val peerUiCards by viewModel.peerUiCards.collectAsStateWithLifecycle()
     val leaderboard by com.example.api.ArenaLeaderboardEngine.leaderboardFlow.collectAsStateWithLifecycle(emptyList())
     val historyRecords by viewModel.allHistoryVault.collectAsStateWithLifecycle(emptyList())
@@ -264,16 +263,6 @@ fun LiveSphereScreen(
                 },
                 actions = {
                     IconButton(
-                        onClick = { showLogDialog = true },
-                        modifier = Modifier.testTag("focus_logs_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.List,
-                            contentDescription = "Study Credit & Shield Logs",
-                            tint = Color.White
-                        )
-                    }
-                    IconButton(
                         onClick = {
                             val myUserEmail = myEmail
                             if (myUserEmail.isNotEmpty()) {
@@ -436,84 +425,6 @@ fun LiveSphereScreen(
             }
         }
     }
-
-    val dialogContext = LocalContext.current
-
-    if (showLogDialog) {
-        val focusLogs = remember(showLogDialog) { com.example.api.FocusLogManager.getLogs(dialogContext) }
-        AlertDialog(
-            onDismissRequest = { showLogDialog = false },
-            title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.List,
-                            contentDescription = null,
-                            tint = Color.White
-                        )
-                        Text(
-                            text = "Focus Credit & Shield Logs",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            com.example.api.FocusLogManager.clearLogs(dialogContext)
-                            showLogDialog = false
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Clear Logs",
-                            tint = Color.Gray
-                        )
-                    }
-                }
-            },
-            text = {
-                Box(modifier = Modifier.heightIn(max = 400.dp)) {
-                    if (focusLogs.isEmpty() || (focusLogs.size == 1 && focusLogs[0].startsWith("No focus log"))) {
-                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Text("No focus transaction logs yet.", color = Color.Gray, fontSize = 14.sp)
-                        }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            itemsIndexed(focusLogs, key = { idx, _ -> "live_sphere_log_$idx" }) { _, logLine ->
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF131524)),
-                                    shape = RoundedCornerShape(8.dp),
-                                    border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.1f))
-                                ) {
-                                    Text(
-                                        text = logLine,
-                                        color = Color.LightGray,
-                                        fontSize = 12.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        modifier = Modifier.padding(10.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showLogDialog = false }) {
-                    Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = Color(0xFF0E101A)
-        )
-    }
 }
 
 @Composable
@@ -571,24 +482,32 @@ fun PeerStatusCard(
 
     val resolvedEmoji = remember(peer.customEmoji, viewModel.firestoreAvatars.size, peer.userId) {
         val raw = peer.customEmoji
-        if (!raw.isNullOrEmpty() && raw != "👤") {
+        if (!raw.isNullOrEmpty() && raw != "👤" && raw != "🎯") {
             raw
         } else {
-            viewModel.firestoreAvatars[peer.userId]
+            val fromFs = viewModel.firestoreAvatars[peer.userId]
                 ?: viewModel.firestoreAvatars[cleanPeerId]
                 ?: viewModel.firestoreAvatars[sanitizedPeerId]
                 ?: viewModel.firestoreAvatars[unsanitizedPeerId]
-                ?: "👤"
+            if (!fromFs.isNullOrEmpty() && fromFs != "👤" && fromFs != "🎯") {
+                fromFs
+            } else {
+                "👤"
+            }
         }
     }
 
-    LaunchedEffect(peer.userId) {
-        val hasAvatar = viewModel.firestoreAvatars.containsKey(peer.userId) ||
-                        viewModel.firestoreAvatars.containsKey(cleanPeerId) || 
-                        viewModel.firestoreAvatars.containsKey(sanitizedPeerId) || 
-                        viewModel.firestoreAvatars.containsKey(unsanitizedPeerId)
-                        
-        if (!hasAvatar) {
+    LaunchedEffect(peer.userId, peer.customEmoji) {
+        if (!peer.customEmoji.isNullOrBlank() && peer.customEmoji != "👤" && peer.customEmoji != "🎯") {
+            com.example.util.ProfilePictureManager.recordAvatarUpdate(peer.userId, peer.customEmoji)
+        }
+        val currentAvatar = viewModel.firestoreAvatars[peer.userId]
+            ?: viewModel.firestoreAvatars[cleanPeerId]
+            ?: viewModel.firestoreAvatars[sanitizedPeerId]
+            ?: viewModel.firestoreAvatars[unsanitizedPeerId]
+            
+        val hasValidAvatar = !currentAvatar.isNullOrBlank() && currentAvatar != "👤" && currentAvatar != "🎯"
+        if (!hasValidAvatar && peer.userId.isNotBlank()) {
             viewModel.fetchUserAvatarFromFirestore(peer.userId)
         }
     }
@@ -737,22 +656,13 @@ fun PeerStatusCard(
                 "00m 00s"
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = cardModel.formattedLiveTime,
-                    color = accentColor,
-                    fontSize = 17.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Total Focused: $peerTotalFormatted",
-                    color = Color(0xFF38BDF8),
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+            Text(
+                text = cardModel.formattedLiveTime,
+                color = accentColor,
+                fontSize = 17.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -944,27 +854,6 @@ fun MyStatusCard(
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold
                 )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Total Focused Time",
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = "Total Focused Today: $totalFocusTimeToday",
-                        color = Color(0xFF38BDF8),
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
             }
         }
     }

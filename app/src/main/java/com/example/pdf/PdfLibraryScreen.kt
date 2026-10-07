@@ -250,7 +250,7 @@ fun PdfListCard(
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
-    val dateFormat = remember { SimpleDateFormat("MMM dd • HH:mm", Locale.getDefault()) }
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy • hh:mm a", Locale.US) }
 
     Card(
         modifier = Modifier

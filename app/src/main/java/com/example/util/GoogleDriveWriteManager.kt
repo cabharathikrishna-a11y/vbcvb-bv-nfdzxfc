@@ -481,26 +481,18 @@ object GoogleDriveWriteManager {
     }
 
     /**
-     * Sends a system notification.
+     * Sends a silent system notification using the shared in-place updating notification ID.
      */
     fun sendNotification(context: Context, title: String, message: String) {
         try {
-            val channelId = "lifeos_drive_sync"
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                val channel = android.app.NotificationChannel(channelId, "Google Drive Sync", android.app.NotificationManager.IMPORTANCE_DEFAULT)
-                notificationManager.createNotificationChannel(channel)
-            }
-
-            val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
-                .setSmallIcon(android.R.drawable.stat_sys_upload_done)
-                .setContentTitle(title)
-                .setContentText(message)
-                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
-                .setAutoCancel(true)
-
-            notificationManager.notify(System.currentTimeMillis().toInt(), builder.build())
+            GoogleDriveSyncNotificationHelper.notifyProgress(
+                context = context,
+                title = title,
+                message = message,
+                progress = 100,
+                isFinished = true,
+                isError = false
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send notification: ${e.message}")
         }

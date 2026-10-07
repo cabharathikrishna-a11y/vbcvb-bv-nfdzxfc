@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.example.util.rememberVideoThumbnail
@@ -55,6 +56,136 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
 import java.io.File
+
+/**
+ * Universal, highly resilient contact photo resolver that handles:
+ * - Direct local file paths
+ * - Internal storage cached avatars (g_avatar_*.jpg)
+ * - Android ContactsContract content URIs (with stream byte extraction)
+ * - Base64 encoded photos (vCard / API)
+ * - Google People / HTTP profile URLs with disk caching
+ * - Attached files JSON fallback if photoUri is unset
+ * - ProfilePictureManager avatar resolution by email
+ */
+fun resolveContactPhotoModel(context: android.content.Context, contact: Contact): Any? {
+    var raw = contact.photoUri?.trim()?.takeIf { it.isNotEmpty() }
+
+    // If raw points to local path, ensure file actually exists on disk; if deleted/stale, clear to allow fallbacks
+    if (!raw.isNullOrEmpty() && (raw.startsWith("/") || raw.startsWith("file://"))) {
+        val directFile = File(raw.removePrefix("file://"))
+        if (directFile.exists() && directFile.length() > 0L) {
+            return directFile
+        } else {
+            raw = null
+        }
+    }
+
+    // Fallback: check attachedFilesJson for photos/images if photoUri is empty
+    if (raw.isNullOrEmpty() && contact.attachedFilesJson.isNotEmpty()) {
+        try {
+            val arr = org.json.JSONArray(contact.attachedFilesJson)
+            for (i in 0 until arr.length()) {
+                val candidate = arr.getString(i).trim()
+                if (candidate.isNotEmpty()) {
+                    val lower = candidate.lowercase()
+                    if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".webp") || lower.startsWith("content://") || lower.startsWith("http") || lower.contains("avatar") || lower.contains("photo") || lower.contains("profile")) {
+                        if (candidate.startsWith("/") || candidate.startsWith("file://")) {
+                            val f = File(candidate.removePrefix("file://"))
+                            if (f.exists() && f.length() > 0L) {
+                                raw = candidate
+                                break
+                            }
+                        } else {
+                            raw = candidate
+                            break
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    // Check cached avatar file on disk
+    val safeName = (contact.googleContactId ?: "contact_${contact.id}").replace("/", "_").replace(":", "_")
+    val destFile = com.example.util.InternalStorageManager.getFile(
+        context,
+        com.example.util.InternalStorageManager.Category.CONTACTS,
+        "g_avatar_${safeName}.jpg"
+    )
+    if (destFile.exists() && destFile.length() > 0L) {
+        return destFile
+    }
+
+    val legacyContactFile = File(context.filesDir, "contacts/g_avatar_${safeName}.jpg")
+    if (legacyContactFile.exists() && legacyContactFile.length() > 0L) {
+        return legacyContactFile
+    }
+
+    if (raw.isNullOrEmpty()) {
+        // Check if ProfilePictureManager knows an avatar for this contact's email
+        if (contact.email.isNotBlank()) {
+            val fromManager = com.example.util.ProfilePictureManager.resolveUserAvatarString(context, contact.email.trim())
+            if (fromManager.isNotEmpty() && fromManager != "👤" && fromManager != "🎯") {
+                if (fromManager.startsWith("/") || fromManager.startsWith("file://")) {
+                    val f = File(fromManager.removePrefix("file://"))
+                    if (f.exists() && f.length() > 0L) return f
+                } else {
+                    return fromManager
+                }
+            }
+        }
+        return null
+    }
+
+    val trimmed = raw.trim()
+
+    // 1. Base64
+    if (trimmed.startsWith("base64:") || trimmed.startsWith("data:image/") || (trimmed.length > 80 && !trimmed.contains(" ") && !trimmed.startsWith("http") && !trimmed.startsWith("/"))) {
+        try {
+            val rawData = when {
+                trimmed.startsWith("base64:") -> trimmed.substringAfter("base64:")
+                trimmed.contains("base64,") -> trimmed.substringAfter("base64,")
+                else -> trimmed
+            }
+            val decoded = android.util.Base64.decode(rawData, android.util.Base64.DEFAULT)
+            val bmp = android.graphics.BitmapFactory.decodeByteArray(decoded, 0, decoded.size)
+            if (bmp != null) return bmp
+        } catch (_: Exception) {}
+    }
+
+    // 2. Content URI
+    if (trimmed.startsWith("content://")) {
+        try {
+            val bytes = com.example.util.SystemContactSyncHelper.getContactPhotoBytes(context, trimmed)
+            if (bytes != null && bytes.isNotEmpty()) {
+                val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (bmp != null) return bmp
+                return bytes
+            }
+        } catch (_: Exception) {}
+        return android.net.Uri.parse(trimmed)
+    }
+
+    // 3. File URI or local path
+    if (trimmed.startsWith("file://")) {
+        val f = File(trimmed.removePrefix("file://"))
+        if (f.exists() && f.length() > 0L) return f
+    } else if (trimmed.startsWith("/")) {
+        val f = File(trimmed)
+        if (f.exists() && f.length() > 0L) return f
+    }
+
+    // 4. HTTP / HTTPS URL
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        val cFile1 = File(context.cacheDir, "contact_photo_${trimmed.hashCode()}.jpg")
+        if (cFile1.exists() && cFile1.length() > 0L) return cFile1
+        val cFile2 = File(File(context.cacheDir, "avatar_cache"), "avatar_${kotlin.math.abs(trimmed.hashCode().toLong())}.jpg")
+        if (cFile2.exists() && cFile2.length() > 0L) return cFile2
+        return trimmed
+    }
+
+    return trimmed
+}
 
 // Premium avatar constants
 val AVATAR_OPTIONS = listOf(
@@ -362,7 +493,10 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         } else {
                             contacts.filter { it.folder == selectedFolder }
                         }
-                        base.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { "${it.firstName} ${it.lastName}".trim() })
+                        base.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) {
+                            val name = "${it.firstName} ${it.lastName}".trim()
+                            if (name.isNotBlank()) name else (it.email.ifBlank { it.phone })
+                        })
                     }
 
                     // Restore scroll position to the last viewed contact (e.g. contact V) when returning from detail
@@ -602,47 +736,65 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 15.sp
                                                 )
-                                                val resolvedPhotoPath = remember(contact.photoUri, contact.attachedFilesJson) {
-                                                    val raw = contact.photoUri?.trim()
-                                                    if (raw.isNullOrEmpty() || raw.startsWith("http://") || raw.startsWith("https://")) {
-                                                        val safeName = (contact.googleContactId ?: "contact_${contact.id}").replace("/", "_").replace(":", "_")
-                                                        val destFile = com.example.util.InternalStorageManager.getFile(
-                                                            context,
-                                                            com.example.util.InternalStorageManager.Category.CONTACTS,
-                                                            "g_avatar_${safeName}.jpg"
-                                                        )
-                                                        if (destFile.exists() && destFile.length() > 0L) {
-                                                            destFile.absolutePath
-                                                        } else {
-                                                            raw
-                                                        }
-                                                    } else {
-                                                        raw
-                                                    }
+                                                var photoRefreshTrigger by remember(contact.id, contact.photoUri) { mutableIntStateOf(0) }
+                                                val resolvedPhotoModel = remember(contact.photoUri, contact.attachedFilesJson, photoRefreshTrigger) {
+                                                    resolveContactPhotoModel(context, contact)
                                                 }
-                                                if (!resolvedPhotoPath.isNullOrEmpty()) {
-                                                    val imageModel = remember(resolvedPhotoPath) {
-                                                        val raw = resolvedPhotoPath.trim()
-                                                        when {
-                                                            raw.isEmpty() -> null
-                                                            raw.startsWith("content://") || raw.startsWith("file://") -> Uri.parse(raw)
-                                                            raw.startsWith("http://") || raw.startsWith("https://") -> raw
-                                                            else -> {
-                                                                val f = File(raw)
-                                                                if (f.exists()) f else raw
+                                                LaunchedEffect(contact.id, contact.photoUri) {
+                                                    val photo = contact.photoUri?.trim()
+                                                    if (!photo.isNullOrEmpty() && (photo.startsWith("http://") || photo.startsWith("https://"))) {
+                                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                            val safeName = (contact.googleContactId ?: "contact_${contact.id}").replace("/", "_").replace(":", "_")
+                                                            val destFile = com.example.util.InternalStorageManager.getFile(
+                                                                context,
+                                                                com.example.util.InternalStorageManager.Category.CONTACTS,
+                                                                "g_avatar_${safeName}.jpg"
+                                                            )
+                                                            if (!destFile.exists() || destFile.length() == 0L) {
+                                                                val bytes = com.example.util.SystemContactSyncHelper.getContactPhotoBytes(context, photo)
+                                                                if (bytes != null && bytes.isNotEmpty()) {
+                                                                    destFile.parentFile?.mkdirs()
+                                                                    destFile.writeBytes(bytes)
+                                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                                        photoRefreshTrigger++
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
-                                                    AsyncImage(
+                                                }
+                                                if (resolvedPhotoModel != null) {
+                                                    SubcomposeAsyncImage(
                                                         model = ImageRequest.Builder(LocalContext.current)
-                                                            .data(imageModel)
+                                                            .data(resolvedPhotoModel)
+                                                            .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
                                                             .crossfade(true)
                                                             .memoryCachePolicy(CachePolicy.ENABLED)
                                                             .diskCachePolicy(CachePolicy.ENABLED)
                                                             .build(),
                                                         contentDescription = "Profile Photo",
                                                         modifier = Modifier.clip(CircleShape).fillMaxSize(),
-                                                        contentScale = ContentScale.Crop
+                                                        contentScale = ContentScale.Crop,
+                                                        loading = {
+                                                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                                Text(
+                                                                    text = "${contact.firstName.firstOrNull()?.uppercaseChar() ?: '?'}",
+                                                                    color = Color.White,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontSize = 15.sp
+                                                                )
+                                                            }
+                                                        },
+                                                        error = {
+                                                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                                Text(
+                                                                    text = "${contact.firstName.firstOrNull()?.uppercaseChar() ?: '?'}",
+                                                                    color = Color.White,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontSize = 15.sp
+                                                                )
+                                                            }
+                                                        }
                                                     )
                                                 }
                                             }
@@ -925,47 +1077,65 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 24.sp
                                         )
-                                        val resolvedDetailPhotoPath = remember(contact.photoUri, contact.attachedFilesJson) {
-                                            val raw = contact.photoUri?.trim()
-                                            if (raw.isNullOrEmpty() || raw.startsWith("http://") || raw.startsWith("https://")) {
-                                                val safeName = (contact.googleContactId ?: "contact_${contact.id}").replace("/", "_").replace(":", "_")
-                                                val destFile = com.example.util.InternalStorageManager.getFile(
-                                                    context,
-                                                    com.example.util.InternalStorageManager.Category.CONTACTS,
-                                                    "g_avatar_${safeName}.jpg"
-                                                )
-                                                if (destFile.exists() && destFile.length() > 0L) {
-                                                    destFile.absolutePath
-                                                } else {
-                                                    raw
-                                                }
-                                            } else {
-                                                raw
-                                            }
+                                        var detailPhotoRefreshTrigger by remember(contact.id, contact.photoUri) { mutableIntStateOf(0) }
+                                        val resolvedDetailPhotoModel = remember(contact.photoUri, contact.attachedFilesJson, detailPhotoRefreshTrigger) {
+                                            resolveContactPhotoModel(context, contact)
                                         }
-                                        if (!resolvedDetailPhotoPath.isNullOrEmpty()) {
-                                            val imageModel = remember(resolvedDetailPhotoPath) {
-                                                val raw = resolvedDetailPhotoPath.trim()
-                                                when {
-                                                    raw.isEmpty() -> null
-                                                    raw.startsWith("content://") || raw.startsWith("file://") -> Uri.parse(raw)
-                                                    raw.startsWith("http://") || raw.startsWith("https://") -> raw
-                                                    else -> {
-                                                        val f = File(raw)
-                                                        if (f.exists()) f else raw
+                                        LaunchedEffect(contact.id, contact.photoUri) {
+                                            val photo = contact.photoUri?.trim()
+                                            if (!photo.isNullOrEmpty() && (photo.startsWith("http://") || photo.startsWith("https://"))) {
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                    val safeName = (contact.googleContactId ?: "contact_${contact.id}").replace("/", "_").replace(":", "_")
+                                                    val destFile = com.example.util.InternalStorageManager.getFile(
+                                                        context,
+                                                        com.example.util.InternalStorageManager.Category.CONTACTS,
+                                                        "g_avatar_${safeName}.jpg"
+                                                    )
+                                                    if (!destFile.exists() || destFile.length() == 0L) {
+                                                        val bytes = com.example.util.SystemContactSyncHelper.getContactPhotoBytes(context, photo)
+                                                        if (bytes != null && bytes.isNotEmpty()) {
+                                                            destFile.parentFile?.mkdirs()
+                                                            destFile.writeBytes(bytes)
+                                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                                detailPhotoRefreshTrigger++
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
-                                            AsyncImage(
+                                        }
+                                        if (resolvedDetailPhotoModel != null) {
+                                            SubcomposeAsyncImage(
                                                 model = ImageRequest.Builder(LocalContext.current)
-                                                    .data(imageModel)
+                                                    .data(resolvedDetailPhotoModel)
+                                                    .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
                                                     .crossfade(true)
                                                     .memoryCachePolicy(CachePolicy.ENABLED)
                                                     .diskCachePolicy(CachePolicy.ENABLED)
                                                     .build(),
                                                 contentDescription = "Profile Photo",
                                                 modifier = Modifier.clip(CircleShape).fillMaxSize(),
-                                                contentScale = ContentScale.Crop
+                                                contentScale = ContentScale.Crop,
+                                                loading = {
+                                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                        Text(
+                                                            text = "${contact.firstName.firstOrNull()?.uppercaseChar() ?: '?'}",
+                                                            color = Color.White,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 24.sp
+                                                        )
+                                                    }
+                                                },
+                                                error = {
+                                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                                        Text(
+                                                            text = "${contact.firstName.firstOrNull()?.uppercaseChar() ?: '?'}",
+                                                            color = Color.White,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 24.sp
+                                                        )
+                                                    }
+                                                }
                                             )
                                         }
                                     }
@@ -1808,8 +1978,34 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             contentAlignment = Alignment.Center
                         ) {
                             if (selectedAvatar.isNotEmpty()) {
-                                val imageModel = remember(selectedAvatar) {
-                                    if (selectedAvatar.startsWith("/")) File(selectedAvatar) else selectedAvatar
+                                val imageModel: Any = remember(selectedAvatar) {
+                                    when {
+                                        selectedAvatar.startsWith("file://") -> File(selectedAvatar.removePrefix("file://"))
+                                        selectedAvatar.startsWith("/") -> File(selectedAvatar)
+                                        selectedAvatar.startsWith("content://") -> {
+                                            try {
+                                                val b = com.example.util.SystemContactSyncHelper.getContactPhotoBytes(context, selectedAvatar)
+                                                b ?: Uri.parse(selectedAvatar)
+                                            } catch (_: Exception) {
+                                                Uri.parse(selectedAvatar)
+                                            }
+                                        }
+                                        selectedAvatar.startsWith("base64:") || selectedAvatar.startsWith("data:image/") ||
+                                        (selectedAvatar.length > 80 && !selectedAvatar.contains(" ") && !selectedAvatar.startsWith("http")) -> {
+                                            try {
+                                                val rawData = when {
+                                                    selectedAvatar.startsWith("base64:") -> selectedAvatar.substringAfter("base64:")
+                                                    selectedAvatar.contains("base64,") -> selectedAvatar.substringAfter("base64,")
+                                                    else -> selectedAvatar
+                                                }
+                                                val dec = android.util.Base64.decode(rawData, android.util.Base64.DEFAULT)
+                                                android.graphics.BitmapFactory.decodeByteArray(dec, 0, dec.size) ?: selectedAvatar
+                                            } catch (_: Exception) {
+                                                selectedAvatar
+                                            }
+                                        }
+                                        else -> selectedAvatar
+                                    }
                                 }
                                 AsyncImage(
                                     model = ImageRequest.Builder(LocalContext.current)

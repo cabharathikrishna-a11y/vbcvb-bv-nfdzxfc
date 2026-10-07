@@ -361,12 +361,13 @@ fun ShoppingCartView(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(8.dp))
-                    Box(modifier = Modifier.weight(1f)) {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                         if (searchQuery.isEmpty()) {
                             Text(
                                 text = "Search items, notes, or categories...",
                                 fontSize = 13.5.sp,
-                                color = TextMuted
+                                color = TextMuted,
+                                modifier = Modifier.align(Alignment.CenterStart)
                             )
                         }
                         BasicTextField(
@@ -377,7 +378,7 @@ fun ShoppingCartView(
                                 color = Color.White,
                                 fontSize = 13.5.sp
                             ),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().align(Alignment.CenterStart)
                         )
                     }
                     if (searchQuery.isNotEmpty()) {

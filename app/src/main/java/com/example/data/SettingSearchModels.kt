@@ -77,7 +77,7 @@ object SettingSearchRegistry {
         ),
         SettingSearchResult(
             title = "App Update Center",
-            subtitle = "Check for updates, manage background downloads, authenticate tester",
+            subtitle = "Check for updates and manage background downloads",
             categoryName = "Core Systems & AI",
             pageId = 16,
             scrollPercent = 0.0f,

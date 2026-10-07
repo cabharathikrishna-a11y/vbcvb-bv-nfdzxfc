@@ -346,7 +346,7 @@ fun GoogleDriveSyncView(
                                     onComplete = { success, msg ->
                                         liveSyncRunning = false
                                         liveSyncPercent = 100
-                                        lastSyncTime = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date())
+                                        lastSyncTime = SimpleDateFormat("dd/MM/yyyy • hh:mm a", Locale.US).format(Date())
                                         addLog(msg)
                                         Toast.makeText(context, if (success) "Live Sync Complete ✅" else "Sync Error ⚠️", Toast.LENGTH_SHORT).show()
                                     }

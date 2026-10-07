@@ -290,13 +290,13 @@ fun SmartChatView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             showSpeedDialog = false
                             ModelDownloadManager.startDownload(
                                 context = context,
-                                model = ModelRepository.FLAGSHIP_QWEN_CODER,
+                                model = ModelRepository.FLAGSHIP_GEMINI_NANO,
                                 speedMode = selectedSpeedMode,
                                 coroutineScope = coroutineScope
                             ) { success, error ->
                                 if (success) {
                                     isModelReady = true
-                                    Toast.makeText(context, "Qwen 2.5 Coder 1.5B ready to run offline!", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Google Gemini Nano is ready to run offline!", Toast.LENGTH_LONG).show()
                                 } else if (error != null) {
                                     Toast.makeText(context, error, Toast.LENGTH_LONG).show()
                                 }
@@ -343,7 +343,7 @@ fun SmartChatView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "The Qwen 2.5 Coder 1.5B AI model requires at least 1.3 GB of free storage to unpack and execute smoothly.",
+                            text = "Google Gemini Nano requires at least 1.2 GB of free storage to unpack and execute smoothly.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.White.copy(alpha = 0.8f)
                         )
@@ -678,7 +678,7 @@ private fun ModelDownloadHeroScreen(onInitiateDownload: () -> Unit) {
                 // TITLE & SUBTITLE
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "Qwen 2.5 Coder 1.5B",
+                        text = "Google Gemini Nano",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -691,7 +691,7 @@ private fun ModelDownloadHeroScreen(onInitiateDownload: () -> Unit) {
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6366F1).copy(alpha = 0.3f))
                     ) {
                         Text(
-                            text = "GGUF Q4_K_M • 100% Offline Neural Intelligence",
+                            text = "Google On-Device AI • 100% Offline Intelligence",
                             color = Color(0xFF818CF8),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -1020,7 +1020,7 @@ private fun ActiveQwenChatScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "Deepa AI Assistant",
+                            text = "Google Gemini Nano",
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                             fontSize = 14.sp
@@ -1030,13 +1030,13 @@ private fun ActiveQwenChatScreen(
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFA855F7))
+                                    .background(Color(0xFF10B981))
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "🛡️ 100% ON-DEVICE INTELLIGENCE",
+                                text = "⚡ 100% OFFLINE GOOGLE AI",
                                 fontSize = 10.sp,
-                                color = Color(0xFFA855F7),
+                                color = Color(0xFF10B981),
                                 fontWeight = FontWeight.SemiBold
                             )
                         }

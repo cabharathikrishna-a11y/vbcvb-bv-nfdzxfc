@@ -165,6 +165,46 @@ object SystemTimeService {
         return synchronized(sdfDate) { sdfDate.format(Date(getCurrentMs())) }
     }
 
+    fun formatDisplayDate(timestamp: Long): String {
+        return SimpleDateFormat("dd/MM/yyyy", Locale.US).format(Date(timestamp))
+    }
+
+    fun formatDisplayDate(dateStr: String?): String {
+        if (dateStr.isNullOrEmpty()) return ""
+        if (dateStr.matches(Regex("\\d{2}/\\d{2}/\\d{4}"))) return dateStr
+        return try {
+            val parsed = when {
+                dateStr.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) -> SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(dateStr)
+                dateStr.matches(Regex("\\d{4}/\\d{2}/\\d{2}")) -> SimpleDateFormat("yyyy/MM/dd", Locale.US).parse(dateStr)
+                dateStr.matches(Regex("\\d{2}-\\d{2}-\\d{4}")) -> SimpleDateFormat("dd-MM-yyyy", Locale.US).parse(dateStr)
+                else -> null
+            }
+            if (parsed != null) SimpleDateFormat("dd/MM/yyyy", Locale.US).format(parsed) else dateStr
+        } catch (e: Exception) {
+            dateStr
+        }
+    }
+
+    fun formatDisplayTime(timestamp: Long): String {
+        return SimpleDateFormat("hh:mm a", Locale.US).format(Date(timestamp))
+    }
+
+    fun formatDisplayTime(timeStr: String?): String {
+        if (timeStr.isNullOrEmpty()) return ""
+        if (timeStr.matches(Regex("(?i)\\d{1,2}:\\d{2}\\s*(am|pm)"))) return timeStr
+        return try {
+            val parsed = when {
+                timeStr.matches(Regex("\\d{2}:\\d{2}:\\d{2}")) -> SimpleDateFormat("HH:mm:ss", Locale.US).parse(timeStr)
+                timeStr.matches(Regex("\\d{2}:\\d{2}")) -> SimpleDateFormat("HH:mm", Locale.US).parse(timeStr)
+                timeStr.matches(Regex("\\d{1,2}:\\d{2}")) -> SimpleDateFormat("H:m", Locale.US).parse(timeStr)
+                else -> null
+            }
+            if (parsed != null) SimpleDateFormat("hh:mm a", Locale.US).format(parsed) else timeStr
+        } catch (e: Exception) {
+            timeStr
+        }
+    }
+
     // Compose helper extensions
     @Composable
     fun rememberTime12h(): String {

@@ -203,9 +203,9 @@ object DeviceSpecsManager {
 
         val details = mutableListOf<String>()
         if (fileExists) {
-            details.add("✅ Model Weights: Qwen 2.5 Coder 1.5B ($fileSizeMb MB verified on disk)")
+            details.add("✅ Model Weights: Google Gemini Nano ($fileSizeMb MB verified on disk)")
         } else {
-            details.add("⚠️ Model Weights: Awaiting download (${ModelRepository.FLAGSHIP_QWEN_CODER.sizeGb} GB)")
+            details.add("⚠️ Model Weights: Awaiting download (${ModelRepository.FLAGSHIP_GEMINI_NANO.sizeGb} GB)")
         }
 
         if (specs.totalPhysicalRamGb >= 3.5) {
@@ -231,14 +231,14 @@ object DeviceSpecsManager {
                 "Fully Compatible & Verified! Ready for high-speed multi-core neural reasoning."
             }
         } else {
-            "Hardware is compatible. Download the model to complete activation."
+            "Hardware is compatible. Download Google Gemini Nano to complete activation."
         }
 
         return ModelCompatibilityReport(
             isCompatible = fileExists || specs.totalPhysicalRamGb >= 2.5,
             readinessPercentage = readiness,
             modelFileExists = fileExists,
-            modelFileName = ModelRepository.FLAGSHIP_QWEN_CODER.fileName,
+            modelFileName = ModelRepository.FLAGSHIP_GEMINI_NANO.fileName,
             modelFileSizeMb = fileSizeMb,
             modelFileIntegrityValid = isIntegrityValid,
             physicalRamGb = specs.totalPhysicalRamGb,

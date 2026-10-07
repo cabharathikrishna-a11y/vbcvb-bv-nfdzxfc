@@ -906,16 +906,28 @@ fun ArenaPodium(
                     }
 
                     // Initials Avatar
-                    LaunchedEffect(peer.email) {
-                        if (!viewModel.firestoreAvatars.containsKey(peer.email)) {
+                    LaunchedEffect(peer.email, peer.customEmoji) {
+                        if (!peer.customEmoji.isNullOrBlank() && peer.customEmoji != "👤" && peer.customEmoji != "🎯") {
+                            com.example.util.ProfilePictureManager.recordAvatarUpdate(peer.email, peer.customEmoji)
+                        }
+                        val av = viewModel.firestoreAvatars[peer.email]
+                        if (av.isNullOrBlank() || av == "👤" || av == "🎯") {
                             viewModel.fetchUserAvatarFromFirestore(peer.email)
                         }
                     }
 
                     val avatarSize = if (rank == 1) 46.dp else if (rank == 2) 40.dp else 36.dp
                     val avatarFontSize = if (rank == 1) 14.sp else if (rank == 2) 12.sp else 11.sp
+                    val resolvedAvatar = remember(peer.customEmoji, viewModel.firestoreAvatars[peer.email]) {
+                        val custom = peer.customEmoji
+                        if (!custom.isNullOrBlank() && custom != "👤" && custom != "🎯") {
+                            custom
+                        } else {
+                            viewModel.firestoreAvatars[peer.email]?.takeIf { it.isNotBlank() && it != "👤" && it != "🎯" } ?: "👤"
+                        }
+                    }
                     com.example.util.UserAvatar(
-                        emojiOrBase64 = peer.customEmoji,
+                        emojiOrBase64 = resolvedAvatar,
                         email = peer.email,
                         displayName = peer.displayName,
                         size = avatarSize,

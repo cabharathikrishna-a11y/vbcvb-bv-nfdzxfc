@@ -16,15 +16,17 @@ import com.example.MainActivity
  * Provides completely silent, low-priority background progress notifications
  * for all Google Drive sync, backup, restore, upload, and download operations.
  *
- * Ensures:
+ * Guarantees:
+ * - Single persistent notification ID (4099) so notifications are updated in-place smoothly
+ *   without spawning new notifications or deleting old ones.
  * - Silent notification channel with zero vibration and zero sound.
- * - Dynamic stage progress (0% - 100%, preparing, reading, sending, receiving, downloading, etc.).
- * - Persistent notification during foreground service execution.
+ * - Throttled updates to prevent notification queue flickering or stuttering.
+ * - Auto-dismisses finished (success or error) notifications cleanly.
  */
 object GoogleDriveSyncNotificationHelper {
 
-    const val CHANNEL_ID = "gdrive_sync_channel"
-    const val CHANNEL_NAME = "Google Drive Sync & Backup"
+    const val CHANNEL_ID = "gdrive_silent_sync_v3"
+    const val CHANNEL_NAME = "Google Drive Background Sync"
     const val NOTIFICATION_ID = 4099
 
     /**
@@ -38,13 +40,14 @@ object GoogleDriveSyncNotificationHelper {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
                     CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_LOW // Low importance = silent, no sound, no head-up popup
+                    NotificationManager.IMPORTANCE_MIN // IMPORTANCE_MIN = completely silent background progress, no sound, no vibration, no heads-up popup
                 ).apply {
-                    description = "Silent background progress for Google Drive backups and cloud sync"
+                    description = "Completely silent background progress for Google Drive backups and cloud sync"
                     enableVibration(false)
                     vibrationPattern = null
                     setSound(null, null)
                     setShowBadge(false)
+                    lockscreenVisibility = Notification.VISIBILITY_SECRET
                 }
                 notificationManager.createNotificationChannel(channel)
             }
@@ -52,7 +55,7 @@ object GoogleDriveSyncNotificationHelper {
     }
 
     /**
-     * Builds a progress notification for Google Drive sync.
+     * Builds a single updating progress notification for Google Drive sync.
      */
     fun buildNotification(
         context: Context,
@@ -83,19 +86,23 @@ object GoogleDriveSyncNotificationHelper {
             else -> android.R.drawable.stat_sys_upload
         }
 
+        val cleanMessage = if (message.length > 120) message.take(117) + "..." else message
+
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(smallIcon)
             .setContentTitle(title)
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentText(cleanMessage)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(cleanMessage))
             .setSubText("Google Drive")
             .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOngoing(!isFinished)
-            .setAutoCancel(isFinished)
-            .setOnlyAlertOnce(true) // Absolute silence during multiple 1% ticks
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true) // Maintain absolute silence during updates
             .setSilent(true)
+            .setVibrate(null)
+            .setSound(null)
 
         if (!isFinished) {
             val clampedProgress = progress.coerceIn(0, 100)
@@ -108,7 +115,7 @@ object GoogleDriveSyncNotificationHelper {
     }
 
     /**
-     * Immediately posts or updates the silent notification on the user device.
+     * Immediately posts or updates the single silent notification in-place.
      */
     fun notifyProgress(
         context: Context,
@@ -122,21 +129,22 @@ object GoogleDriveSyncNotificationHelper {
         try {
             val notification = buildNotification(context, title, message, progress, indeterminate, isFinished, isError)
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            // Always update the single consistent notification ID so it modifies in-place
             notificationManager.notify(NOTIFICATION_ID, notification)
         } catch (e: Throwable) {
-            android.util.Log.e("GDriveNotification", "Failed to update notification: ${e.message}")
+            android.util.Log.w("GDriveNotification", "Failed to update notification: ${e.message}")
         }
     }
 
     /**
-     * Cancels the sync notification.
+     * Cancels the single sync notification.
      */
     fun cancelNotification(context: Context) {
         try {
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             notificationManager.cancel(NOTIFICATION_ID)
         } catch (e: Throwable) {
-            android.util.Log.e("GDriveNotification", "Failed to cancel notification: ${e.message}")
+            android.util.Log.w("GDriveNotification", "Failed to cancel notification: ${e.message}")
         }
     }
 }

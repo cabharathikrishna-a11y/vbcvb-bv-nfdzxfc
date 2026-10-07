@@ -4841,7 +4841,7 @@ fun AppBlocksSettingsSection(viewModel: AppViewModel) {
                         }
                     },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = WaterBlue,
                         unfocusedBorderColor = Color.DarkGray,
@@ -12688,7 +12688,7 @@ fun SettingsTimerConfigurationPage(
                             enabled = !isStrictBlocked,
                             placeholder = { Text("Filter package or name...", color = Color.DarkGray, fontSize = 12.sp) },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             textStyle = LocalTextStyle.current.copy(fontSize = 12.sp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
@@ -13172,40 +13172,6 @@ fun SettingsUpdatesPage(
                             Icon(Icons.Default.Refresh, contentDescription = "Redownload", tint = Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Force Redownload & Re-sync", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-
-                        // App Distribution specific Tester authentication
-                        Button(
-                            onClick = {
-                                try {
-                                    val appDist = com.google.firebase.appdistribution.FirebaseAppDistribution.getInstance()
-                                    if (!appDist.isTesterSignedIn) {
-                                        Toast.makeText(context, "Opening Firebase App Distribution Login...", Toast.LENGTH_SHORT).show()
-                                        appDist.signInTester()
-                                            .addOnSuccessListener {
-                                                Toast.makeText(context, "Firebase Tester Sign-In Succeeded!", Toast.LENGTH_LONG).show()
-                                            }
-                                            .addOnFailureListener { e ->
-                                                Toast.makeText(context, "Sign-In Failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-                                            }
-                                    } else {
-                                        Toast.makeText(context, "Firebase Tester is already signed in!", Toast.LENGTH_SHORT).show()
-                                    }
-                                } catch (e: Throwable) {
-                                    Toast.makeText(context, "App Distribution Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                                .testTag("app_dist_sign_in_btn"),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1E)),
-                            border = BorderStroke(1.dp, Color.DarkGray),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Person, contentDescription = "Tester Sign In", tint = Color.White)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Firebase Tester Authentication", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -16412,6 +16378,7 @@ fun PersonalVectorMemoryDashboardCard(context: Context) {
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text("Search vector memory embeddings...", color = Color.Gray, fontSize = 11.sp) },
+                singleLine = true,
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -16435,7 +16402,6 @@ fun PersonalVectorMemoryDashboardCard(context: Context) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("vector_memory_search_input"),
-                singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFFAB47BC),
                     unfocusedBorderColor = Color(0xFF2A2D3A),
@@ -16800,6 +16766,7 @@ fun AiActionLogDashboardCard(context: Context) {
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text("Filter action logs...", color = Color.Gray, fontSize = 11.sp) },
+                singleLine = true,
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -16823,7 +16790,6 @@ fun AiActionLogDashboardCard(context: Context) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("action_log_search_input"),
-                singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color(0xFF00E676),
                     unfocusedBorderColor = Color(0xFF2A2D3A),

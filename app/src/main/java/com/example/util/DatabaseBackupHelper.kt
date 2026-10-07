@@ -933,29 +933,70 @@ object DatabaseBackupHelper {
             // 8. Contacts
             val contactsArray = root.optJSONArray("contacts")
             if (contactsArray != null) {
+                val existingContacts = database.contactDao().getAllContacts().first()
                 for (i in 0 until contactsArray.length()) {
                     val obj = contactsArray.getJSONObject(i)
                     val photoUriVal = obj.optString("photoUri", "")
                     val photoUri = photoUriVal.ifEmpty { null }
-                    
-                    val contact = Contact(
-                        firstName = obj.optString("firstName", ""),
-                        middleName = obj.optString("middleName", ""),
-                        lastName = obj.optString("lastName", ""),
-                        jobTitle = obj.optString("jobTitle", ""),
-                        email = obj.optString("email", ""),
-                        address = obj.optString("address", ""),
-                        phone = obj.optString("phone", ""),
-                        dobString = obj.optString("dobString", ""),
-                        photoUri = photoUri,
-                        anniversaryString = obj.optString("anniversaryString", ""),
-                        additionalFieldsJson = obj.optString("additionalFieldsJson", ""),
-                        additionalDatesJson = obj.optString("additionalDatesJson", ""),
-                        folder = obj.optString("folder", "All"),
-                        attachedFilesJson = obj.optString("attachedFilesJson", "")
-                    )
-                    database.contactDao().insertContact(contact)
+                    val gId = obj.optString("googleContactId", "").ifEmpty { null }
+                    val first = obj.optString("firstName", "")
+                    val middle = obj.optString("middleName", "")
+                    val last = obj.optString("lastName", "")
+                    val phone = obj.optString("phone", "")
+                    val email = obj.optString("email", "")
+                    val dob = obj.optString("dobString", "")
+                    val anniv = obj.optString("anniversaryString", "")
+
+                    val matched = existingContacts.find { local ->
+                        (!gId.isNullOrEmpty() && local.googleContactId == gId) ||
+                        (first.isNotBlank() && local.firstName.equals(first, true) && local.lastName.equals(last, true)) ||
+                        (phone.isNotBlank() && local.phone.replace(Regex("[^0-9+]"), "") == phone.replace(Regex("[^0-9+]"), "")) ||
+                        (email.isNotBlank() && local.email.equals(email, true))
+                    }
+
+                    if (matched != null) {
+                        val updated = matched.copy(
+                            firstName = first.ifEmpty { matched.firstName },
+                            middleName = middle.ifEmpty { matched.middleName },
+                            lastName = last.ifEmpty { matched.lastName },
+                            jobTitle = obj.optString("jobTitle", "").ifEmpty { matched.jobTitle },
+                            email = email.ifEmpty { matched.email },
+                            address = obj.optString("address", "").ifEmpty { matched.address },
+                            phone = phone.ifEmpty { matched.phone },
+                            dobString = dob.ifEmpty { matched.dobString },
+                            photoUri = photoUri ?: matched.photoUri,
+                            anniversaryString = anniv.ifEmpty { matched.anniversaryString },
+                            additionalFieldsJson = obj.optString("additionalFieldsJson", "").ifEmpty { matched.additionalFieldsJson },
+                            additionalDatesJson = obj.optString("additionalDatesJson", "").ifEmpty { matched.additionalDatesJson },
+                            folder = obj.optString("folder", matched.folder),
+                            attachedFilesJson = obj.optString("attachedFilesJson", "").ifEmpty { matched.attachedFilesJson },
+                            googleContactId = gId ?: matched.googleContactId
+                        )
+                        database.contactDao().updateContact(updated)
+                    } else if (first.isNotBlank() || last.isNotBlank() || phone.isNotBlank() || email.isNotBlank() || dob.isNotBlank() || anniv.isNotBlank()) {
+                        val contact = Contact(
+                            firstName = first,
+                            middleName = middle,
+                            lastName = last,
+                            jobTitle = obj.optString("jobTitle", ""),
+                            email = email,
+                            address = obj.optString("address", ""),
+                            phone = phone,
+                            dobString = dob,
+                            photoUri = photoUri,
+                            anniversaryString = anniv,
+                            additionalFieldsJson = obj.optString("additionalFieldsJson", ""),
+                            additionalDatesJson = obj.optString("additionalDatesJson", ""),
+                            folder = obj.optString("folder", "All"),
+                            attachedFilesJson = obj.optString("attachedFilesJson", ""),
+                            googleContactId = gId
+                        )
+                        database.contactDao().insertContact(contact)
+                    }
                 }
+                try {
+                    com.example.widget.WidgetUpdater.updateCountdownWidget(context)
+                } catch (_: Exception) {}
             }
 
             // 9. App Files

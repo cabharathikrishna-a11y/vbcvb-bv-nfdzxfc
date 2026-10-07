@@ -1405,7 +1405,7 @@ class AppViewModel(
         _activeModelId.value = null
         prefs.edit().remove("local_ai_active_model_id").apply()
         
-        _selectedModelId.value = "qwen2_5_coder_1_5b"
+        _selectedModelId.value = "google_gemini_nano"
         prefs.edit().remove("local_ai_selected_model_id").apply()
         
         _downloadingModelId.value = null
@@ -3538,19 +3538,31 @@ class AppViewModel(
     }
 
     private fun setFallbackAvatar(email: String, unsanitizedEmail: String, sanitizedEmail: String) {
-        val fallbackEmoji = "👤"
-        firestoreAvatars[email] = fallbackEmoji
-        firestoreAvatars[unsanitizedEmail] = fallbackEmoji
-        firestoreAvatars[sanitizedEmail] = fallbackEmoji
-        
-        prefs.edit()
-            .putString("cached_avatar_$email", fallbackEmoji)
-            .putString("cached_avatar_$unsanitizedEmail", fallbackEmoji)
-            .putString("cached_avatar_$sanitizedEmail", fallbackEmoji)
-            .putLong("cached_avatar_time_$email", System.currentTimeMillis())
-            .putLong("cached_avatar_time_$unsanitizedEmail", System.currentTimeMillis())
-            .putLong("cached_avatar_time_$sanitizedEmail", System.currentTimeMillis())
-            .apply()
+        // If there is already a valid cached avatar or profile photo, do NOT overwrite it with fallback
+        val existing = (prefs.getString("cached_avatar_$email", null)
+            ?: prefs.getString("cached_avatar_$unsanitizedEmail", null)
+            ?: prefs.getString("cached_avatar_$sanitizedEmail", null)).orEmpty()
+        if (existing.isNotEmpty() && existing != "👤" && existing != "🎯") {
+            firestoreAvatars[email] = existing
+            firestoreAvatars[unsanitizedEmail] = existing
+            firestoreAvatars[sanitizedEmail] = existing
+            return
+        }
+
+        // Also check if ProfilePictureManager knows an avatar for this user
+        val fromManager = com.example.util.ProfilePictureManager.resolveUserAvatarString(getApplication(), email)
+        if (fromManager.isNotEmpty() && fromManager != "👤" && fromManager != "🎯") {
+            firestoreAvatars[email] = fromManager
+            firestoreAvatars[unsanitizedEmail] = fromManager
+            firestoreAvatars[sanitizedEmail] = fromManager
+            prefs.edit()
+                .putString("cached_avatar_$email", fromManager)
+                .putString("cached_avatar_$unsanitizedEmail", fromManager)
+                .putString("cached_avatar_$sanitizedEmail", fromManager)
+                .putLong("cached_avatar_time_$email", System.currentTimeMillis())
+                .apply()
+            return
+        }
     }
 
     fun fetchUserAvatarFromFirestore(email: String, forceRefresh: Boolean = false) {
@@ -3564,8 +3576,11 @@ class AppViewModel(
         }
         
         // 1. Check in-memory map first if not forcing refresh
-        if (!forceRefresh && (firestoreAvatars.containsKey(email) || firestoreAvatars.containsKey(unsanitizedEmail) || firestoreAvatars.containsKey(sanitizedEmail))) {
-            return
+        if (!forceRefresh) {
+            val mem = firestoreAvatars[email] ?: firestoreAvatars[unsanitizedEmail] ?: firestoreAvatars[sanitizedEmail]
+            if (!mem.isNullOrEmpty() && mem != "👤" && mem != "🎯") {
+                return
+            }
         }
         
         // 2. Check local disk cache (SharedPreferences) if not forcing refresh
@@ -3574,118 +3589,145 @@ class AppViewModel(
             .ifEmpty { prefs.getString("cached_avatar_$sanitizedEmail", "").orEmpty() }
         val cachedTime = prefs.getLong("cached_avatar_time_$email", 0L)
         val oneDayMs = 24L * 60 * 60 * 1000L
-        val isCacheValid = cachedAvatar.isNotEmpty() && (System.currentTimeMillis() - cachedTime < oneDayMs)
+        val isCacheValid = cachedAvatar.isNotEmpty() && cachedAvatar != "👤" && cachedAvatar != "🎯" && (System.currentTimeMillis() - cachedTime < oneDayMs)
         
         if (!forceRefresh && isCacheValid) {
             firestoreAvatars[email] = cachedAvatar
             firestoreAvatars[unsanitizedEmail] = cachedAvatar
             firestoreAvatars[sanitizedEmail] = cachedAvatar
-            Log.d("AppViewModel", "Loaded avatar from local disk cache for $email")
+            com.example.util.ProfilePictureManager.recordAvatarUpdate(email, cachedAvatar)
             return
         }
         
-        // 3. Otherwise fetch from Firestore
-        viewModelScope.launch {
+        // 3. Otherwise fetch from Firestore and RTDB
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            fun applyLoadedAvatar(emojiVal: String) {
+                if (emojiVal.isBlank() || emojiVal == "👤" || emojiVal == "🎯") return
+                firestoreAvatars[email] = emojiVal
+                firestoreAvatars[unsanitizedEmail] = emojiVal
+                firestoreAvatars[sanitizedEmail] = emojiVal
+                
+                com.example.util.ProfilePictureManager.recordAvatarUpdate(email, emojiVal)
+                com.example.util.ProfilePictureManager.recordAvatarUpdate(unsanitizedEmail, emojiVal)
+                com.example.util.ProfilePictureManager.recordAvatarUpdate(sanitizedEmail, emojiVal)
+
+                prefs.edit()
+                    .putString("cached_avatar_$email", emojiVal)
+                    .putString("cached_avatar_$unsanitizedEmail", emojiVal)
+                    .putString("cached_avatar_$sanitizedEmail", emojiVal)
+                    .putLong("cached_avatar_time_$email", System.currentTimeMillis())
+                    .putLong("cached_avatar_time_$unsanitizedEmail", System.currentTimeMillis())
+                    .putLong("cached_avatar_time_$sanitizedEmail", System.currentTimeMillis())
+                    .apply()
+                    
+                val myEmailValue = _userEmail.value
+                val myUsername = _currentUsername.value ?: ""
+                if (email.equals(myEmailValue, ignoreCase = true) || email.equals(myUsername, ignoreCase = true) ||
+                    unsanitizedEmail.equals(myEmailValue, ignoreCase = true) || unsanitizedEmail.equals(myUsername, ignoreCase = true)) {
+                    _userEmoji.value = emojiVal
+                    prefs.edit().putString("user_emoji", emojiVal).putString("user_emoji_$myUsername", emojiVal).apply()
+                }
+
+                if (emojiVal.startsWith("http://") || emojiVal.startsWith("https://")) {
+                    com.example.util.ProfilePictureManager.downloadAndCacheAvatar(getApplication(), emojiVal)
+                }
+            }
+
+            fun extractDocAvatar(doc: com.google.firebase.firestore.DocumentSnapshot?): String? {
+                if (doc == null || !doc.exists()) return null
+                return doc.getString("photo_url")?.takeIf { it.isNotBlank() }
+                    ?: doc.getString("photoUrl")?.takeIf { it.isNotBlank() }
+                    ?: doc.getString("profile_picture")?.takeIf { it.isNotBlank() }
+                    ?: doc.getString("profilePicture")?.takeIf { it.isNotBlank() }
+                    ?: doc.getString("photoUri")?.takeIf { it.isNotBlank() }
+                    ?: doc.getString("avatarUrl")?.takeIf { it.isNotBlank() }
+                    ?: doc.getString("avatar")?.takeIf { it.isNotBlank() }
+                    ?: doc.getString("emoji")?.takeIf { it.isNotBlank() && it != "👤" && it != "🎯" }
+                    ?: doc.getString("customEmoji")?.takeIf { it.isNotBlank() && it != "👤" && it != "🎯" }
+                    ?: doc.getString("CustomEmoji")?.takeIf { it.isNotBlank() && it != "👤" && it != "🎯" }
+                    ?: doc.getString("user_emoji")?.takeIf { it.isNotBlank() && it != "👤" && it != "🎯" }
+                    ?: doc.getString("user_photo_url")?.takeIf { it.isNotBlank() }
+            }
+
+            fun checkRealtimeDatabaseFallback() {
+                try {
+                    val dbUrl = com.example.api.FirebaseConfig.getDatabaseUrl(getApplication())
+                    if (dbUrl.isNotBlank()) {
+                        val rtdb = com.google.firebase.database.FirebaseDatabase.getInstance(dbUrl)
+                        val userNode = rtdb.getReference("FOCUS_TIMMER").child("USER").child(sanitizedEmail)
+                        userNode.get().addOnSuccessListener { snap ->
+                            val arenaEmoji = snap.child("ARENA").child("CustomEmoji").getValue(String::class.java)
+                            val timerEmoji = snap.child("ACTIVE_FOCUS_TIMER").child("User_Emoji").getValue(String::class.java)
+                            val photoUrl = snap.child("photo_url").getValue(String::class.java) ?: snap.child("photoUrl").getValue(String::class.java)
+                            val directEmoji = snap.child("emoji").getValue(String::class.java)
+                            val found = listOfNotNull(arenaEmoji, timerEmoji, photoUrl, directEmoji).firstOrNull { it.isNotBlank() && it != "👤" && it != "🎯" }
+                            if (found != null) {
+                                applyLoadedAvatar(found)
+                            } else {
+                                setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
+                            }
+                        }.addOnFailureListener {
+                            setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
+                        }
+                    } else {
+                        setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
+                    }
+                } catch (_: Exception) {
+                    setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
+                }
+            }
+
             try {
                 val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance(
                     com.google.firebase.FirebaseApp.getInstance(),
                     "main"
                 )
-                // First try unsanitizedEmail
+                
                 firestore.collection("users").document(unsanitizedEmail).get().addOnSuccessListener { document ->
-                    if (document != null && document.exists()) {
-                        val emojiVal = document.getString("emoji") ?: ""
-                        if (emojiVal.isNotEmpty()) {
-                            // Update states
-                            firestoreAvatars[email] = emojiVal
-                            firestoreAvatars[unsanitizedEmail] = emojiVal
-                            firestoreAvatars[sanitizedEmail] = emojiVal
-                            
-                            // Save to local cache
-                            prefs.edit()
-                                .putString("cached_avatar_$email", emojiVal)
-                                .putString("cached_avatar_$unsanitizedEmail", emojiVal)
-                                .putString("cached_avatar_$sanitizedEmail", emojiVal)
-                                .putLong("cached_avatar_time_$email", System.currentTimeMillis())
-                                .putLong("cached_avatar_time_$unsanitizedEmail", System.currentTimeMillis())
-                                .putLong("cached_avatar_time_$sanitizedEmail", System.currentTimeMillis())
-                                .apply()
-                                
-                            // If this is the current user's profile, update current user states
-                            val myEmailValue = _userEmail.value
-                            val myUsername = _currentUsername.value ?: ""
-                            if (email.equals(myEmailValue, ignoreCase = true) || email.equals(myUsername, ignoreCase = true) ||
-                                unsanitizedEmail.equals(myEmailValue, ignoreCase = true) || unsanitizedEmail.equals(myUsername, ignoreCase = true)) {
-                                _userEmoji.value = emojiVal
-                                prefs.edit().putString("user_emoji", emojiVal).putString("user_emoji_$myUsername", emojiVal).apply()
-                            }
-                            
-                            Log.d("AppViewModel", "Fetched avatar from Firestore & updated local cache for $email")
-                            return@addOnSuccessListener
-                        }
+                    val avatar1 = extractDocAvatar(document)
+                    if (!avatar1.isNullOrEmpty()) {
+                        applyLoadedAvatar(avatar1)
+                        return@addOnSuccessListener
                     }
                     
-                    // Fallback to query original email
                     firestore.collection("users").document(email).get().addOnSuccessListener { docOriginal ->
-                        if (docOriginal != null && docOriginal.exists()) {
-                            val emojiVal = docOriginal.getString("emoji") ?: ""
-                            if (emojiVal.isNotEmpty()) {
-                                firestoreAvatars[email] = emojiVal
-                                firestoreAvatars[unsanitizedEmail] = emojiVal
-                                firestoreAvatars[sanitizedEmail] = emojiVal
-                                
-                                prefs.edit()
-                                    .putString("cached_avatar_$email", emojiVal)
-                                    .putString("cached_avatar_$unsanitizedEmail", emojiVal)
-                                    .putString("cached_avatar_$sanitizedEmail", emojiVal)
-                                    .putLong("cached_avatar_time_$email", System.currentTimeMillis())
-                                    .putLong("cached_avatar_time_$unsanitizedEmail", System.currentTimeMillis())
-                                    .putLong("cached_avatar_time_$sanitizedEmail", System.currentTimeMillis())
-                                    .apply()
-                                return@addOnSuccessListener
-                            }
+                        val avatar2 = extractDocAvatar(docOriginal)
+                        if (!avatar2.isNullOrEmpty()) {
+                            applyLoadedAvatar(avatar2)
+                            return@addOnSuccessListener
                         }
                         
-                        // Fallback to query sanitized email
-                        if (sanitizedEmail != email && sanitizedEmail != unsanitizedEmail) {
-                            firestore.collection("users").document(sanitizedEmail).get().addOnSuccessListener { doc2 ->
-                                if (doc2 != null && doc2.exists()) {
-                                    val em = doc2.getString("emoji") ?: ""
-                                    if (em.isNotEmpty()) {
-                                        firestoreAvatars[email] = em
-                                        firestoreAvatars[unsanitizedEmail] = em
-                                        firestoreAvatars[sanitizedEmail] = em
-                                        
-                                        prefs.edit()
-                                            .putString("cached_avatar_$email", em)
-                                            .putString("cached_avatar_$unsanitizedEmail", em)
-                                            .putString("cached_avatar_$sanitizedEmail", em)
-                                            .putLong("cached_avatar_time_$email", System.currentTimeMillis())
-                                            .putLong("cached_avatar_time_$unsanitizedEmail", System.currentTimeMillis())
-                                            .putLong("cached_avatar_time_$sanitizedEmail", System.currentTimeMillis())
-                                            .apply()
-                                        return@addOnSuccessListener
+                        firestore.collection("users").document(sanitizedEmail).get().addOnSuccessListener { doc2 ->
+                            val avatar3 = extractDocAvatar(doc2)
+                            if (!avatar3.isNullOrEmpty()) {
+                                applyLoadedAvatar(avatar3)
+                            } else {
+                                // Try querying by email field
+                                firestore.collection("users").whereEqualTo("email", email).limit(1).get()
+                                    .addOnSuccessListener { querySnap ->
+                                        val queryDoc = querySnap.documents.firstOrNull()
+                                        val avatarQuery = extractDocAvatar(queryDoc)
+                                        if (!avatarQuery.isNullOrEmpty()) {
+                                            applyLoadedAvatar(avatarQuery)
+                                        } else {
+                                            checkRealtimeDatabaseFallback()
+                                        }
+                                    }.addOnFailureListener {
+                                        checkRealtimeDatabaseFallback()
                                     }
-                                }
-                                // No avatar found anywhere, set fallback "👤"
-                                setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
-                            }.addOnFailureListener {
-                                setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
                             }
-                        } else {
-                            // No avatar found anywhere, set fallback "👤"
-                            setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
+                        }.addOnFailureListener {
+                            checkRealtimeDatabaseFallback()
                         }
                     }.addOnFailureListener {
-                        setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
+                        checkRealtimeDatabaseFallback()
                     }
-                }.addOnFailureListener { e ->
-                    Log.e("AppViewModel", "Failed to fetch user avatar from Firestore for $email", e)
-                    setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
+                }.addOnFailureListener {
+                    checkRealtimeDatabaseFallback()
                 }
             } catch (e: Exception) {
                 Log.e("AppViewModel", "Firestore error fetching user avatar for $email", e)
-                setFallbackAvatar(email, unsanitizedEmail, sanitizedEmail)
+                checkRealtimeDatabaseFallback()
             }
         }
     }
@@ -9414,6 +9456,11 @@ class AppViewModel(
             .filter { it.dateString == yesterdayStr }
             .sumOf { it.durationSeconds }
 
+        // If focus time is 0 or less than 10 minutes (600 seconds), do not pop up the daily focus milestone
+        if (myYesterdaySeconds < 600) {
+            return
+        }
+
         // Calculate Rank
         val email = if (_userEmail.value.isNotEmpty()) _userEmail.value else if (username.contains("@")) username else prefs.getString("user_email_${username}", "") ?: ""
         val meEmailClean = email.lowercase().trim()
@@ -9483,7 +9530,7 @@ class AppViewModel(
     fun generateWelcomeGreeting() {
         val currentUsernameStr = _currentUsername.value ?: "User"
         val userNameStr = if (_userNickname.value.isNotEmpty()) _userNickname.value else if (_userName.value.isNotEmpty()) _userName.value else currentUsernameStr
-        _welcomeGreeting.value = "Hi $userNameStr, welcome to Life OS! Powered by local offline Qwen 2.5 Coder 1.5B."
+        _welcomeGreeting.value = "Hi $userNameStr, welcome to Life OS! Powered by Google Gemini Nano."
     }
 
     private val _chatbotMessages = MutableStateFlow<List<ChatMessage>>(
@@ -9646,7 +9693,7 @@ class AppViewModel(
 
             // 2. 100% On-Device Local Intelligence Generation
             val contextSummary = gatherDailyContextSummary()
-            val usedModel = "Deepa On-Device Engine"
+            val usedModel = "Google Gemini Nano"
             val aiResponseText = if (actionConfirmation != null) {
                 actionConfirmation
             } else {

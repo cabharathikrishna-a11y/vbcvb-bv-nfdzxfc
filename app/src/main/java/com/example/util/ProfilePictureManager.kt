@@ -53,7 +53,9 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import coil.request.CachePolicy
 import com.example.widget.WidgetManager
 import com.example.api.DevicePresenceManager
 import com.example.util.TimeEngine
@@ -96,6 +98,17 @@ object ProfilePictureManager {
     private val _avatarUpdatesFlow = MutableStateFlow<Map<String, String>>(emptyMap())
     val avatarUpdatesFlow: StateFlow<Map<String, String>> = _avatarUpdatesFlow.asStateFlow()
 
+    fun recordAvatarUpdate(emailOrUsername: String, avatar: String) {
+        if (emailOrUsername.isBlank() || avatar.isBlank() || avatar == "👤" || avatar == "🎯") return
+        val currentMap = _avatarUpdatesFlow.value.toMutableMap()
+        currentMap[emailOrUsername] = avatar
+        currentMap[emailOrUsername.lowercase().trim()] = avatar
+        val cleanLower = emailOrUsername.lowercase().trim()
+        val sanitized = DevicePresenceManager.sanitizeEmail(cleanLower)
+        currentMap[sanitized] = avatar
+        _avatarUpdatesFlow.value = currentMap
+    }
+
     data class AccountProfile(
         val email: String,
         val displayName: String,
@@ -118,14 +131,19 @@ object ProfilePictureManager {
         val trimmed = originalUrl.trim()
         return try {
             if (trimmed.contains("googleusercontent.com") || trimmed.contains("ggpht.com")) {
-                // Replace =s96-c, =s128, etc. with =s{targetSize}-c
                 val regex = Regex("=s\\d+(-c)?")
                 if (regex.containsMatchIn(trimmed)) {
                     trimmed.replace(regex, "=s$targetSize-c")
                 } else if (trimmed.contains("?")) {
-                    "$trimmed&sz=$targetSize"
-                } else {
+                    if (trimmed.contains("sz=")) {
+                        trimmed.replace(Regex("sz=\\d+"), "sz=$targetSize")
+                    } else {
+                        "$trimmed&sz=$targetSize"
+                    }
+                } else if (trimmed.contains("/a/") || trimmed.contains("/ogw/") || trimmed.contains("/-") || trimmed.contains("/mo/")) {
                     "$trimmed=s$targetSize-c"
+                } else {
+                    trimmed
                 }
             } else {
                 trimmed
@@ -343,29 +361,80 @@ object ProfilePictureManager {
      * Resolves an avatar string for a given user or friend by email/username/custom emoji.
      */
     fun resolveUserAvatarString(context: Context, emailOrUsername: String?, fallbackEmoji: String? = null): String {
-        if (emailOrUsername.isNullOrBlank()) return fallbackEmoji?.ifEmpty { "👤" } ?: "👤"
+        if (emailOrUsername.isNullOrBlank()) return fallbackEmoji?.takeIf { it.isNotEmpty() && it != "👤" && it != "🎯" } ?: "👤"
         val clean = emailOrUsername.trim()
 
         // 1. Check in-memory reactive flow map
-        _avatarUpdatesFlow.value[clean]?.let { return it }
+        _avatarUpdatesFlow.value[clean]?.let { if (it.isNotEmpty() && it != "👤" && it != "🎯") return it }
+        val cleanLower = clean.lowercase()
+        _avatarUpdatesFlow.value[cleanLower]?.let { if (it.isNotEmpty() && it != "👤" && it != "🎯") return it }
 
-        // 2. If it's already a URL, base64 or custom emoji, return it
-        if (clean.startsWith("http://") || clean.startsWith("https://") || clean.startsWith("base64:") || (clean.length in 1..4 && !clean.contains("@") && !clean.contains("."))) {
+        // 2. If it's already a URL, base64, local file or custom emoji, return it
+        if (clean.startsWith("http://") || clean.startsWith("https://") || clean.startsWith("base64:") || clean.startsWith("data:image/") || clean.startsWith("content://") || clean.startsWith("file://")) {
+            return clean
+        }
+        if (clean.startsWith("/")) {
+            try {
+                if (File(clean).exists()) return clean
+            } catch (_: Exception) {}
+        }
+        if (clean.length in 1..4 && !clean.contains("@") && !clean.contains(".") && clean != "👤" && clean != "🎯") {
             return clean
         }
 
-        // 3. Check SharedPreferences disk cache
+        // 3. Check SharedPreferences disk cache with all key variations
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val sanitized = DevicePresenceManager.sanitizeEmail(cleanLower)
+        val unsanitized = if (cleanLower.contains("@")) {
+            val parts = cleanLower.split("@", limit = 2)
+            parts[0] + "@" + parts[1].replace("_", ".")
+        } else cleanLower
+
         val cached = prefs.getString("cached_avatar_$clean", "")?.orEmpty()
+            ?.ifEmpty { prefs.getString("cached_avatar_$cleanLower", "") }
+            ?.ifEmpty { prefs.getString("cached_avatar_$sanitized", "") }
+            ?.ifEmpty { prefs.getString("cached_avatar_$unsanitized", "") }
             ?.ifEmpty { prefs.getString("user_emoji_$clean", "") }
-            ?.ifEmpty { if (clean == prefs.getString("user_email", "") || clean == prefs.getString("current_username", "")) prefs.getString("user_emoji", "") else "" }
+            ?.ifEmpty { prefs.getString("user_emoji_$cleanLower", "") }
+            ?.ifEmpty { prefs.getString("user_emoji_$sanitized", "") }
+            ?.ifEmpty { if (cleanLower == prefs.getString("user_email", "")?.lowercase() || cleanLower == prefs.getString("current_username", "")?.lowercase()) prefs.getString("user_photo_url", "") else "" }
+            ?.ifEmpty { if (cleanLower == prefs.getString("user_email", "")?.lowercase() || cleanLower == prefs.getString("current_username", "")?.lowercase()) prefs.getString("user_emoji", "") else "" }
             ?.orEmpty()
 
-        if (!cached.isNullOrEmpty() && cached != "👤") {
+        if (!cached.isNullOrEmpty() && cached != "👤" && cached != "🎯") {
             return cached
         }
 
-        return fallbackEmoji?.ifEmpty { "👤" } ?: "👤"
+        // 4. Check locally cached avatar files (cache and internal files)
+        val hashLower = cleanLower.hashCode().toLong() and 0xFFFFFFFFL
+        val avatarCacheFile = File(File(context.cacheDir, "avatar_cache"), "avatar_${hashLower}.jpg")
+        if (avatarCacheFile.exists() && avatarCacheFile.length() > 0) {
+            return avatarCacheFile.absolutePath
+        }
+        val contactCacheFile = File(context.cacheDir, "contact_photo_${cleanLower.hashCode()}.jpg")
+        if (contactCacheFile.exists() && contactCacheFile.length() > 0) {
+            return contactCacheFile.absolutePath
+        }
+
+        // 5. Check contacts internal storage avatar copies
+        try {
+            val contactFile1 = File(context.filesDir, "contacts/g_avatar_${sanitized}.jpg")
+            if (contactFile1.exists() && contactFile1.length() > 0) return contactFile1.absolutePath
+            val contactFile2 = File(context.filesDir, "contacts/g_avatar_${cleanLower}.jpg")
+            if (contactFile2.exists() && contactFile2.length() > 0) return contactFile2.absolutePath
+        } catch (_: Exception) {}
+
+        // 6. Check if matches any logged in Google account
+        try {
+            val accounts = getLoggedInGoogleAccounts(context)
+            val matchedAccount = accounts.find { it.email.equals(cleanLower, ignoreCase = true) || it.email.equals(unsanitized, ignoreCase = true) }
+            val photo = matchedAccount?.photoUrl?.trim()
+            if (!photo.isNullOrEmpty()) {
+                return photo
+            }
+        } catch (_: Exception) {}
+
+        return fallbackEmoji?.takeIf { it.isNotEmpty() && it != "👤" && it != "🎯" } ?: "👤"
     }
 
     /**
@@ -400,7 +469,7 @@ object ProfilePictureManager {
             if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
                 val highResUrl = getHighResPhotoUrl(trimmed, targetPx) ?: trimmed
                 val cacheDir = File(context.cacheDir, "avatar_cache").apply { if (!exists()) mkdirs() }
-                val cacheFile = File(cacheDir, "avatar_${abs(highResUrl.hashCode())}.jpg")
+                val cacheFile = File(cacheDir, "avatar_${abs(highResUrl.hashCode().toLong())}.jpg")
 
                 if (cacheFile.exists() && cacheFile.length() > 0) {
                     val bmp = BitmapFactory.decodeFile(cacheFile.absolutePath)
@@ -440,26 +509,75 @@ object ProfilePictureManager {
      * Downloads an avatar from the web and caches it to disk.
      */
     fun downloadAndCacheAvatar(context: Context, urlString: String): Bitmap? {
+        if (urlString.isBlank()) return null
         return try {
             val highResUrl = getHighResPhotoUrl(urlString) ?: urlString
             val cacheDir = File(context.cacheDir, "avatar_cache").apply { if (!exists()) mkdirs() }
-            val cacheFile = File(cacheDir, "avatar_${abs(highResUrl.hashCode())}.jpg")
+            val cacheFile = File(cacheDir, "avatar_${abs(highResUrl.hashCode().toLong())}.jpg")
+            val altCacheFile = File(context.cacheDir, "contact_photo_${urlString.hashCode()}.jpg")
 
-            val url = URL(highResUrl)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.connectTimeout = 5000
-            connection.readTimeout = 5000
-            connection.doInput = true
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0 Android App")
-            connection.connect()
+            if (cacheFile.exists() && cacheFile.length() > 0) {
+                return BitmapFactory.decodeFile(cacheFile.absolutePath)
+            }
+            if (altCacheFile.exists() && altCacheFile.length() > 0) {
+                return BitmapFactory.decodeFile(altCacheFile.absolutePath)
+            }
 
-            val inputStream = connection.inputStream
-            val bytes = inputStream.readBytes()
-            inputStream.close()
-            connection.disconnect()
+            var connection: HttpURLConnection? = null
+            var bytes: ByteArray? = null
+            for (targetUrl in listOf(highResUrl, urlString).distinct()) {
+                try {
+                    val url = URL(targetUrl)
+                    connection = url.openConnection() as HttpURLConnection
+                    connection.instanceFollowRedirects = true
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 10000
+                    connection.doInput = true
+                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+                    connection.setRequestProperty("Accept", "image/webp,image/png,image/jpeg,image/svg+xml,image/*;q=0.9,*/*;q=0.8")
+                    connection.connect()
+                    val responseCode = connection.responseCode
+                    if (responseCode in 200..299) {
+                        val inputStream = connection.inputStream
+                        bytes = inputStream.readBytes()
+                        inputStream.close()
+                        if (bytes.isNotEmpty()) break
+                    } else if (responseCode in 300..399) {
+                        val newLoc = connection.getHeaderField("Location")
+                        if (!newLoc.isNullOrBlank()) {
+                            val redirectUrl = URL(newLoc)
+                            val redirConn = redirectUrl.openConnection() as HttpURLConnection
+                            redirConn.connectTimeout = 10000
+                            redirConn.readTimeout = 10000
+                            redirConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36")
+                            redirConn.connect()
+                            if (redirConn.responseCode in 200..299) {
+                                bytes = redirConn.inputStream.use { it.readBytes() }
+                                redirConn.disconnect()
+                                if (bytes != null && bytes.isNotEmpty()) break
+                            }
+                            redirConn.disconnect()
+                        }
+                    }
+                } catch (_: Exception) {
+                } finally {
+                    connection?.disconnect()
+                }
+            }
 
-            cacheFile.writeBytes(bytes)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            if (bytes != null && bytes.isNotEmpty()) {
+                try { cacheFile.writeBytes(bytes) } catch (_: Exception) {}
+                try { altCacheFile.writeBytes(bytes) } catch (_: Exception) {}
+                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (bmp != null) {
+                    val targetPx = 256
+                    val circular = getCircularBitmap(bmp, targetPx)
+                    memoryCache.put("${highResUrl.hashCode()}_$targetPx", circular)
+                    memoryCache.put("${urlString.hashCode()}_$targetPx", circular)
+                    return bmp
+                }
+            }
+            null
         } catch (e: Exception) {
             Log.w(TAG, "Error downloading avatar from $urlString: ${e.message}")
             null
@@ -529,6 +647,7 @@ fun UserAvatar(
     fallback: String = "",
     border: BorderStroke? = null,
     isFocusing: Boolean? = null,
+    online: Boolean? = null,
     onClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -537,9 +656,9 @@ fun UserAvatar(
     // Determine the most up-to-date avatar string
     val resolvedValue = remember(emojiOrBase64, email, avatarUpdates) {
         var str = emojiOrBase64?.trim() ?: ""
-        if ((str.isEmpty() || str == "👤") && !email.isNullOrBlank()) {
+        if ((str.isEmpty() || str == "👤" || str == "🎯") && !email.isNullOrBlank()) {
             val fromManager = ProfilePictureManager.resolveUserAvatarString(context, email)
-            if (fromManager.isNotEmpty() && fromManager != "👤") {
+            if (fromManager.isNotEmpty() && fromManager != "👤" && fromManager != "🎯") {
                 str = fromManager
             }
         }
@@ -548,7 +667,10 @@ fun UserAvatar(
 
     val isUrl = resolvedValue.startsWith("http://") || resolvedValue.startsWith("https://") ||
             (resolvedValue.contains("googleusercontent.com") || resolvedValue.contains("ggpht.com"))
-    val isBase64 = resolvedValue.startsWith("base64:") || (resolvedValue.length > 80 && !resolvedValue.contains(" ") && !resolvedValue.startsWith("http"))
+    val isBase64 = resolvedValue.startsWith("base64:") || resolvedValue.startsWith("data:image/") ||
+            (resolvedValue.length > 80 && !resolvedValue.contains(" ") && !resolvedValue.startsWith("http") && !resolvedValue.startsWith("/"))
+    val isLocalFileOrUri = resolvedValue.startsWith("content://") || resolvedValue.startsWith("file://") ||
+            (resolvedValue.startsWith("/") && (try { File(resolvedValue).exists() } catch (_: Exception) { false }))
 
     val effectiveModifier = modifier
         .size(size)
@@ -557,49 +679,17 @@ fun UserAvatar(
     Box(modifier = effectiveModifier, contentAlignment = Alignment.Center) {
         when {
             // 1. Placeholder or Default Person Icon / Initials
-            resolvedValue.isEmpty() || resolvedValue == "👤" -> {
-                val initials = fallback.ifEmpty { displayName?.take(2)?.uppercase() ?: "" }
-                if (initials.isNotEmpty() && initials != "👤") {
-                    val bgColor = remember(displayName ?: fallback ?: email) {
-                        ProfilePictureManager.getAvatarBackgroundColor(displayName ?: fallback ?: email ?: "User")
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(size)
-                            .clip(CircleShape)
-                            .background(bgColor.copy(alpha = 0.85f))
-                            .let { if (border != null) it.border(border, CircleShape) else it.border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = initials,
-                            fontSize = (size.value * 0.42f).sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(size)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.08f))
-                            .let { if (border != null) it.border(border, CircleShape) else it.border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "User Avatar Placeholder",
-                            tint = Color.LightGray.copy(alpha = 0.7f),
-                            modifier = Modifier.size(size * 0.58f)
-                        )
-                    }
-                }
+            resolvedValue.isEmpty() || resolvedValue == "👤" || resolvedValue == "🎯" -> {
+                FallbackAvatarInitials(size, fallback, displayName, email, border)
             }
 
             // 2. Base64 Bitmap
             isBase64 -> {
-                val rawData = if (resolvedValue.startsWith("base64:")) resolvedValue.substringAfter("base64:") else resolvedValue
+                val rawData = when {
+                    resolvedValue.startsWith("base64:") -> resolvedValue.substringAfter("base64:")
+                    resolvedValue.contains("base64,") -> resolvedValue.substringAfter("base64,")
+                    else -> resolvedValue
+                }
                 val bitmap = remember(rawData) {
                     try {
                         val decoded = Base64.decode(rawData, Base64.DEFAULT)
@@ -623,28 +713,114 @@ fun UserAvatar(
                 }
             }
 
-            // 3. HTTP / HTTPS Image URL (Google Profile Photo, Gravatar, Cloud Storage)
+            // 3. Local file path or Content URI (Contacts, internal storage, gallery)
+            isLocalFileOrUri -> {
+                val localModel: Any = remember(resolvedValue) {
+                    when {
+                        resolvedValue.startsWith("content://") -> {
+                            try {
+                                val bytes = com.example.util.SystemContactSyncHelper.getContactPhotoBytes(context, resolvedValue)
+                                if (bytes != null && bytes.isNotEmpty()) bytes else Uri.parse(resolvedValue)
+                            } catch (_: Exception) {
+                                Uri.parse(resolvedValue)
+                            }
+                        }
+                        resolvedValue.startsWith("file://") -> File(resolvedValue.removePrefix("file://"))
+                        else -> File(resolvedValue)
+                    }
+                }
+                SubcomposeAsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(localModel)
+                        .crossfade(true)
+                        .allowHardware(false)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .build(),
+                    contentDescription = "User Avatar",
+                    modifier = Modifier
+                        .size(size)
+                        .clip(CircleShape)
+                        .let { if (border != null) it.border(border, CircleShape) else it.border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape) },
+                    contentScale = ContentScale.Crop,
+                    loading = {
+                        FallbackAvatarInitials(size, fallback, displayName, email, border)
+                    },
+                    error = {
+                        FallbackAvatarInitials(size, fallback, displayName, email, border)
+                    }
+                )
+            }
+
+            // 4. HTTP / HTTPS Image URL (Google Profile Photo, Gravatar, Cloud Storage)
             isUrl -> {
                 val targetPx = with(androidx.compose.ui.platform.LocalDensity.current) { size.roundToPx() }
                 val highResUrl = remember(resolvedValue, targetPx) {
                     ProfilePictureManager.getHighResPhotoUrl(resolvedValue, targetPx.coerceAtLeast(192)) ?: resolvedValue
                 }
+                var localCachedFile by remember(highResUrl) {
+                    val f1 = File(File(context.cacheDir, "avatar_cache"), "avatar_${abs(highResUrl.hashCode().toLong())}.jpg")
+                    val f = if (f1.exists() && f1.length() > 0) f1 else {
+                        val f2 = File(context.cacheDir, "contact_photo_${highResUrl.hashCode()}.jpg")
+                        if (f2.exists() && f2.length() > 0) f2 else null
+                    }
+                    mutableStateOf(f)
+                }
 
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(highResUrl)
-                        .crossfade(true)
-                        .build(),
+                LaunchedEffect(highResUrl) {
+                    if (localCachedFile == null) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            val downloadedBmp = ProfilePictureManager.downloadAndCacheAvatar(context, highResUrl)
+                            if (downloadedBmp != null) {
+                                val f1 = File(File(context.cacheDir, "avatar_cache"), "avatar_${abs(highResUrl.hashCode().toLong())}.jpg")
+                                if (f1.exists() && f1.length() > 0) {
+                                    localCachedFile = f1
+                                }
+                            }
+                        }
+                    }
+                }
+
+                val requestModel = remember(highResUrl, localCachedFile) {
+                    if (localCachedFile != null) {
+                        ImageRequest.Builder(context)
+                            .data(localCachedFile)
+                            .crossfade(true)
+                            .allowHardware(false)
+                            .memoryCachePolicy(CachePolicy.ENABLED)
+                            .diskCachePolicy(CachePolicy.ENABLED)
+                            .build()
+                    } else {
+                        ImageRequest.Builder(context)
+                            .data(highResUrl)
+                            .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
+                            .crossfade(true)
+                            .allowHardware(false)
+                            .memoryCachePolicy(CachePolicy.ENABLED)
+                            .diskCachePolicy(CachePolicy.ENABLED)
+                            .networkCachePolicy(CachePolicy.ENABLED)
+                            .build()
+                    }
+                }
+
+                SubcomposeAsyncImage(
+                    model = requestModel,
                     contentDescription = "User Profile Picture",
                     modifier = Modifier
                         .size(size)
                         .clip(CircleShape)
                         .let { if (border != null) it.border(border, CircleShape) else it.border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape) },
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    loading = {
+                        FallbackAvatarInitials(size, fallback, displayName, email, border)
+                    },
+                    error = {
+                        FallbackAvatarInitials(size, fallback, displayName, email, border)
+                    }
                 )
             }
 
-            // 4. Custom Emoji or Short Text Symbol (e.g., 🚀, 🦊, 💡)
+            // 5. Custom Emoji or Short Text Symbol (e.g., 🚀, 🦊, 💡)
             else -> {
                 val isSingleEmoji = resolvedValue.length in 1..4
                 if (isSingleEmoji) {
@@ -668,15 +844,17 @@ fun UserAvatar(
             }
         }
 
-        // Optional Live Focusing Pulse Indicator
-        if (isFocusing == true) {
+        // Optional Live Focusing Pulse / Online Presence Indicator
+        val showIndicator = isFocusing == true || online == true
+        if (showIndicator) {
+            val indicatorColor = if (isFocusing == true) Color(0xFF00E676) else Color(0xFF22C55E)
             Box(
                 modifier = Modifier
                     .size(size * 0.32f)
                     .align(Alignment.BottomEnd)
                     .offset(x = 1.dp, y = 1.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF00E676))
+                    .background(indicatorColor)
                     .border(1.5.dp, Color.Black, CircleShape)
             )
         }

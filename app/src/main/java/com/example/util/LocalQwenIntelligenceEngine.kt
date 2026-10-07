@@ -10,8 +10,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+typealias GoogleGeminiNanoEngine = LocalQwenIntelligenceEngine
+
 /**
- * Local Qwen 2.5 Coder 1.5B (GGUF Q4_K_M) On-Device Local Intelligence & Autonomous Engine.
+ * Google Gemini Nano (On-Device Offline AI) Intelligence & Autonomous Engine.
  * 
  * Runs 100% locally on-device without cloud API dependencies:
  * - Dynamic offline code generation & algorithmic reasoning across multiple languages.
@@ -23,9 +25,9 @@ import java.util.Locale
  */
 object LocalQwenIntelligenceEngine {
 
-    private const val TAG = "QwenLocalEngine"
-    private const val MODEL_NAME = "Qwen 2.5 Coder 1.5B Instruct"
-    private const val QUANT_FORMAT = "GGUF Q4_K_M (4-bit Medium)"
+    private const val TAG = "GoogleGeminiNanoEngine"
+    private const val MODEL_NAME = "Google Gemini Nano (On-Device AI)"
+    private const val QUANT_FORMAT = "Google AICore / On-Device TPU"
 
     fun isModelReady(context: Context): Boolean {
         return ModelDownloadManager.isFlagshipModelDownloaded(context)

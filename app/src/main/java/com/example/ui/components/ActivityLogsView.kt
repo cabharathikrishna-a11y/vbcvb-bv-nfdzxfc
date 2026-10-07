@@ -409,7 +409,7 @@ fun ActivityLogCard(
 
                 // Date & Day
                 Text(
-                    text = log.dateDayString,
+                    text = com.example.util.SystemTimeService.formatDisplayDate(log.dateDayString),
                     color = Color.Gray,
                     fontSize = 10.sp
                 )

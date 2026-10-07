@@ -1574,9 +1574,7 @@ fun TaskSelectionDialog(
                 OutlinedTextField(
                     value = taskSearchQuery,
                     onValueChange = { taskSearchQuery = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("Search task lists...", color = Color.Gray, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.LightGray) },
                     colors = OutlinedTextFieldDefaults.colors(
@@ -1993,7 +1991,7 @@ fun androidx.compose.foundation.layout.ColumnScope.FriendHistoryDetailsContent(
         Spacer(modifier = Modifier.width(6.dp))
         UserAvatar(
             emojiOrBase64 = peer.emoji,
-            email = peer.username,
+            email = peer.userId.ifEmpty { peer.username },
             displayName = peer.displayName,
             size = 24.dp,
             fontSize = 20.sp
@@ -2251,7 +2249,8 @@ data class PeerFocusInfo(
     val currentTask: String?,
     val currentTag: String? = null,
     val isMe: Boolean = false,
-    val focusStatus: String = "idle"
+    val focusStatus: String = "idle",
+    val userId: String = ""
 )
 
 @Composable
@@ -2286,28 +2285,34 @@ fun FriendsFocusPill(
 
     // Trigger automatic Firestore profile picture fetch for any peer with a placeholder avatar
     LaunchedEffect(focusingPeers) {
-        focusingPeers.forEach { (_, u) ->
+        focusingPeers.forEach { (key, u) ->
             val av = u.emoji.ifEmpty { "👤" }
-            val peerId = u.userId
-            if (av == "👤" && peerId.isNotEmpty() && !viewModel.firestoreAvatars.containsKey(peerId)) {
+            val peerId = u.userId.ifEmpty { key }
+            if ((av == "👤" || av == "🎯") && peerId.isNotEmpty()) {
                 viewModel.fetchUserAvatarFromFirestore(peerId)
             }
         }
     }
 
-    val focusingAvatars = remember(focusingPeers, isMeFocusing, userEmoji, viewModel.firestoreAvatars.size) {
-        val list = mutableListOf<String>()
+    val focusingAvatars = remember(focusingPeers, isMeFocusing, userEmoji, viewModel.firestoreAvatars.toMap()) {
+        val list = mutableListOf<Pair<String, String>>()
+        val context = viewModel.getApplication<android.app.Application>()
         if (isMeFocusing) {
-            val myAvatar = com.example.util.ProfilePictureManager.resolveUserAvatarString(viewModel.getApplication(), myEmail, userEmoji)
-            list.add(myAvatar)
+            val myAvatar = com.example.util.ProfilePictureManager.resolveUserAvatarString(context, myEmail, userEmoji)
+            list.add(myAvatar to myEmail)
         }
-        focusingPeers.forEach { (_, u) ->
+        focusingPeers.forEach { (key, u) ->
             val av = u.emoji.ifEmpty { "👤" }
-            val peerId = u.userId
-            val resolved = com.example.util.ProfilePictureManager.resolveUserAvatarString(viewModel.getApplication(), peerId, av)
-            list.add(resolved)
+            val peerId = u.userId.ifEmpty { key }
+            val fromFs = viewModel.firestoreAvatars[peerId] ?: (if (key != peerId) viewModel.firestoreAvatars[key] else null)
+            val resolved = if (!fromFs.isNullOrEmpty() && fromFs != "👤" && fromFs != "🎯") {
+                fromFs
+            } else {
+                com.example.util.ProfilePictureManager.resolveUserAvatarString(context, peerId, av)
+            }
+            list.add(resolved to peerId)
         }
-        list.distinct()
+        list.distinctBy { it.second }
     }
 
     Box(
@@ -2335,9 +2340,10 @@ fun FriendsFocusPill(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    focusingAvatars.forEach { avatar ->
+                    focusingAvatars.forEach { (avatar, peerId) ->
                         UserAvatar(
                             emojiOrBase64 = avatar,
+                            email = peerId,
                             fontSize = 14.sp,
                             size = 20.dp
                         )
@@ -2535,7 +2541,7 @@ fun FriendsFocusDetailsDialog(
     val myName = if (userNickname.isNotEmpty()) userNickname else if (userName.isNotEmpty()) userName else "Bharathikrishna M"
     val myEmoji = viewModel.userEmoji.collectAsState().value.ifEmpty { "👤" }
 
-    val participantInfos = remember(allUsers, selectedFilter, targetDates, currentMeUsername, userEmail, myName, myEmoji, showElapsedTimeDialog, viewModel.firestoreAvatars.size) {
+    val participantInfos = remember(allUsers, selectedFilter, targetDates, currentMeUsername, userEmail, myName, myEmoji, showElapsedTimeDialog, viewModel.firestoreAvatars.toMap()) {
         val keys = mutableSetOf<String>()
         keys.add(currentMeUsername)
         allUsers.forEach { (username, peerState) ->
@@ -2580,19 +2586,23 @@ fun FriendsFocusDetailsDialog(
             val rawEmoji = if (isMe) {
                 myEmoji
             } else if (peerRemote != null) {
-                peerRemote.emoji ?: "🎯"
+                peerRemote.emoji.takeIf { it.isNotEmpty() && it != "👤" && it != "🎯" } ?: peerRemote.customEmoji ?: "👤"
             } else {
-                "🎯"
+                "👤"
             }
 
-            val emoji = if (isMe) {
-                rawEmoji
+            val emailOrUser = peerRemote?.userId?.takeIf { it.isNotEmpty() } ?: username
+            val resolvedEmoji = if (isMe) {
+                com.example.util.ProfilePictureManager.resolveUserAvatarString(context, meEmailClean, rawEmoji)
             } else {
-                val emailOrUser = peerRemote?.userId ?: username
-                if (rawEmoji == "👤" || rawEmoji == "🎯" || rawEmoji.isEmpty()) {
-                    viewModel.firestoreAvatars[emailOrUser] ?: rawEmoji
-                } else {
+                val fromFirestore = viewModel.firestoreAvatars[emailOrUser]
+                    ?: (if (username != emailOrUser) viewModel.firestoreAvatars[username] else null)
+                if (!fromFirestore.isNullOrEmpty() && fromFirestore != "👤" && fromFirestore != "🎯") {
+                    fromFirestore
+                } else if (rawEmoji.isNotEmpty() && rawEmoji != "👤" && rawEmoji != "🎯") {
                     rawEmoji
+                } else {
+                    com.example.util.ProfilePictureManager.resolveUserAvatarString(context, emailOrUser, rawEmoji)
                 }
             }
 
@@ -2631,13 +2641,14 @@ fun FriendsFocusDetailsDialog(
             PeerFocusInfo(
                 username = username,
                 displayName = displayName,
-                emoji = emoji,
+                emoji = resolvedEmoji,
                 isFocusing = isFocusing,
                 liveFocusedSeconds = totalFilterSeconds,
                 currentTask = currentTask,
                 currentTag = currentTag,
                 isMe = isMe,
-                focusStatus = focusStatus
+                focusStatus = focusStatus,
+                userId = emailOrUser
             )
         }.sortedByDescending { it.liveFocusedSeconds }
     }
@@ -2646,10 +2657,11 @@ fun FriendsFocusDetailsDialog(
     LaunchedEffect(participantInfos) {
         participantInfos.forEach { peer ->
             if (!peer.isMe) {
-                val emailOrUser = peer.username
+                val emailOrUser = peer.userId.ifEmpty { peer.username }
                 if (peer.emoji == "👤" || peer.emoji == "🎯" || peer.emoji.isEmpty()) {
-                    if (!viewModel.firestoreAvatars.containsKey(emailOrUser)) {
-                        viewModel.fetchUserAvatarFromFirestore(emailOrUser)
+                    viewModel.fetchUserAvatarFromFirestore(emailOrUser)
+                    if (peer.username != emailOrUser) {
+                        viewModel.fetchUserAvatarFromFirestore(peer.username)
                     }
                 }
             }
@@ -2700,7 +2712,11 @@ fun FriendsFocusDetailsDialog(
                             onClick = {
                                 participantInfos.forEach { peer ->
                                     if (!peer.isMe) {
-                                        viewModel.fetchUserAvatarFromFirestore(peer.username)
+                                        val emailOrUser = peer.userId.ifEmpty { peer.username }
+                                        viewModel.fetchUserAvatarFromFirestore(emailOrUser, forceRefresh = true)
+                                        if (peer.username != emailOrUser) {
+                                            viewModel.fetchUserAvatarFromFirestore(peer.username, forceRefresh = true)
+                                        }
                                     }
                                 }
                                 android.widget.Toast.makeText(context, "Refreshing friends' profiles from Firestore...", android.widget.Toast.LENGTH_SHORT).show()
@@ -2863,7 +2879,7 @@ fun FriendsFocusDetailsDialog(
                                             // Emoji / Photo
                                             UserAvatar(
                                                 emojiOrBase64 = peer.emoji,
-                                                email = peer.username,
+                                                email = peer.userId.ifEmpty { peer.username },
                                                 displayName = peer.displayName,
                                                 size = 28.dp,
                                                 fontSize = 14.sp
@@ -4427,7 +4443,7 @@ fun TimerImmersiveContent(
             }
         }
 
-        // Display custom minimal Time (Top Left) & Battery (Top Right) when notification bar is hidden
+        // Display custom minimal Charging / Battery (Left Corner) & Time (Right Corner) when notification bar is hidden
         if (hideStatusBarInFullScreen) {
             Row(
                 modifier = Modifier
@@ -4438,8 +4454,35 @@ fun TimerImmersiveContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Top-Left: Time ONLY
+                // Left corner: Charging & Battery Status
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (showBatteryInFullScreen && batteryPct >= 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isCharging) Icons.Default.BatteryChargingFull else if (batteryPct > 50) Icons.Default.BatteryFull else if (batteryPct > 20) Icons.Default.Battery4Bar else Icons.Default.BatteryAlert,
+                                contentDescription = if (isCharging) "Battery Charging" else "Battery Status",
+                                tint = if (isCharging) Color(0xFF34D399) else if (batteryPct <= 20) Color(0xFFFF5252) else Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isCharging) "$batteryPct% ⚡" else "$batteryPct%",
+                                color = if (isCharging) Color(0xFF34D399) else Color.White.copy(alpha = 0.9f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+                }
+
+                // Right corner: Time
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                     if (showClockTimeInFullScreen && currentTimeString.isNotEmpty()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -4460,33 +4503,6 @@ fun TimerImmersiveContent(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 letterSpacing = 0.5.sp
-                            )
-                        }
-                    }
-                }
-
-                // Top-Right: Battery ONLY
-                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                    if (showBatteryInFullScreen && batteryPct >= 0) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "$batteryPct%",
-                                color = Color.White.copy(alpha = 0.9f),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.5.sp
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                imageVector = if (isCharging) Icons.Default.BatteryChargingFull else if (batteryPct > 50) Icons.Default.BatteryFull else if (batteryPct > 20) Icons.Default.Battery4Bar else Icons.Default.BatteryAlert,
-                                contentDescription = "Battery Status",
-                                tint = if (batteryPct <= 20) Color(0xFFFF5252) else Color.White.copy(alpha = 0.85f),
-                                modifier = Modifier.size(15.dp)
                             )
                         }
                     }
@@ -4616,12 +4632,12 @@ fun TimerImmersiveContent(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Show Time (Top-Left)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                        Text("Displays clock time on top-left", color = Color.Gray, fontSize = 10.sp)
+                                        Text("Show Battery & Charging (Top-Left)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                        Text("Displays battery % & charging on top-left", color = Color.Gray, fontSize = 10.sp)
                                     }
                                     Switch(
-                                        checked = showClockTimeInFullScreen,
-                                        onCheckedChange = { viewModel.updateShowClockTimeInFullScreen(it) },
+                                        checked = showBatteryInFullScreen,
+                                        onCheckedChange = { viewModel.updateShowBatteryInFullScreen(it) },
                                         colors = SwitchDefaults.colors(
                                             checkedThumbColor = Color.Black,
                                             checkedTrackColor = WaterBlue,
@@ -4639,12 +4655,12 @@ fun TimerImmersiveContent(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Show Battery (Top-Right)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                        Text("Displays battery % on top-right", color = Color.Gray, fontSize = 10.sp)
+                                        Text("Show Time (Top-Right)", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                        Text("Displays clock time on top-right", color = Color.Gray, fontSize = 10.sp)
                                     }
                                     Switch(
-                                        checked = showBatteryInFullScreen,
-                                        onCheckedChange = { viewModel.updateShowBatteryInFullScreen(it) },
+                                        checked = showClockTimeInFullScreen,
+                                        onCheckedChange = { viewModel.updateShowClockTimeInFullScreen(it) },
                                         colors = SwitchDefaults.colors(
                                             checkedThumbColor = Color.Black,
                                             checkedTrackColor = WaterBlue,
@@ -8108,7 +8124,14 @@ fun FriendsFocusLeaderboardTable(
                 val username = entry.key
                 val u = entry.value
                 val nameToShow = u.nickname ?: u.name ?: username
-                val emoji = u.emoji ?: "👤"
+                val rawEmoji = u.emoji ?: "👤"
+                val userTargetId = u.userId ?: username
+                val fromFs = viewModel.firestoreAvatars[userTargetId] ?: (if (username != userTargetId) viewModel.firestoreAvatars[username] else null)
+                val emoji = if (!fromFs.isNullOrEmpty() && fromFs != "👤" && fromFs != "🎯") {
+                    fromFs
+                } else {
+                    com.example.util.ProfilePictureManager.resolveUserAvatarString(context, userTargetId, rawEmoji)
+                }
                 
                 var maxDeviceTodaySecs = 0
                 val uDevices = u.devices
@@ -8385,6 +8408,8 @@ fun FriendsFocusLeaderboardTable(
                         ) {
                             UserAvatar(
                                 emojiOrBase64 = user.emoji,
+                                email = user.username,
+                                displayName = user.displayName,
                                 size = 36.dp,
                                 fontSize = 18.sp,
                                 online = user.online,
